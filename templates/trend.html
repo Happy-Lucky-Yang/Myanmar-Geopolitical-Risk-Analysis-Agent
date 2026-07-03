@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缅甸地缘风险分析 - 趋势预测</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
+        <ul class="nav-links">
+            <li><a href="/">对话分析</a></li>
+            <li><a href="/map">风险地图</a></li>
+            <li><a href="/trend" class="active">趋势预测</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <section>
+            <h2>风险趋势分析</h2>
+            <p class="subtitle">基于历史数据的风险评分走势与趋势研判</p>
+
+            <div class="controls">
+                <label>时间范围
+                    <select id="days-select" onchange="loadTrend()">
+                        <option value="30" selected>近30天</option>
+                        <option value="60">近60天</option>
+                        <option value="90">近90天</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="summary-cards" id="summary-cards"></div>
+
+            <div id="trend-chart" style="width:100%; height:400px; margin-top:20px;"></div>
+        </section>
+    </main>
+
+    <script>
+        let chart = null;
+
+        async function loadTrend() {
+            const days = document.getElementById('days-select').value;
+
+            try {
+                const response = await fetch(`/api/trend?days=${days}&chart=true`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderSummary(data.data);
+                    renderChart(data.data.chart_data);
+                } else {
+                    alert('加载失败');
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+            }
+        }
+
+        function renderSummary(data) {
+            const trend = data.trend_analysis || {};
+            const cards = document.getElementById('summary-cards');
+
+            cards.innerHTML = `
+                <div class="summary-card">
+                    <div class="card-label">当前趋势</div>
+                    <div class="card-value trend-${trend.trend}">${trend.trend || '无数据'}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="card-label">最新风险分</div>
+                    <div class="card-value">${trend.latest_score || 'N/A'}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="card-label">平均分</div>
+                    <div class="card-value">${trend.avg_score || 'N/A'}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="card-label">数据点数</div>
+                    <div class="card-value">${trend.data_points || 0}</div>
+                </div>
+            `;
+        }
+
+        function renderChart(chartData) {
+            if (!chartData) return;
+
+            const chartDom = document.getElementById('trend-chart');
+            if (!chart) {
+                chart = echarts.init(chartDom);
+            }
+
+            const option = {
+                title: { text: chartData.title || '风险趋势', left: 'center' },
+                tooltip: { trigger: 'axis' },
+                legend: { data: chartData.series.map(s => s.name), top: 30 },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: {
+                    type: 'category',
+                    data: chartData.xAxis,
+                    axisLabel: { rotate: 45 }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: chartData.yAxis?.name || '风险分',
+                    min: 0,
+                    max: 100
+                },
+                series: chartData.series.map(s => ({
+                    name: s.name,
+                    type: s.type,
+                    data: s.data,
+                    smooth: s.smooth,
+                    lineStyle: s.lineStyle,
+                    areaStyle: s.areaStyle,
+                    symbol: s.symbol
+                }))
+            };
+
+            chart.setOption(option);
+        }
+
+        // 页面加载时自动加载趋势数据
+        loadTrend();
+    </script>
+</body>
+</html>

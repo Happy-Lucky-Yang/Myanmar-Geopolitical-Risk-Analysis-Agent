@@ -1,0 +1,76 @@
+# ========================================
+# 缅甸地缘风险智能分析原型系统 - 配置文件
+# ========================================
+
+# ---------- 大模型 API ----------
+llm:
+  # 实验室部署的大模型地址（兼容 OpenAI Chat Completions 格式）
+  base_url: "http://your-lab-server:8000/v1"
+  api_key: "your-api-key-here"
+  model_name: "geopolitical-gpt"
+  temperature: 0.3
+  max_tokens: 2048
+
+# ---------- 爬虫配置 ----------
+crawler:
+  # 定时抓取间隔（小时）
+  interval_hours: 4
+  # 请求超时（秒）
+  timeout: 15
+  # 最大重试次数
+  max_retries: 3
+  # 重试退避基数（秒），实际延迟 = backoff * 2^attempt
+  backoff: 2
+  # 列表页最大翻页数
+  max_pages: 3
+  # 默认 User-Agent
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0"
+  # 目标来源
+  sources:
+    - name: "缅甸缅华网"
+      url: "https://www.mhwmm.com/miandianxinwen/"
+      enabled: true
+      language: "zh"
+    - name: "路透社缅甸"
+      url: "https://www.reuters.com/world/asia-pacific/myanmar/"
+      enabled: false   # 反爬较强，初期先关闭
+      language: "en"
+    - name: "伊洛瓦底报"
+      url: "https://www.irrawaddy.com/news/burma"
+      enabled: false   # 待适配后开启
+      language: "en"
+
+# ---------- 数据存储 ----------
+storage:
+  # 新闻数据存放目录
+  news_dir: "./data/raw"
+  # 输出格式: csv / json
+  format: "json"
+
+# ---------- 风险评分权重 ----------
+risk_weights:
+  conflict_frequency: 0.30    # 冲突频次
+  sentiment_avg: 0.25         # 情感均值（负面程度）
+  nightlight_change: 0.20     # 夜间灯光变化率
+  refugee_change: 0.15        # 难民变化
+  event_severity: 0.10        # 事件严重程度
+
+# ---------- 趋势分析 ----------
+trend:
+  # 移动平均窗口（天）
+  moving_avg_window: 7
+  # 回归分析最少需要数据点数
+  min_regression_points: 14
+
+# ---------- Flask 服务 ----------
+flask:
+  host: "0.0.0.0"
+  port: 5000
+  debug: true
+
+# ---------- Neo4j（可选） ----------
+neo4j:
+  enabled: false
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  password: "your-neo4j-password"

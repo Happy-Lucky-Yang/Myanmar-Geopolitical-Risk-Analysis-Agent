@@ -1,0 +1,30 @@
+# 环境配置（敏感信息）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# 数据文件（太大不宜提交）
+data/raw/*.csv
+data/raw/*.json
+data/processed/*.csv
+news_data/*.csv
+news_data/*.json
+!news_data/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
