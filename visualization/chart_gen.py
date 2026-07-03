@@ -34,9 +34,9 @@ class TrendChartGenerator:
                 }
             ],
             "yAxis": {
-                "name": "风险分",
+                "name": "风险分（0-100）",
                 "min": 0,
-                "max": 1
+                "max": 100
             }
         }
 
@@ -97,9 +97,9 @@ class TrendChartGenerator:
                 }
             ],
             "yAxis": {
-                "name": "风险分",
+                "name": "风险分（0-100）",
                 "min": 0,
-                "max": 1
+                "max": 100
             }
         }
 

@@ -54,8 +54,7 @@ Base URL: `http://localhost:5000`
     "sentiment": {
       "sentiment_score": 0.15,
       "risk_score": 0.85,
-      "risk_level": "高风险",
-      "keywords": ["冲突", "轰炸", "转移"]
+      "risk_level": "high"
     },
     "llm_analysis": {
       "event_type": "军事冲突",
@@ -72,10 +71,10 @@ Base URL: `http://localhost:5000`
       "risk_level": "高风险",
       "indicator_scores": {
         "conflict_frequency": {"value": 1.0, "weight": 0.3, "contribution": 0.3},
-        "sentiment_avg": {"value": 0.85, "weight": 0.2, "contribution": 0.17},
+        "sentiment_avg": {"value": 0.85, "weight": 0.25, "contribution": 0.2125},
         "nightlight_change": {"value": 0.0, "weight": 0.2, "contribution": 0.0},
         "refugee_change": {"value": 0.0, "weight": 0.15, "contribution": 0.0},
-        "event_severity": {"value": 0.8, "weight": 0.15, "contribution": 0.12}
+        "event_severity": {"value": 0.8, "weight": 0.1, "contribution": 0.08}
       }
     }
   }
