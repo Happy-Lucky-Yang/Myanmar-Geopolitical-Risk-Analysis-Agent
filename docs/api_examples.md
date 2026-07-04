@@ -69,6 +69,7 @@ Base URL: `http://localhost:5000`
     "risk_score": {
       "risk_score": 72.5,
       "risk_level": "高风险",
+      "gdelt_used": true,
       "indicator_scores": {
         "conflict_frequency": {"value": 1.0, "weight": 0.3, "contribution": 0.3},
         "sentiment_avg": {"value": 0.85, "weight": 0.25, "contribution": 0.2125},
@@ -76,6 +77,15 @@ Base URL: `http://localhost:5000`
         "refugee_change": {"value": 0.0, "weight": 0.15, "contribution": 0.0},
         "event_severity": {"value": 0.8, "weight": 0.1, "contribution": 0.08}
       }
+    },
+    "gdelt_metrics": {
+      "article_count": 87,
+      "conflict_count": 23,
+      "conflict_frequency": 0.2644,
+      "avg_tone_risk": 0.68,
+      "avg_severity": 0.54,
+      "max_severity": 0.9,
+      "event_summary": {"conflict": 23, "unrest": 15, "diplomacy": 8}
     }
   }
 }
@@ -92,7 +102,62 @@ Base URL: `http://localhost:5000`
 
 ---
 
-## 3. 风险地图接口
+## 3. GDELT 事件数据接口
+
+**GET** `/api/gdelt?days=7`
+
+从 GDELT (Global Database of Events, Language, and Tone) 全球事件数据库查询缅甸相关地缘政治事件。
+
+> GDELT 是免费的全球新闻事件数据库，包含事件编码、情感分数、地理位置等结构化信息，用于增强冲突频次和事件严重程度的评估。
+
+### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| days | int  | 7      | 查询最近多少天的数据 |
+
+### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "article_count": 87,
+    "conflict_count": 23,
+    "conflict_frequency": 0.2644,
+    "avg_tone_risk": 0.68,
+    "avg_severity": 0.54,
+    "max_severity": 0.9,
+    "event_summary": {
+      "conflict": 23,
+      "unrest": 15,
+      "diplomacy": 8
+    },
+    "top_locations": [
+      {"name": "Myanmar", "count": 87},
+      {"name": "Yangon", "count": 32},
+      {"name": "Shan State", "count": 18}
+    ]
+  }
+}
+```
+
+### 字段说明
+
+| 字段 | 说明 |
+|------|------|
+| `article_count` | GDELT 查询返回的缅甸相关文章总数 |
+| `conflict_count` | 包含冲突事件（CAMEO code 17-22）的文章数 |
+| `conflict_frequency` | 冲突文章占比 (0~1) |
+| `avg_tone_risk` | 平均情感风险分 (0~1，GDELT tone 归一化) |
+| `avg_severity` | 平均事件严重程度 (0~1) |
+| `max_severity` | 最大事件严重程度 (0~1) |
+| `event_summary` | 事件分类统计（冲突/动荡/外交） |
+| `top_locations` | 出现最多的地点 (top 10) |
+
+---
+
+## 4. 风险地图接口
 
 **GET** `/api/map?days=7`
 
@@ -118,7 +183,7 @@ Content-Type: `text/html`
 
 ---
 
-## 4. 趋势分析接口
+## 5. 趋势分析接口
 
 **GET** `/api/trend?days=30&chart=true`
 
@@ -182,7 +247,7 @@ Content-Type: `text/html`
 
 ---
 
-## 5. 前端页面路由
+## 6. 前端页面路由
 
 | 路径     | 页面       | 说明 |
 |----------|------------|------|
@@ -192,7 +257,7 @@ Content-Type: `text/html`
 
 ---
 
-## 6. 快速测试命令
+## 7. 快速测试命令
 
 ```bash
 # 健康检查
@@ -208,4 +273,7 @@ curl "http://localhost:5000/api/trend?days=30"
 
 # 地图 HTML
 curl "http://localhost:5000/api/map?days=7" -o map.html
+
+# GDELT 事件数据
+curl "http://localhost:5000/api/gdelt?days=7"
 ```

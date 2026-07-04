@@ -73,6 +73,12 @@ def get_flask_config() -> dict:
     return cfg.get("flask", {})
 
 
+def get_gdelt_config() -> dict:
+    """获取 GDELT 配置"""
+    cfg = load_config()
+    return cfg.get("gdelt", {})
+
+
 def get_neo4j_config() -> dict:
     """获取 Neo4j 配置"""
     cfg = load_config()

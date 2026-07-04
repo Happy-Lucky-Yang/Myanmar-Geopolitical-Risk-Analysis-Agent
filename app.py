@@ -7,10 +7,13 @@
   GET  /trend    - 趋势预测页面
 
 API 接口：
-  POST /api/analyze  - 接收文本，返回完整分析结果
-  GET  /api/map      - 返回风险热力地图 HTML
-  GET  /api/trend    - 返回趋势数据 JSON
-  GET  /health       - 健康检查
+  POST /api/analyze    - 接收文本，返回完整分析结果
+  GET  /api/gdelt      - 查询 GDELT 事件数据
+  GET  /api/scheduler  - 查看调度器状态
+  POST /api/scheduler  - 手动触发爬取/分析任务
+  GET  /api/map        - 返回风险热力地图 HTML
+  GET  /api/trend      - 返回趋势数据 JSON
+  GET  /health         - 健康检查
 """
 import sys
 import os
@@ -34,12 +37,20 @@ from analyzer.data_loader import get_data_loader
 from analyzer.knowledge_graph import get_knowledge_graph
 from visualization.map_gen import get_map_generator
 from visualization.chart_gen import get_chart_generator
+from data.scheduler import get_scheduler
 
 # ============================================================
 # Flask 应用初始化
 # ============================================================
 app = Flask(__name__)
 CORS(app)  # 允许前端跨域请求
+
+# 启动后台调度器（仅在非 debug reloader 子进程中启动）
+# Flask debug 模式下会启动两个进程，避免调度器重复启动
+import os as _os
+if _os.environ.get("WERKZEUG_RUN_MAIN") != "true" or not load_config().get("flask", {}).get("debug", True):
+    _scheduler = get_scheduler()
+    _scheduler.start()
 
 
 # ============================================================
@@ -130,9 +141,35 @@ def analyze():
 
         # 5. 风险评分（0-100 分制）
         scorer = get_risk_scorer()
-        conflict_keywords = ["冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击", "制裁"]
-        has_conflict = any(kw in cleaned_text for kw in conflict_keywords)
+        conflict_keywords_zh = ["冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击", "制裁"]
+        conflict_keywords_en = ["conflict", "attack", "airstrike", "armed", "ceasefire",
+                                "sanction", "coup", "refugee", "protest", "military"]
+        text_lower = cleaned_text.lower()
+        has_conflict = (
+            any(kw in cleaned_text for kw in conflict_keywords_zh)
+            or any(kw in text_lower for kw in conflict_keywords_en)
+        )
 
+        # 尝试从 GDELT 获取事件指标（增强冲突频次和严重程度）
+        gdelt_metrics = None
+        try:
+            from data.gdelt_crawler import get_gdelt_crawler
+            gdelt = get_gdelt_crawler()
+            gdelt_metrics = gdelt.get_risk_metrics(timespan_days=7)
+        except Exception:
+            pass  # GDELT 不可用时静默跳过
+
+        # 构建外部数据
+        external_data = {}
+        if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0:
+            external_data = {
+                "gdelt_conflict_frequency": gdelt_metrics["conflict_frequency"],
+                "gdelt_avg_tone_risk": gdelt_metrics["avg_tone_risk"],
+                "gdelt_avg_severity": gdelt_metrics["avg_severity"],
+                "gdelt_max_severity": gdelt_metrics["max_severity"],
+            }
+
+        # 使用 compute_daily_risk 进行融合评分
         indicators = {
             "conflict_frequency": 1.0 if has_conflict else 0.2,
             "sentiment_avg": sentiment_result["risk_score"],
@@ -140,7 +177,16 @@ def analyze():
             "refugee_change": 0.0,      # TODO: 接入难民统计
             "event_severity": 0.8 if has_conflict else 0.3
         }
+        # 如果有 GDELT 数据，融合到指标中
+        if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0:
+            text_freq = indicators["conflict_frequency"]
+            gdelt_freq = gdelt_metrics["conflict_frequency"]
+            indicators["conflict_frequency"] = 0.6 * text_freq + 0.4 * gdelt_freq
+            # GDELT 事件严重程度替代关键词估计
+            indicators["event_severity"] = gdelt_metrics["avg_severity"]
+
         risk_result = scorer.calculate_risk_score(indicators)
+        risk_result["gdelt_used"] = gdelt_metrics is not None and gdelt_metrics.get("article_count", 0) > 0
 
         # 6. 写入知识图谱（如果 Neo4j 启用）
         try:
@@ -179,9 +225,89 @@ def analyze():
                 "entities": entities,
                 "sentiment": sentiment_result,
                 "llm_analysis": llm_result,
-                "risk_score": risk_result
+                "risk_score": risk_result,
+                "gdelt_metrics": gdelt_metrics if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0 else None
             }
         })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/gdelt", methods=["GET"])
+def gdelt_events():
+    """
+    GDELT 事件数据查询接口
+
+    查询参数:
+        - days: 查询最近多少天（默认 7）
+
+    响应: JSON 格式
+    {
+        "success": true,
+        "data": {
+            "article_count": int,
+            "conflict_count": int,
+            "conflict_frequency": float,
+            "avg_tone_risk": float,
+            "avg_severity": float,
+            "max_severity": float,
+            "event_summary": {...},
+            "top_locations": [...]
+        }
+    }
+    """
+    try:
+        days = request.args.get("days", 7, type=int)
+
+        from data.gdelt_crawler import get_gdelt_crawler
+        gdelt = get_gdelt_crawler()
+        metrics = gdelt.get_risk_metrics(timespan_days=days)
+
+        return jsonify({
+            "success": True,
+            "data": metrics
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/scheduler", methods=["GET", "POST"])
+def scheduler_control():
+    """
+    调度器控制接口
+
+    GET  - 查看调度器状态
+    POST - 手动触发任务
+        Body: {"action": "crawl" | "gdelt" | "analysis" | "status"}
+    """
+    try:
+        scheduler = get_scheduler()
+
+        if request.method == "GET":
+            return jsonify({
+                "success": True,
+                "data": scheduler.get_status()
+            })
+
+        # POST: 手动触发
+        body = request.get_json() or {}
+        action = body.get("action", "status")
+
+        if action == "crawl":
+            scheduler.trigger_crawl()
+            return jsonify({"success": True, "message": "爬取任务已触发"})
+        elif action == "gdelt":
+            scheduler.trigger_gdelt()
+            return jsonify({"success": True, "message": "GDELT 查询已触发"})
+        elif action == "analysis":
+            scheduler.trigger_analysis()
+            return jsonify({"success": True, "message": "分析流水线已触发"})
+        else:
+            return jsonify({
+                "success": True,
+                "data": scheduler.get_status()
+            })
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

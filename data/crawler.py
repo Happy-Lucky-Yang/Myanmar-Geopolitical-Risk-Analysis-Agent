@@ -654,38 +654,6 @@ class NewsCrawler:
         return filepath
 
     # ============================================================
-    # 定时调度
-    # ============================================================
-
-    def run_scheduled(self):
-        """
-        启动定时爬取任务（使用 schedule 库）
-        应在单独线程或进程中运行
-        """
-        import schedule
-        cfg = get_crawler_config()
-        interval_hours = cfg.get("interval_hours", 4)
-
-        def job():
-            logger.info(f"[Crawler] ====== 定时任务开始: {datetime.now()} ======")
-            try:
-                news = self.crawl_all_sources()
-                self.save_news(news)
-            except Exception as e:
-                logger.error(f"[Crawler] 定时任务异常: {e}", exc_info=True)
-
-        # 每 N 小时执行一次
-        schedule.every(interval_hours).hours.do(job)
-
-        # 首次立即执行
-        job()
-
-        logger.info(f"[Crawler] 定时爬取已启动，间隔 {interval_hours} 小时")
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
-
-    # ============================================================
     # 便捷方法：单独测试某篇文章
     # ============================================================
 
@@ -720,9 +688,6 @@ if __name__ == "__main__":
         test_url = sys.argv[2] if len(sys.argv) > 2 else "https://www.mhwmm.com/miandianxinwen/"
         result = crawler.test_single_article(test_url)
         print(json.dumps(result, ensure_ascii=False, indent=2))
-    elif len(sys.argv) > 1 and sys.argv[1] == "schedule":
-        # 定时模式
-        crawler.run_scheduled()
     else:
         # 单次爬取
         news = crawler.crawl_all_sources()

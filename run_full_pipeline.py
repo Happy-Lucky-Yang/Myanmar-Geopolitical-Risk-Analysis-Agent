@@ -71,7 +71,7 @@ DEMO_NEWS = [
 # ============================================================
 
 def step_crawl(skip: bool = False) -> list:
-    """步骤1：爬取新闻数据"""
+    """步骤1：爬取新闻数据（缅华网 + GDELT）"""
     print("\n" + "=" * 60)
     print("  步骤 1/6: 爬取新闻数据")
     print("=" * 60)
@@ -81,16 +81,36 @@ def step_crawl(skip: bool = False) -> list:
         loader = get_data_loader()
         return loader.load_raw_news()
 
+    all_news = []
+
+    # --- 1a: 缅华网爬虫 ---
     try:
         from data.crawler import NewsCrawler
         crawler = NewsCrawler()
         news = crawler.crawl_all_sources()
         crawler.save_news(news)
-        print(f"[完成] 爬取 {len(news)} 条新闻")
-        return news
+        all_news.extend(news)
+        print(f"[缅华网] 爬取 {len(news)} 条新闻")
     except Exception as e:
-        print(f"[警告] 爬取失败: {e}，使用模拟数据")
-        return DEMO_NEWS
+        print(f"[警告] 缅华网爬取失败: {e}")
+
+    # --- 1b: GDELT 全球事件数据库 ---
+    try:
+        from data.gdelt_crawler import get_gdelt_crawler
+        gdelt = get_gdelt_crawler()
+        gdelt_news = gdelt.crawl()
+        gdelt.save_news(gdelt_news)
+        all_news.extend(gdelt_news)
+        print(f"[GDELT] 获取 {len(gdelt_news)} 条事件新闻")
+    except Exception as e:
+        print(f"[警告] GDELT 查询失败: {e}")
+
+    # 如果两个源都失败，使用模拟数据
+    if not all_news:
+        print("[警告] 所有数据源均失败，使用模拟数据")
+        all_news = DEMO_NEWS
+
+    return all_news
 
 
 def step_preprocess(news_list: list) -> list:
@@ -174,15 +194,39 @@ def step_llm_analysis(news_list: list) -> list:
 
 
 def step_risk_scoring(news_list: list) -> dict:
-    """步骤5：风险评分"""
+    """步骤5：风险评分（融合 GDELT 事件数据）"""
     print("\n" + "=" * 60)
     print("  步骤 5/6: 多指标加权风险评分")
     print("=" * 60)
 
     scorer = get_risk_scorer()
 
+    # 尝试从 GDELT 获取事件指标（增强 conflict_frequency 和 event_severity）
+    gdelt_metrics = None
+    try:
+        from data.gdelt_crawler import get_gdelt_crawler
+        gdelt = get_gdelt_crawler()
+        gdelt_metrics = gdelt.get_risk_metrics(timespan_days=7)
+        print(f"  GDELT 事件: {gdelt_metrics['article_count']} 条文章, "
+              f"冲突 {gdelt_metrics['conflict_count']} 条, "
+              f"冲突频率 {gdelt_metrics['conflict_frequency']:.2%}")
+    except Exception as e:
+        print(f"  [警告] GDELT 指标获取失败: {e}，仅使用文本指标")
+
+    # 构建外部数据（融合 GDELT 指标）
+    external_data = {}
+    if gdelt_metrics and gdelt_metrics['article_count'] > 0:
+        external_data = {
+            "gdelt_conflict_frequency": gdelt_metrics['conflict_frequency'],
+            "gdelt_avg_tone_risk": gdelt_metrics['avg_tone_risk'],
+            "gdelt_avg_severity": gdelt_metrics['avg_severity'],
+            "gdelt_max_severity": gdelt_metrics['max_severity'],
+            "gdelt_event_summary": gdelt_metrics['event_summary'],
+            "gdelt_top_locations": gdelt_metrics['top_locations'],
+        }
+
     # 使用新的 compute_daily_risk 方法
-    result = scorer.compute_daily_risk(news_list)
+    result = scorer.compute_daily_risk(news_list, external_data=external_data)
 
     print(f"  新闻数量: {result.get('news_count', 0)}")
     print(f"  冲突新闻: {result.get('conflict_count', 0)}")
@@ -192,11 +236,14 @@ def step_risk_scoring(news_list: list) -> dict:
     # 保存到历史
     loader = get_data_loader()
     today = datetime.now().strftime("%Y-%m-%d")
+    details = result.get("raw_indicators", {})
+    if external_data:
+        details["gdelt"] = external_data
     loader.append_risk_score(
         date=today,
         risk_score=result["risk_score"],
         risk_level=result["risk_level"],
-        details=result.get("raw_indicators", {})
+        details=details
     )
     print(f"[完成] 风险分已追加到历史记录")
 

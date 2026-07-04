@@ -40,6 +40,26 @@ crawler:
       enabled: false   # 待适配后开启
       language: "en"
 
+# ---------- GDELT 全球事件数据库 ----------
+gdelt:
+  enabled: true                      # 是否启用 GDELT 数据源
+  api_url: "https://api.gdeltproject.org/api/v2/doc/doc"
+  language: "english"                 # 语言过滤（english / chinese / 留空=全部）
+  source_country: "BM"                # 来源国家代码（BM=缅甸, 留空=全部）
+  timespan_days: 7                    # 默认查询最近多少天
+  max_results: 100                    # 每次查询最大返回条数
+  max_retries: 3                      # 请求重试次数
+  timeout: 30                         # 请求超时（秒）
+  backoff: 5                          # 重试退避基数（GDELT 要求每 5 秒一个请求）
+  use_multi_query: true               # 使用多关键词查询（覆盖面更广）
+  # 多关键词查询列表（use_multi_query=true 时使用）
+  query_keywords:
+    - "Myanmar conflict"
+    - "Myanmar military ceasefire"
+    - "Myanmar refugee crisis"
+    - "Myanmar sanctions"
+    - "Myanmar China economic"
+
 # ---------- 数据存储 ----------
 storage:
   # 新闻数据存放目录
@@ -61,6 +81,13 @@ trend:
   moving_avg_window: 7
   # 回归分析最少需要数据点数
   min_regression_points: 14
+
+# ---------- 定时调度器 ----------
+scheduler:
+  enabled: true                        # 是否启用自动定时爬取
+  crawl_interval_hours: 4              # 缅华网爬取间隔（小时）
+  gdelt_interval_hours: 6              # GDELT 查询间隔（小时）
+  analysis_interval_hours: 12          # 分析流水线间隔（小时）
 
 # ---------- Flask 服务 ----------
 flask:

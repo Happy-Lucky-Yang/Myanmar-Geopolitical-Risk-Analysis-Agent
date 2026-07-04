@@ -3,7 +3,7 @@
 ## 项目简介
 本项目旨在构建一个轻量级、可复现的缅甸地缘风险分析原型系统。系统以新闻舆情数据为主要输入，通过自然语言处理（LAC 分词/NER、SnowNLP 情感分析）、大模型 API 调用和基础统计模型（加权打分、移动平均、线性回归），实现风险评分（0-100）、趋势判断与可视化展示。项目由华东师范大学本科生创新团队开发，作为"区域国别地缘环境智能计算研究"大创项目的技术实现。
 
-> **数据说明**：当前系统仅接入缅甸缅华网新闻数据。申报书中规划的夜间灯光遥感数据（NASA VIIRS）和宏观经济/难民统计数据尚**未接入**，相关指标在风险评分中暂以 0 值占位。
+> **数据说明**：当前系统已接入 **GDELT 全球事件数据库**（DOC 2.0 API）和缅甸缅华网新闻数据。申报书中规划的夜间灯光遥感数据（NASA VIIRS）和宏观经济/难民统计数据尚**未接入**，相关指标在风险评分中暂以 0 值占位。
 
 ## 团队分工
 | 角色 | 姓名 | 主要任务 |
@@ -32,10 +32,11 @@ myanmar-risk-system/
 │   ├── trend.py                  # 趋势计算（移动平均 + 线性回归）
 │   └── knowledge_graph.py        # Neo4j操作（可选）
 ├── data/                         # 数据存储（不提交原始大文件）
-│   ├── crawler.py                # 新闻爬虫（定时抓取）
-│   ├── preprocessor.py           # 文本预处理（备用）
-│   ├── storage.py                # 数据存储（备用）
-│   ├── raw/                      # 原始爬虫数据
+│   ├── crawler.py                # 新闻爬虫（缅华网等）
+│   ├── gdelt_client.py           # GDELT DOC 2.0 API 客户端
+│   ├── gdelt_crawler.py          # GDELT 数据适配器（输出兼容格式）
+│   ├── scheduler.py              # 统一定时调度器（后台线程）
+│   ├── raw/                      # 原始爬虫数据 + GDELT 数据
 │   ├── processed/                # 清洗后数据
 │   └── external/                 # 遥感指数、统计公报
 ├── visualization/                # 可视化模块
@@ -58,7 +59,6 @@ myanmar-risk-system/
 ├── docs/                         # 文档
 │   └── api_examples.md           # API 请求/响应示例
 ├── run_full_pipeline.py          # 全流程集成测试脚本
-└── news_data/                    # 旧版数据存储（兼容）
 ```
 
 ## 环境配置
@@ -93,10 +93,26 @@ mkdir -p data/raw data/processed data/external
 ```
 
 ## 运行方式
+
+### Web 服务（含自动定时爬取）
 ```bash
 python app.py
 ```
 默认启动地址：http://127.0.0.1:5000
+
+> Flask 启动时会**自动启动后台调度线程**，定时执行缅华网爬取（每 4 小时）、GDELT 查询（每 6 小时）和分析流水线（每 12 小时）。间隔可在 `config.yaml` 的 `scheduler` 段调整。
+
+### 独立运行爬虫
+```bash
+# 单次爬取
+python run_crawler_only.py
+
+# 定时爬取模式（前台运行，Ctrl+C 停止）
+python run_crawler_only.py --schedule
+
+# 仅查询 GDELT 事件数据
+python run_crawler_only.py --gdelt
+```
 
 ## 页面说明
 
@@ -110,12 +126,16 @@ python app.py
 
 ### ✅ 已完成
 - 缅华网新闻爬虫（含真实爬取数据 15 条，`data/raw/myanmar_news_20260615.json`）
+- **GDELT 全球事件数据库接入**（DOC 2.0 API，含冲突事件编码分析、情感分数、地理位置提取）
 - 中文 NER（百度 LAC）+ 英文 NER（spaCy，可选）
-- 情感分析（SnowNLP，风险视角转换）
+- 情感分析（SnowNLP，风险视角转换；GDELT tone 辅助融合）
 - 风险评分框架：5 项指标中 3 项已接入（冲突频次、情感均值、事件严重程度），加权 0-100 分制
+  - 冲突频次：中文关键词匹配 + GDELT CAMEO 事件码融合
+  - 事件严重程度：GDELT 事件编码分类（冲突/动荡/外交）
 - 趋势分析：移动平均、线性回归、异常检测（Z-score）、STL 简化分解
 - 短期预测：基于线性回归斜率外推 7 天
-- Flask Web 应用：3 个页面 + 4 个 API 接口
+- Flask Web 应用：3 个页面 + **7 个 API 接口**（含 `/api/gdelt`、`/api/scheduler`）
+- **自动定时调度器**（后台线程，缅华网每 4h、GDELT 每 6h、分析每 12h，可在 config.yaml 调整）
 - 全流程集成脚本（`run_full_pipeline.py`，含 `--demo` 模式）
 - 爬虫模块单元测试
 
@@ -127,7 +147,7 @@ python app.py
 ### ❌ 待开发
 - **夜间灯光遥感数据接入**（申报书承诺 NASA VIIRS 数据，当前 `nightlight_change` 指标硬编码为 0.0，占权重 20%）
 - **难民统计数据接入**（当前 `refugee_change` 指标硬编码为 0.0，占权重 15%）
-- 事件严重程度精细化评估（当前基于关键词二值判断）
+- 事件严重程度精细化评估（已通过 GDELT CAMEO 事件编码部分实现，待进一步调优）
 - 地图数据真实化（当前省份风险分基于"是否边境省份"简化乘数）
 - 宏观经济统计数据整合
 - 更多模块的单元测试
@@ -157,6 +177,9 @@ python -m pytest tests/test_crawler.py -v
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | POST | `/api/analyze` | 接收JSON `{"text": "新闻内容"}`，返回分析结果（风险分、事件、预测） |
+| GET | `/api/gdelt` | 查询 GDELT 事件数据（支持 `?days=7` 参数） |
+| GET | `/api/scheduler` | 查看调度器状态（上次执行时间、结果） |
+| POST | `/api/scheduler` | 手动触发任务 `{"action": "crawl" \| "gdelt" \| "analysis"}` |
 | GET | `/api/map` | 返回folium生成的地图HTML（字符串） |
 | GET | `/api/trend` | 返回趋势数据JSON，格式：`{"dates":[], "history":[], "forecast":[]}` |
 | GET | `/health` | 健康检查 |
@@ -184,7 +207,17 @@ python -m pytest tests/test_crawler.py -v
     },
     "risk_score": {
       "risk_score": 72.5,
-      "risk_level": "高风险"
+      "risk_level": "高风险",
+      "gdelt_used": true
+    },
+    "gdelt_metrics": {
+      "article_count": 87,
+      "conflict_count": 23,
+      "conflict_frequency": 0.2644,
+      "avg_tone_risk": 0.68,
+      "avg_severity": 0.54,
+      "max_severity": 0.9,
+      "event_summary": {"conflict": 23, "unrest": 15, "diplomacy": 8}
     }
   }
 }
@@ -193,10 +226,11 @@ python -m pytest tests/test_crawler.py -v
 ## 核心模块开发指南
 
 ### 1. 爬虫开发
-目标网站：缅甸中文网、伊洛瓦底报、路透社缅甸版。
-- 使用 `requests` + `BeautifulSoup`
+目标网站：缅甸中文网、伊洛瓦底报、路透社缅甸版、GDELT 全球事件数据库。
+- 缅华网：使用 `requests` + `BeautifulSoup`
+- GDELT：使用 `requests` 调用 DOC 2.0 API（免费、无需 API Key）
 - 定时调度：`schedule` 库或系统 cron
-- 输出 CSV 字段：`title, pub_time, content, url`
+- 输出 JSON 字段：`title, pub_time, content, url, source`（GDELT 额外含 `gdelt_tone, gdelt_themes, gdelt_locations`）
 
 ### 2. NER + 情感分析
 - NER：LAC (https://github.com/baidu/LAC) 或 HanLP
@@ -209,7 +243,7 @@ python -m pytest tests/test_crawler.py -v
 - 注意处理超时、重试、token 限制
 
 ### 4. 风险打分模型
-- 指标（3/5 已接入）：冲突事件频次（近7天，关键词匹配 ✅）、情感得分均值（SnowNLP ✅）、~~夜间灯光变化率~~（⚠️ 待接入，当前占位 0.0）、~~难民数量变化~~（⚠️ 待接入，当前占位 0.0）、事件严重程度（关键词二值判断 ✅）
+- 指标（3/5 已接入）：冲突事件频次（近7天，中文关键词 + **GDELT CAMEO 事件码融合** ✅）、情感得分均值（SnowNLP + GDELT tone 融合 ✅）、~~夜间灯光变化率~~（⚠️ 待接入，当前占位 0.0）、~~难民数量变化~~（⚠️ 待接入，当前占位 0.0）、事件严重程度（GDELT 事件编码分类 ✅）
 - 权重：由历史/地科同学提供初始值，后续可调（注意：因 2 项指标未接入，实际有效权重仅为 65%）
 - 输出：每日风险分（0-100），移动平均趋势
 

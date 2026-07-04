@@ -118,7 +118,7 @@ class RiskScorer:
         从原始新闻数据计算当日综合风险分
 
         :param daily_news: 当日新闻列表，每条包含 text, sentiment_score 等
-        :param external_data: 外部数据（灯光指数、难民数等）
+        :param external_data: 外部数据（灯光指数、难民数、GDELT 事件指标等）
         :param historical_data: 各指标历史序列（用于归一化）
         :return: 完整的风险评分结果
         """
@@ -127,16 +127,20 @@ class RiskScorer:
 
         n = len(daily_news)
 
-        # 1. 冲突频次
+        # 1. 冲突频次（基于关键词匹配）
         conflict_keywords = [
             "冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击",
-            "制裁", "政变", "难民", "抗议", "暴动"
+            "制裁", "政变", "难民", "抗议", "暴动",
+            # 英文关键词（GDELT 文章为英文）
+            "conflict", "attack", "airstrike", "armed", "ceasefire",
+            "sanction", "coup", "refugee", "protest", "military",
         ]
         conflict_count = sum(
             1 for item in daily_news
-            if any(kw in item.get("text", "") or item.get("title", "") for kw in conflict_keywords)
+            if any(kw.lower() in (item.get("text", "") or item.get("title", "")).lower()
+                   for kw in conflict_keywords)
         )
-        conflict_freq = conflict_count / max(n, 1)
+        text_conflict_freq = conflict_count / max(n, 1)
 
         # 2. 情感均值（负面程度）
         sentiments = [item.get("sentiment_score", 0.5) for item in daily_news]
@@ -148,23 +152,56 @@ class RiskScorer:
         nightlight_change = ext.get("nightlight_change", 0.0)
         refugee_change = ext.get("refugee_change", 0.0)
 
+        # 4. GDELT 事件数据融合
+        gdelt_available = False
+        gdelt_conflict_freq = None
+        gdelt_severity = None
+        gdelt_tone_risk = None
+
+        if ext.get("gdelt_conflict_frequency") is not None:
+            gdelt_available = True
+            gdelt_conflict_freq = ext["gdelt_conflict_frequency"]
+        if ext.get("gdelt_avg_severity") is not None:
+            gdelt_severity = ext["gdelt_avg_severity"]
+        if ext.get("gdelt_avg_tone_risk") is not None:
+            gdelt_tone_risk = ext["gdelt_avg_tone_risk"]
+
+        # 融合策略：
+        # - conflict_frequency: 文本关键词 60% + GDELT 事件码 40%（如有 GDELT）
+        # - event_severity: GDELT 事件严重程度（如有），否则用文本关键词估计
+        # - sentiment_avg: SnowNLP 情感 + GDELT tone 融合（如有）
+        if gdelt_available and gdelt_conflict_freq is not None:
+            conflict_freq = 0.6 * text_conflict_freq + 0.4 * gdelt_conflict_freq
+        else:
+            conflict_freq = text_conflict_freq
+
+        if gdelt_available and gdelt_tone_risk is not None:
+            # 融合 SnowNLP 和 GDELT tone
+            sentiment_neg = 0.6 * sentiment_neg + 0.4 * gdelt_tone_risk
+
+        if gdelt_available and gdelt_severity is not None:
+            event_severity = gdelt_severity
+        else:
+            event_severity = conflict_freq * 0.8 + sentiment_neg * 0.2
+
         # 构建原始指标
         raw_indicators = {
             "conflict_frequency": conflict_freq,
             "sentiment_avg": sentiment_neg,
             "nightlight_change": max(0.0, -nightlight_change),  # 负增长→高风险
             "refugee_change": refugee_change,
-            "event_severity": conflict_freq * 0.8 + sentiment_neg * 0.2
+            "event_severity": event_severity
         }
 
-        # 4. 归一化
+        # 5. 归一化
         normalized = self.normalize_indicators(raw_indicators, historical_data)
 
-        # 5. 加权计算
+        # 6. 加权计算
         result = self.calculate_risk_score(normalized)
         result["news_count"] = n
         result["raw_indicators"] = {k: round(v, 4) for k, v in raw_indicators.items()}
         result["conflict_count"] = conflict_count
+        result["gdelt_used"] = gdelt_available
 
         return result
 

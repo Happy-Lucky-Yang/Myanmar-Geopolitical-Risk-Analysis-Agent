@@ -15,9 +15,7 @@ venv/
 data/raw/*.csv
 data/raw/*.json
 data/processed/*.csv
-news_data/*.csv
-news_data/*.json
-!news_data/.gitkeep
+data/raw/gdelt_urls_seen.txt
 
 # IDE
 .idea/
