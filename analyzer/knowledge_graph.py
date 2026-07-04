@@ -2,8 +2,12 @@
 analyzer.knowledge_graph - Neo4j 知识图谱模块（可选）
 负责将 NER 提取的实体和关系存入 Neo4j 图数据库，支持查询与可视化
 """
+import logging
+import threading
 from typing import Dict, List, Optional
 from utils.config import get_neo4j_config
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraph:
@@ -23,7 +27,7 @@ class KnowledgeGraph:
     def _connect(self):
         """连接 Neo4j 数据库"""
         if not self._enabled:
-            print("[KnowledgeGraph] Neo4j 未启用，跳过连接")
+            logger.info("[KnowledgeGraph] Neo4j 未启用，跳过连接")
             return
 
         try:
@@ -36,12 +40,12 @@ class KnowledgeGraph:
             # 测试连接
             with self._driver.session() as session:
                 session.run("RETURN 1")
-            print(f"[KnowledgeGraph] Neo4j 连接成功: {self._uri}")
+            logger.info(f"[KnowledgeGraph] Neo4j 连接成功: {self._uri}")
         except ImportError:
-            print("[KnowledgeGraph] neo4j 驱动未安装，请运行: pip install neo4j")
+            logger.warning("[KnowledgeGraph] neo4j 驱动未安装，请运行: pip install neo4j")
             self._enabled = False
         except Exception as e:
-            print(f"[KnowledgeGraph] Neo4j 连接失败: {e}")
+            logger.error(f"[KnowledgeGraph] Neo4j 连接失败: {e}")
             self._enabled = False
 
     def add_entity(self, name: str, entity_type: str, properties: Dict = None):
@@ -70,7 +74,7 @@ class KnowledgeGraph:
             with self._driver.session() as session:
                 session.run(query, **props)
         except Exception as e:
-            print(f"[KnowledgeGraph] 添加实体失败: {e}")
+            logger.error(f"[KnowledgeGraph] 添加实体失败: {e}")
 
     def add_relationship(self, source: str, target: str,
                           relation_type: str, properties: Dict = None):
@@ -99,7 +103,7 @@ class KnowledgeGraph:
             with self._driver.session() as session:
                 session.run(query, source=source, target=target, **props)
         except Exception as e:
-            print(f"[KnowledgeGraph] 添加关系失败: {e}")
+            logger.error(f"[KnowledgeGraph] 添加关系失败: {e}")
 
     def add_news_analysis(self, news_item: Dict, entities: Dict,
                             llm_result: Dict = None):
@@ -182,7 +186,7 @@ class KnowledgeGraph:
                     for record in result
                 ]
         except Exception as e:
-            print(f"[KnowledgeGraph] 查询失败: {e}")
+            logger.error(f"[KnowledgeGraph] 查询失败: {e}")
             return []
 
     def get_graph_data_for_vis(self, center_entity: str = None,
@@ -234,23 +238,26 @@ class KnowledgeGraph:
                     "edges": edges
                 }
         except Exception as e:
-            print(f"[KnowledgeGraph] 获取可视化数据失败: {e}")
+            logger.error(f"[KnowledgeGraph] 获取可视化数据失败: {e}")
             return {"nodes": [], "edges": []}
 
     def close(self):
         """关闭 Neo4j 连接"""
         if self._driver:
             self._driver.close()
-            print("[KnowledgeGraph] Neo4j 连接已关闭")
+            logger.info("[KnowledgeGraph] Neo4j 连接已关闭")
 
 
 # 模块级单例
 _kg_instance = None
+_kg_lock = threading.Lock()
 
 
 def get_knowledge_graph() -> KnowledgeGraph:
-    """获取全局知识图谱单例"""
+    """获取全局知识图谱单例（线程安全）"""
     global _kg_instance
     if _kg_instance is None:
-        _kg_instance = KnowledgeGraph()
+        with _kg_lock:
+            if _kg_instance is None:
+                _kg_instance = KnowledgeGraph()
     return _kg_instance

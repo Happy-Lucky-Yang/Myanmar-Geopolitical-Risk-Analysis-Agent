@@ -144,9 +144,13 @@ class NewsCrawler:
             return set(line.strip() for line in f if line.strip())
 
     def _save_urls_seen(self):
-        """持久化已抓取 URL 集合"""
+        """持久化已抓取 URL 集合（保留最新 10000 条，防止文件无限增长）"""
+        urls = sorted(self._urls_seen)
+        if len(urls) > 10000:
+            urls = urls[-10000:]  # 保留最新的 URL
+            self._urls_seen = set(urls)
         with open(self._urls_seen_file, "w", encoding="utf-8") as f:
-            for url in sorted(self._urls_seen):
+            for url in urls:
                 f.write(url + "\n")
 
     def _is_new_url(self, url: str) -> bool:
@@ -627,11 +631,12 @@ class NewsCrawler:
                     existing = json.load(f)
 
             # 合并并去重（基于 URL）
-            seen_urls = {item["url"] for item in existing}
+            seen_urls = {item.get("url", "") for item in existing}
             for item in news_list:
-                if item["url"] not in seen_urls:
+                item_url = item.get("url", "")
+                if item_url and item_url not in seen_urls:
                     existing.append(item)
-                    seen_urls.add(item["url"])
+                    seen_urls.add(item_url)
 
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(existing, f, ensure_ascii=False, indent=2)

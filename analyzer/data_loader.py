@@ -6,9 +6,14 @@ import os
 import json
 import hashlib
 import re
+import logging
+import threading
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Set, Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataLoader:
@@ -51,39 +56,57 @@ class DataLoader:
 
     def load_csv(self, filepath: str) -> List[Dict]:
         """加载 CSV 文件"""
-        df = pd.read_csv(filepath, encoding="utf-8-sig")
-        return df.to_dict("records")
+        try:
+            df = pd.read_csv(filepath, encoding="utf-8-sig")
+            return df.to_dict("records")
+        except Exception as e:
+            logger.error(f"[DataLoader] CSV 加载失败 {filepath}: {e}")
+            return []
 
     def load_json(self, filepath: str) -> List[Dict]:
         """加载 JSON 文件"""
-        with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else [data]
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"[DataLoader] JSON 加载失败 {filepath}: {e}")
+            return []
 
     def load_raw_news(self, date: str = None) -> List[Dict]:
         """
-        加载原始新闻数据
+        加载原始新闻数据（合并所有数据源：缅华网 + GDELT + Myanmar Now）
 
         :param date: 日期（YYYYMMDD），默认加载最新文件
         :return: 新闻条目列表
         """
+        # 支持的文件前缀
+        prefixes = ["myanmar_news_", "gdelt_news_", "myanmar_now_", "rss_news_"]
+
         if date:
-            for ext in ["csv", "json"]:
-                path = os.path.join(self._raw_dir, f"myanmar_news_{date}.{ext}")
-                if os.path.exists(path):
-                    return self.load_csv(path) if ext == "csv" else self.load_json(path)
-            return []
+            all_news = []
+            for prefix in prefixes:
+                for ext in ["json", "csv"]:
+                    path = os.path.join(self._raw_dir, f"{prefix}{date}.{ext}")
+                    if os.path.exists(path):
+                        data = self.load_json(path) if ext == "json" else self.load_csv(path)
+                        all_news.extend(data)
+            return all_news
 
-        # 加载最新文件
-        files = sorted(
-            [f for f in os.listdir(self._raw_dir)
-             if f.startswith("myanmar_news_") and (f.endswith(".csv") or f.endswith(".json"))],
-            reverse=True
-        )
-        if not files:
-            return []
+        # 加载所有来源的最新文件
+        all_news = []
+        for prefix in prefixes:
+            files = sorted(
+                [f for f in os.listdir(self._raw_dir)
+                 if f.startswith(prefix) and (f.endswith(".json") or f.endswith(".csv"))],
+                reverse=True
+            )
+            if files:
+                filepath = os.path.join(self._raw_dir, files[0])
+                data = self.load_json(filepath) if filepath.endswith(".json") else self.load_csv(filepath)
+                all_news.extend(data)
 
-        filepath = os.path.join(self._raw_dir, files[0])
-        return self.load_csv(filepath) if filepath.endswith(".csv") else self.load_json(filepath)
+        return all_news
 
     def load_external_data(self, filename: str) -> List[Dict]:
         """加载外部数据（遥感指数、统计公报等）"""
@@ -152,7 +175,7 @@ class DataLoader:
 
         removed = len(news_list) - len(deduped)
         if removed > 0:
-            print(f"[DataLoader] 去重: 移除 {removed} 条重复新闻")
+            logger.info(f"[DataLoader] 去重: 移除 {removed} 条重复新闻")
 
         return deduped
 
@@ -184,7 +207,7 @@ class DataLoader:
             if item.get("content") or item.get("title")
         ]
 
-        print(f"[DataLoader] 预处理完成，剩余 {len(news_list)} 条新闻")
+        logger.info(f"[DataLoader] 预处理完成，剩余 {len(news_list)} 条新闻")
         return news_list
 
     # ============================================================
@@ -201,7 +224,7 @@ class DataLoader:
         df = pd.DataFrame(news_list)
         df.to_csv(filepath, index=False, encoding="utf-8-sig")
 
-        print(f"[DataLoader] 已保存至 {filepath}")
+        logger.info(f"[DataLoader] 已保存至 {filepath}")
         return filepath
 
     def save_analysis_result(self, result: Dict, filename: str = None) -> str:
@@ -254,11 +277,14 @@ class DataLoader:
 
 # 模块级单例
 _loader_instance = None
+_loader_lock = threading.Lock()
 
 
 def get_data_loader() -> DataLoader:
-    """获取全局数据加载器单例"""
+    """获取全局数据加载器单例（线程安全）"""
     global _loader_instance
     if _loader_instance is None:
-        _loader_instance = DataLoader()
+        with _loader_lock:
+            if _loader_instance is None:
+                _loader_instance = DataLoader()
     return _loader_instance

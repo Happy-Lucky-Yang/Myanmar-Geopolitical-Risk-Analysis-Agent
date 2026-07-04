@@ -18,6 +18,8 @@ numpy==1.26.4
 # ---------- NLP ----------
 LAC==2.1.2
 snownlp==0.12.3
+nltk==3.8.1                       # VADER 英文情感分析
+# 安装后需执行: python -c "import nltk; nltk.download('vader_lexicon')"
 
 # ---------- 大模型 API ----------
 openai==1.35.0

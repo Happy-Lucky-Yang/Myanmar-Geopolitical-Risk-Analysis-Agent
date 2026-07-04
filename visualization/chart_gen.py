@@ -2,6 +2,7 @@
 visualization.chart_gen - 图表生成模块
 使用 pyecharts 生成趋势折线图数据（返回 JSON 供前端渲染）
 """
+import threading
 from typing import List, Dict, Optional
 
 
@@ -133,11 +134,14 @@ class TrendChartGenerator:
 
 # 模块级单例
 _chart_instance = None
+_chart_lock = threading.Lock()
 
 
 def get_chart_generator() -> TrendChartGenerator:
-    """获取全局图表生成器单例"""
+    """获取全局图表生成器单例（线程安全）"""
     global _chart_instance
     if _chart_instance is None:
-        _chart_instance = TrendChartGenerator()
+        with _chart_lock:
+            if _chart_instance is None:
+                _chart_instance = TrendChartGenerator()
     return _chart_instance

@@ -3,8 +3,12 @@ analyzer.trend - 趋势分析模块
 提供移动平均、简单线性回归等统计方法，判断风险趋势（上升/下降/平稳）
 """
 from typing import List, Dict, Tuple
+import logging
+import threading
 import numpy as np
 from utils.config import get_trend_config
+
+logger = logging.getLogger(__name__)
 
 
 class TrendAnalyzer:
@@ -27,7 +31,7 @@ class TrendAnalyzer:
             window = self._ma_window
 
         if len(scores) < window:
-            print(f"[Trend] 数据点({len(scores)})不足窗口({window})，返回空序列")
+            logger.info(f"[Trend] 数据点({len(scores)})不足窗口({window})，返回空序列")
             return []
 
         arr = np.array(scores, dtype=float)
@@ -331,11 +335,14 @@ class TrendAnalyzer:
 
 # 模块级单例
 _trend_instance = None
+_trend_lock = threading.Lock()
 
 
 def get_trend_analyzer() -> TrendAnalyzer:
-    """获取全局趋势分析器单例"""
+    """获取全局趋势分析器单例（线程安全）"""
     global _trend_instance
     if _trend_instance is None:
-        _trend_instance = TrendAnalyzer()
+        with _trend_lock:
+            if _trend_instance is None:
+                _trend_instance = TrendAnalyzer()
     return _trend_instance

@@ -145,11 +145,16 @@ def step_ner_sentiment(news_list: list) -> list:
             print(f"  [警告] NER 失败 (#{i}): {e}")
             item["entities"] = {}
 
-        # 情感分析
+        # 情感分析（双语感知：传递 language 和 gdelt_tone）
         try:
-            sent_result = sentiment.get_risk_sentiment(text)
+            lang = item.get("language", None)
+            gdelt_tone = item.get("gdelt_tone", None)
+            sent_result = sentiment.get_risk_sentiment(
+                text, lang=lang, gdelt_tone=gdelt_tone
+            )
             item["sentiment_score"] = sent_result["sentiment_score"]
             item["risk_sentiment"] = sent_result["risk_level"]
+            item["sentiment_source"] = sent_result.get("source", "unknown")
         except Exception as e:
             print(f"  [警告] 情感分析失败 (#{i}): {e}")
             item["sentiment_score"] = 0.5

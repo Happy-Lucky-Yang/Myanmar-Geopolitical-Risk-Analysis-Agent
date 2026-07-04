@@ -10,6 +10,7 @@ data.gdelt_crawler - GDELT 数据适配器
 import os
 import json
 import logging
+import threading
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -53,9 +54,13 @@ class GDELTCrawler:
             return set(line.strip() for line in f if line.strip())
 
     def _save_urls_seen(self):
-        """持久化已处理 URL 集合"""
+        """持久化已处理 URL 集合（上限 10000）"""
+        urls = sorted(self._urls_seen)
+        if len(urls) > 10000:
+            urls = urls[-10000:]
+            self._urls_seen = set(urls)
         with open(self._urls_seen_file, "w", encoding="utf-8") as f:
-            for url in sorted(self._urls_seen):
+            for url in urls:
                 f.write(url + "\n")
 
     def _is_new_url(self, url: str) -> bool:
@@ -114,15 +119,19 @@ class GDELTCrawler:
             # social_embeddata 包含文章的社交媒体嵌入信息
             content = str(social_embed)[:500]
 
+        # 自动检测语言：根据 title 内容判断（而非硬编码 "en"）
+        title = raw_article.get("title", "")
+        lang = "zh" if any('\u4e00' <= c <= '\u9fff' for c in title) else "en"
+
         return {
             # === 与 NewsCrawler 兼容的标准字段 ===
-            "title": raw_article.get("title", ""),
+            "title": title,
             "pub_time": pub_time,
             "content": content,
             "url": url,
             "source": "GDELT",
             "source_website": source_domain,
-            "language": "en",  # GDELT 查询默认为英文
+            "language": lang,
             "crawled_at": datetime.now().isoformat(),
 
             # === GDELT 专有扩展字段 ===
@@ -153,7 +162,10 @@ class GDELTCrawler:
         use_multi = self._cfg.get("use_multi_query", True)
 
         if use_multi:
+            # 从 config 读取关键词列表（支持中英文双语）
+            queries = self._cfg.get("query_keywords", None)
             raw_articles = self._client.search_articles_multi(
+                queries=queries,  # None 时使用 gdelt_client 内置默认值
                 timespan_days=days,
                 source_country=self._cfg.get("source_country", "BM"),
                 max_results_per_query=self._cfg.get("max_results", 100),
@@ -239,11 +251,22 @@ class GDELTCrawler:
             logger.info("[GDELT Crawler] 未启用，返回默认指标")
             return compute_gdelt_risk_metrics([])
 
-        raw_articles = self._client.search_articles(
-            timespan_days=timespan_days,
-            source_country=self._cfg.get("source_country", "BM"),
-            max_results=self._cfg.get("max_results", 100),
-        )
+        # 使用多关键词查询（与 crawl() 一致）
+        use_multi = self._cfg.get("use_multi_query", True)
+        if use_multi:
+            queries = self._cfg.get("query_keywords", None)
+            raw_articles = self._client.search_articles_multi(
+                queries=queries,
+                timespan_days=timespan_days,
+                source_country=self._cfg.get("source_country", "BM"),
+                max_results_per_query=self._cfg.get("max_results", 100),
+            )
+        else:
+            raw_articles = self._client.search_articles(
+                timespan_days=timespan_days,
+                source_country=self._cfg.get("source_country", "BM"),
+                max_results=self._cfg.get("max_results", 100),
+            )
 
         return compute_gdelt_risk_metrics(raw_articles)
 
@@ -253,11 +276,14 @@ class GDELTCrawler:
 # ============================================================
 
 _gdelt_crawler_instance = None
+_gdelt_crawler_lock = threading.Lock()
 
 
 def get_gdelt_crawler() -> GDELTCrawler:
-    """获取全局 GDELT 爬虫单例"""
+    """获取全局 GDELT 爬虫单例（线程安全）"""
     global _gdelt_crawler_instance
     if _gdelt_crawler_instance is None:
-        _gdelt_crawler_instance = GDELTCrawler()
+        with _gdelt_crawler_lock:
+            if _gdelt_crawler_instance is None:
+                _gdelt_crawler_instance = GDELTCrawler()
     return _gdelt_crawler_instance

@@ -4,7 +4,11 @@ analyzer.ner - 命名实体识别模块
 提取地名、组织名、人名等实体，输出统一格式
 """
 import re
+import logging
+import threading
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 # 中文 NER：百度 LAC
 try:
@@ -45,7 +49,7 @@ class NERExtractor:
             if LAC is None:
                 raise ImportError("LAC 未安装，请运行: pip install lac==2.1.2")
             self._lac = LAC(mode="lac")
-            print("[NER] LAC 中文模型加载完成")
+            logger.info("[NER] LAC 中文模型加载完成")
 
     def _ensure_spacy_loaded(self):
         """确保 spaCy 英文模型已加载"""
@@ -53,7 +57,7 @@ class NERExtractor:
             if spacy is None:
                 raise ImportError("spaCy 未安装，请运行: pip install spacy && python -m spacy download en_core_web_sm")
             self._nlp_en = spacy.load("en_core_web_sm")
-            print("[NER] spaCy 英文模型加载完成")
+            logger.info("[NER] spaCy 英文模型加载完成")
 
     def _detect_language(self, text: str) -> str:
         """简单语言检测：基于中文字符比例"""
@@ -150,11 +154,14 @@ class NERExtractor:
 
 # 模块级单例
 _ner_instance = None
+_ner_lock = threading.Lock()
 
 
 def get_ner_extractor() -> NERExtractor:
-    """获取全局 NER 单例"""
+    """获取全局 NER 单例（线程安全）"""
     global _ner_instance
     if _ner_instance is None:
-        _ner_instance = NERExtractor()
+        with _ner_lock:
+            if _ner_instance is None:
+                _ner_instance = NERExtractor()
     return _ner_instance

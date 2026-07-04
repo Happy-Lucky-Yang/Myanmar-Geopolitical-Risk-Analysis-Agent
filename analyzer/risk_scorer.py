@@ -8,23 +8,41 @@ analyzer.risk_scorer - 多指标加权风险评分模块
   - 日/周风险分计算
   - 线性插值填充缺失值
 """
+import logging
+import threading
 from typing import Dict, List
 import numpy as np
 from utils.config import get_risk_weights
+
+logger = logging.getLogger(__name__)
+
+# 默认权重（当 config.yaml 未配置时使用）
+DEFAULT_WEIGHTS = {
+    "conflict_frequency": 0.30,
+    "sentiment_avg": 0.25,
+    "nightlight_change": 0.20,
+    "refugee_change": 0.15,
+    "event_severity": 0.10,
+}
 
 
 class RiskScorer:
     """多指标加权风险评分器"""
 
     def __init__(self, weights: Dict[str, float] = None):
-        self._weights = weights or get_risk_weights()
+        raw_weights = weights or get_risk_weights()
+        self._weights = raw_weights if raw_weights else DEFAULT_WEIGHTS
         self._validate_weights()
 
     def _validate_weights(self):
         """校验权重之和是否为 1.0（允许浮点误差）"""
+        if not self._weights:
+            logger.warning("[RiskScorer] 权重为空，使用默认权重")
+            self._weights = DEFAULT_WEIGHTS
+            return
         total = sum(self._weights.values())
         if abs(total - 1.0) > 0.01:
-            print(f"[RiskScorer] 警告：权重之和为 {total:.4f}，不等于 1.0")
+            logger.warning(f"[RiskScorer] 权重之和为 {total:.4f}，不等于 1.0")
 
     # ============================================================
     # 归一化
@@ -246,11 +264,14 @@ class RiskScorer:
 
 # 模块级单例
 _scorer_instance = None
+_scorer_lock = threading.Lock()
 
 
 def get_risk_scorer() -> RiskScorer:
-    """获取全局风险评分器单例"""
+    """获取全局风险评分器单例（线程安全）"""
     global _scorer_instance
     if _scorer_instance is None:
-        _scorer_instance = RiskScorer()
+        with _scorer_lock:
+            if _scorer_instance is None:
+                _scorer_instance = RiskScorer()
     return _scorer_instance

@@ -45,10 +45,14 @@ from data.scheduler import get_scheduler
 app = Flask(__name__)
 CORS(app)  # 允许前端跨域请求
 
-# 启动后台调度器（仅在非 debug reloader 子进程中启动）
-# Flask debug 模式下会启动两个进程，避免调度器重复启动
+# 启动后台调度器（仅在 Flask 实际服务进程中启动）
+# Flask debug 模式下：父进程 (reloader) WERKZEUG_RUN_MAIN 未设置 → 不启动
+#                      子进程 (实际服务) WERKZEUG_RUN_MAIN="true" → 启动
+# 非 debug 模式：直接启动
 import os as _os
-if _os.environ.get("WERKZEUG_RUN_MAIN") != "true" or not load_config().get("flask", {}).get("debug", True):
+_werkzeug_child = _os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+_not_debug = not load_config().get("flask", {}).get("debug", True)
+if _werkzeug_child or _not_debug:
     _scheduler = get_scheduler()
     _scheduler.start()
 
@@ -113,10 +117,24 @@ def analyze():
     """
     try:
         req_data = request.get_json()
-        if not req_data or "text" not in req_data:
+        if not req_data or not isinstance(req_data, dict):
+            return jsonify({"success": False, "error": "请求体必须为 JSON 对象"}), 400
+
+        if "text" not in req_data:
             return jsonify({"success": False, "error": "缺少 'text' 字段"}), 400
 
         text = req_data["text"]
+        if not isinstance(text, str) or not text.strip():
+            return jsonify({"success": False, "error": "'text' 必须为非空字符串"}), 400
+
+        # 输入长度限制（防止 DoS）
+        MAX_TEXT_LENGTH = 10000
+        if len(text) > MAX_TEXT_LENGTH:
+            return jsonify({
+                "success": False,
+                "error": f"文本过长 ({len(text)} 字符)，最大支持 {MAX_TEXT_LENGTH} 字符"
+            }), 400
+
         instruction = req_data.get("instruction", None)
 
         # 1. 文本预处理
@@ -127,7 +145,7 @@ def analyze():
         ner = get_ner_extractor()
         entities = ner.extract_entities(cleaned_text)
 
-        # 3. 情感分析
+        # 3. 情感分析（双语感知：中文 SnowNLP / 英文 VADER）
         sentiment_analyzer = get_sentiment_analyzer()
         sentiment_result = sentiment_analyzer.get_risk_sentiment(cleaned_text)
 

@@ -224,12 +224,20 @@ class GDELTClient:
         seen_urls = set()
 
         for i, q in enumerate(queries):
-            logger.info(f"[GDELT] 多关键词查询 ({i+1}/{len(queries)}): '{q}'")
+            # 自动检测查询语言，设置语言过滤
+            query_lang = None
+            if any('\u4e00' <= c <= '\u9fff' for c in q):
+                query_lang = "chinese"  # 中文查询
+            else:
+                query_lang = "english"  # 英文查询
+
+            logger.info(f"[GDELT] 多关键词查询 ({i+1}/{len(queries)}): '{q}' [lang={query_lang}]")
             articles = self.search_articles(
                 query=q,
                 timespan_days=timespan_days,
                 source_country=source_country,
                 max_results=max_results_per_query or self._max_results,
+                language=query_lang,
             )
 
             for article in articles:

@@ -81,31 +81,51 @@ class CrawlerScheduler:
     # ============================================================
 
     def _run_crawl_job(self):
-        """执行新闻爬取任务"""
+        """执行新闻爬取任务（缅华网 + 英文媒体 + RSS 源）"""
         logger.info(f"[Scheduler] ====== 新闻爬取开始: {datetime.now()} ======")
         self._last_crawl_time = datetime.now()
         
+        all_news = []
+        
+        # 1a: 缅华网爬虫
         try:
             from data.crawler import NewsCrawler
             crawler = NewsCrawler()
             news = crawler.crawl_all_sources()
-            filepath = crawler.save_news(news)
-            
-            self._last_crawl_result = {
-                "success": True,
-                "count": len(news),
-                "filepath": filepath,
-                "time": self._last_crawl_time.isoformat()
-            }
-            logger.info(f"[Scheduler] 爬取完成: {len(news)} 条新闻")
-            
+            crawler.save_news(news)
+            all_news.extend(news)
+            logger.info(f"[Scheduler] 缅华网: {len(news)} 条")
         except Exception as e:
-            self._last_crawl_result = {
-                "success": False,
-                "error": str(e),
-                "time": self._last_crawl_time.isoformat()
-            }
-            logger.error(f"[Scheduler] 爬取失败: {e}", exc_info=True)
+            logger.error(f"[Scheduler] 缅华网爬取失败: {e}", exc_info=True)
+        
+        # 1b: 英文媒体（Myanmar Now + Irrawaddy）
+        try:
+            from data.myanmar_now_crawler import get_english_crawler
+            en_crawler = get_english_crawler()
+            en_news = en_crawler.crawl_all()
+            en_crawler.save_news(en_news)
+            all_news.extend(en_news)
+            logger.info(f"[Scheduler] 英文媒体: {len(en_news)} 条")
+        except Exception as e:
+            logger.error(f"[Scheduler] 英文媒体爬取失败: {e}", exc_info=True)
+        
+        # 1c: RSS 新闻源（Frontier Myanmar + DVB + The Diplomat）
+        try:
+            from data.rss_crawler import get_rss_crawler
+            rss_crawler = get_rss_crawler()
+            rss_news = rss_crawler.crawl_all()
+            rss_crawler.save_news(rss_news)
+            all_news.extend(rss_news)
+            logger.info(f"[Scheduler] RSS 源: {len(rss_news)} 条")
+        except Exception as e:
+            logger.error(f"[Scheduler] RSS 爬取失败: {e}", exc_info=True)
+        
+        self._last_crawl_result = {
+            "success": True,
+            "count": len(all_news),
+            "time": self._last_crawl_time.isoformat()
+        }
+        logger.info(f"[Scheduler] 爬取完成: 共 {len(all_news)} 条新闻")
 
     def _run_gdelt_job(self):
         """执行 GDELT 查询任务"""
@@ -164,20 +184,29 @@ class CrawlerScheduler:
                 logger.warning("[Scheduler] 无数据可分析")
                 return
             
-            # NER + 情感分析
+            # NER + 情感分析（双语感知）
             ner = get_ner_extractor()
             sentiment = get_sentiment_analyzer()
             
             for item in news_list:
                 text = item.get("content", "") or item.get("title", "")
+                lang = item.get("language", None)  # "zh" / "en" / None
+                
                 if text:
-                    # 情感分析
-                    sent_result = sentiment.get_risk_sentiment(text)
+                    # 情感分析：GDELT 文章优先使用预计算的 tone
+                    gdelt_tone = item.get("gdelt_tone", None)
+                    sent_result = sentiment.get_risk_sentiment(
+                        text, lang=lang, gdelt_tone=gdelt_tone
+                    )
                     item["sentiment_score"] = sent_result.get("risk_score", 0.5)
+                    item["sentiment_source"] = sent_result.get("source", "unknown")
                     
-                    # NER
-                    entities = ner.extract(text)
-                    item["entities"] = entities
+                    # NER（自动语言检测）
+                    try:
+                        entities = ner.extract_entities(text)
+                        item["entities"] = entities
+                    except ImportError:
+                        item["entities"] = {"locations": [], "organizations": [], "persons": [], "events": []}
             
             # 风险评分
             scorer = get_risk_scorer()
@@ -318,13 +347,16 @@ class CrawlerScheduler:
 # ============================================================
 
 _scheduler_instance = None
+_scheduler_lock = threading.Lock()
 
 
 def get_scheduler() -> CrawlerScheduler:
-    """获取全局调度器单例"""
+    """获取全局调度器单例（线程安全）"""
     global _scheduler_instance
     if _scheduler_instance is None:
-        _scheduler_instance = CrawlerScheduler()
+        with _scheduler_lock:
+            if _scheduler_instance is None:
+                _scheduler_instance = CrawlerScheduler()
     return _scheduler_instance
 
 

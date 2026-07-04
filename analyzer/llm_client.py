@@ -6,6 +6,7 @@ analyzer.llm_client - 大模型 API 调用模块
 import json
 import time
 import logging
+import threading
 from typing import Dict, Optional, List
 from openai import OpenAI
 from utils.config import get_llm_config
@@ -173,11 +174,14 @@ class LLMClient:
 
 # 模块级单例
 _llm_instance = None
+_llm_lock = threading.Lock()
 
 
 def get_llm_client() -> LLMClient:
-    """获取全局 LLM 客户端单例"""
+    """获取全局 LLM 客户端单例（线程安全）"""
     global _llm_instance
     if _llm_instance is None:
-        _llm_instance = LLMClient()
+        with _llm_lock:
+            if _llm_instance is None:
+                _llm_instance = LLMClient()
     return _llm_instance

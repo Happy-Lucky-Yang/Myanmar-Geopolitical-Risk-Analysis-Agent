@@ -2,6 +2,7 @@
 visualization.map_gen - 地图生成模块
 使用 folium 生成缅甸省级风险热力地图，返回 HTML 字符串
 """
+import threading
 from typing import List, Dict, Optional
 import folium
 from folium.plugins import HeatMap
@@ -142,11 +143,14 @@ class RiskMapGenerator:
 
 # 模块级单例
 _map_instance = None
+_map_lock = threading.Lock()
 
 
 def get_map_generator() -> RiskMapGenerator:
-    """获取全局地图生成器单例"""
+    """获取全局地图生成器单例（线程安全）"""
     global _map_instance
     if _map_instance is None:
-        _map_instance = RiskMapGenerator()
+        with _map_lock:
+            if _map_instance is None:
+                _map_instance = RiskMapGenerator()
     return _map_instance

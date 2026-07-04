@@ -3,7 +3,7 @@
 ## 项目简介
 本项目旨在构建一个轻量级、可复现的缅甸地缘风险分析原型系统。系统以新闻舆情数据为主要输入，通过自然语言处理（LAC 分词/NER、SnowNLP 情感分析）、大模型 API 调用和基础统计模型（加权打分、移动平均、线性回归），实现风险评分（0-100）、趋势判断与可视化展示。项目由华东师范大学本科生创新团队开发，作为"区域国别地缘环境智能计算研究"大创项目的技术实现。
 
-> **数据说明**：当前系统已接入 **GDELT 全球事件数据库**（DOC 2.0 API）和缅甸缅华网新闻数据。申报书中规划的夜间灯光遥感数据（NASA VIIRS）和宏观经济/难民统计数据尚**未接入**，相关指标在风险评分中暂以 0 值占位。
+> **数据说明**：当前系统已接入 **4 类数据源**：缅甸缅华网（中文）、GDELT 全球事件数据库（DOC 2.0 API，中英文双语查询）、Myanmar Now + The Irrawaddy（英文独立媒体）、Frontier Myanmar + DVB（RSS 新闻订阅）。申报书中规划的夜间灯光遥感数据（NASA VIIRS）和宏观经济/难民统计数据尚**未接入**，相关指标在风险评分中暂以 0 值占位。
 
 ## 团队分工
 | 角色 | 姓名 | 主要任务 |
@@ -25,14 +25,16 @@ myanmar-risk-system/
 │   ├── __init__.py
 │   ├── data_loader.py            # 数据读取与清洗
 │   ├── ner.py                    # 命名实体识别（LAC）
-│   ├── sentiment.py              # 情感分析（SnowNLP）
+│   ├── sentiment.py              # 双语情感分析（SnowNLP中文 + VADER英文）
 │   ├── llm_client.py             # 大模型API调用封装
 │   ├── prompts.py                # 提示词模板库
 │   ├── risk_scorer.py            # 加权打分模型（0-100分制）
 │   ├── trend.py                  # 趋势计算（移动平均 + 线性回归）
 │   └── knowledge_graph.py        # Neo4j操作（可选）
 ├── data/                         # 数据存储（不提交原始大文件）
-│   ├── crawler.py                # 新闻爬虫（缅华网等）
+│   ├── crawler.py                # 新闻爬虫（缅华网，中文）
+│   ├── myanmar_now_crawler.py    # 英文新闻爬虫（Myanmar Now + Irrawaddy）
+│   ├── rss_crawler.py            # RSS 新闻源爬虫（Frontier Myanmar + DVB）
 │   ├── gdelt_client.py           # GDELT DOC 2.0 API 客户端
 │   ├── gdelt_crawler.py          # GDELT 数据适配器（输出兼容格式）
 │   ├── scheduler.py              # 统一定时调度器（后台线程）
@@ -125,23 +127,25 @@ python run_crawler_only.py --gdelt
 ## 当前进度（截至 2026-07-03）
 
 ### ✅ 已完成
-- 缅华网新闻爬虫（含真实爬取数据 15 条，`data/raw/myanmar_news_20260615.json`）
-- **GDELT 全球事件数据库接入**（DOC 2.0 API，含冲突事件编码分析、情感分数、地理位置提取）
+- **缅华网新闻爬虫**（中文，含真实爬取数据 15 条，`data/raw/myanmar_news_20260615.json`）
+- **GDELT 全球事件数据库接入**（DOC 2.0 API，中英文双语查询，含冲突事件编码分析、情感分数、地理位置提取）
+- **Myanmar Now + Irrawaddy 英文爬虫**（独立英文媒体，自动去重、正文提取）
+- **RSS 新闻源爬虫**（Frontier Myanmar + DVB，RSS/Atom 标准格式解析）
 - 中文 NER（百度 LAC）+ 英文 NER（spaCy，可选）
-- 情感分析（SnowNLP，风险视角转换；GDELT tone 辅助融合）
+- **双语情感分析**：中文 SnowNLP + 英文 VADER + GDELT tone 优先融合（数据来源明确标注）
 - 风险评分框架：5 项指标中 3 项已接入（冲突频次、情感均值、事件严重程度），加权 0-100 分制
   - 冲突频次：中文关键词匹配 + GDELT CAMEO 事件码融合
   - 事件严重程度：GDELT 事件编码分类（冲突/动荡/外交）
 - 趋势分析：移动平均、线性回归、异常检测（Z-score）、STL 简化分解
 - 短期预测：基于线性回归斜率外推 7 天
 - Flask Web 应用：3 个页面 + **7 个 API 接口**（含 `/api/gdelt`、`/api/scheduler`）
-- **自动定时调度器**（后台线程，缅华网每 4h、GDELT 每 6h、分析每 12h，可在 config.yaml 调整）
+- **自动定时调度器**（后台线程，缅华网每 4h、GDELT 每 6h、RSS 同步爬取、分析每 12h）
 - 全流程集成脚本（`run_full_pipeline.py`，含 `--demo` 模式）
 - 爬虫模块单元测试
 
 ### ⚠️ 部分完成
 - 大模型 API 调用（代码框架完整，含重试/降级/JSON 解析，但 API 端点为占位符，需接入可用端点）
-- 路透社 / 伊洛瓦底报爬虫（骨架代码已有，`config.yaml` 中 `enabled: false`，待适配启用）
+- 路透社爬虫（反爬较强，`config.yaml` 中 `enabled: false`）
 - Neo4j 知识图谱（代码完整，`config.yaml` 中 `enabled: false`，`neo4j` 驱动未安装）
 
 ### ❌ 待开发

@@ -37,6 +37,12 @@ def load_config(config_path: str = None) -> dict:
     return _config_cache
 
 
+def reset_config():
+    """重置配置缓存（用于热重载或测试）"""
+    global _config_cache
+    _config_cache = None
+
+
 def get_llm_config() -> dict:
     """获取大模型 API 配置"""
     cfg = load_config()

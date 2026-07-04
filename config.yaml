@@ -37,7 +37,11 @@ crawler:
       language: "en"
     - name: "伊洛瓦底报"
       url: "https://www.irrawaddy.com/news/burma"
-      enabled: false   # 待适配后开启
+      enabled: false   # 已迁移至 myanmar_now_crawler.py
+      language: "en"
+    - name: "Myanmar Now"
+      url: "https://www.myanmar-now.org/en/news"
+      enabled: true    # 通过 myanmar_now_crawler.py 爬取
       language: "en"
 
 # ---------- GDELT 全球事件数据库 ----------
@@ -52,13 +56,34 @@ gdelt:
   timeout: 30                         # 请求超时（秒）
   backoff: 5                          # 重试退避基数（GDELT 要求每 5 秒一个请求）
   use_multi_query: true               # 使用多关键词查询（覆盖面更广）
-  # 多关键词查询列表（use_multi_query=true 时使用）
+  # 多关键词查询列表（use_multi_query=true 时使用，支持中英文混合）
   query_keywords:
     - "Myanmar conflict"
     - "Myanmar military ceasefire"
     - "Myanmar refugee crisis"
     - "Myanmar sanctions"
     - "Myanmar China economic"
+    - "缅甸 冲突"                   # 中文查询（自动语言检测）
+    - "缅甸 制裁"                   # 中文查询
+    - "缅甸 难民"                   # 中文查询
+
+# ---------- RSS/Atom 新闻源 ----------
+rss_feeds:
+  frontier_myanmar:
+    name: "Frontier Myanmar"
+    rss_url: "https://www.frontiermyanmar.net/en/feed"
+    enabled: true
+    language: "en"
+  dvb:
+    name: "Democratic Voice of Burma"
+    rss_url: "https://www.dvb.no.org/feed"
+    enabled: true
+    language: "en"
+  diplomat_myanmar:
+    name: "The Diplomat (Myanmar)"
+    rss_url: "https://thediplomat.com/feed/"
+    enabled: false   # 有付费墙，先关闭
+    language: "en"
 
 # ---------- 数据存储 ----------
 storage:
