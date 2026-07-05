@@ -42,7 +42,7 @@ class GDELTCrawler:
         # 增量去重
         self._urls_seen_file = os.path.join(self._raw_dir, "gdelt_urls_seen.txt")
         self._urls_seen = self._load_urls_seen()
-        self._urls_lock = threading.Lock()  # URL 集合并发保护
+        self._operation_lock = threading.Lock()  # 统一实例级操作锁（URL集合 + 缓存 + 文件写入）
 
         # GDELT 指标缓存（TTL = 5分钟，避免频繁调用 API）
         self._metrics_cache = None
@@ -61,19 +61,20 @@ class GDELTCrawler:
             return set(line.strip() for line in f if line.strip())
 
     def _save_urls_seen(self):
-        """持久化已处理 URL 集合（上限 10000）"""
-        urls = sorted(self._urls_seen)
-        if len(urls) > 10000:
-            urls = urls[-10000:]
-            self._urls_seen = set(urls)
-        with open(self._urls_seen_file, "w", encoding="utf-8") as f:
-            for url in urls:
-                f.write(url + "\n")
+        """持久化已处理 URL 集合（上限 10000，持锁保护）"""
+        with self._operation_lock:
+            urls = sorted(self._urls_seen)
+            if len(urls) > 10000:
+                urls = urls[-10000:]
+                self._urls_seen = set(urls)
+            with open(self._urls_seen_file, "w", encoding="utf-8") as f:
+                for url in urls:
+                    f.write(url + "\n")
 
     def _is_new_url(self, url: str) -> bool:
         """检查 URL 是否为新链接（线程安全）"""
         normalized = url.rstrip("/")
-        with self._urls_lock:
+        with self._operation_lock:
             if normalized in self._urls_seen:
                 return False
             self._urls_seen.add(normalized)
@@ -255,13 +256,14 @@ class GDELTCrawler:
         :param timespan_days: 查询最近多少天
         :return: compute_gdelt_risk_metrics() 的返回字典
         """
-        # 检查缓存是否有效
+        # 检查缓存是否有效（加锁保护，防止多线程同时过期重复调 API）
         now = time.time()
-        if (self._metrics_cache is not None
-                and self._metrics_cache.get("_timespan") == timespan_days
-                and (now - self._metrics_cache_time) < self._metrics_ttl):
-            logger.debug("[GDELT Crawler] 使用缓存指标")
-            return self._metrics_cache
+        with self._operation_lock:
+            if (self._metrics_cache is not None
+                    and self._metrics_cache.get("_timespan") == timespan_days
+                    and (now - self._metrics_cache_time) < self._metrics_ttl):
+                logger.debug("[GDELT Crawler] 使用缓存指标")
+                return self._metrics_cache
 
         if not self._enabled:
             logger.info("[GDELT Crawler] 未启用，返回默认指标")
@@ -287,9 +289,10 @@ class GDELTCrawler:
         result = compute_gdelt_risk_metrics(raw_articles)
         result["_timespan"] = timespan_days
 
-        # 更新缓存
-        self._metrics_cache = result
-        self._metrics_cache_time = now
+        # 更新缓存（加锁保护）
+        with self._operation_lock:
+            self._metrics_cache = result
+            self._metrics_cache_time = now
 
         return result
 
