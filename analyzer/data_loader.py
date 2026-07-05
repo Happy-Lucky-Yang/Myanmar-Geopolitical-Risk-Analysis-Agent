@@ -45,6 +45,7 @@ class DataLoader:
         self._raw_dir = raw_dir
         self._processed_dir = processed_dir
         self._external_dir = external_dir
+        self._write_lock = threading.Lock()  # JSONL 并发写入锁
 
         # 确保目录存在
         for d in [raw_dir, processed_dir, external_dir]:
@@ -244,23 +245,39 @@ class DataLoader:
     # ============================================================
 
     def load_risk_history(self, days: int = 30) -> List[Dict]:
-        """加载历史风险评分数据"""
+        """
+        加载历史风险评分数据
+        容错处理：跳过损坏行并记录 warning，不会因单行损坏而崩溃
+        """
         history_file = os.path.join(self._processed_dir, "risk_scores.jsonl")
         if not os.path.exists(history_file):
             return []
 
         records = []
+        bad_lines = 0
         with open(history_file, "r", encoding="utf-8") as f:
-            for line in f:
+            for line_no, line in enumerate(f, 1):
                 line = line.strip()
-                if line:
+                if not line:
+                    continue
+                try:
                     records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    bad_lines += 1
+                    logger.warning(
+                        f"[DataLoader] risk_scores.jsonl 第 {line_no} 行损坏，已跳过"
+                    )
+
+        if bad_lines > 0:
+            logger.warning(
+                f"[DataLoader] risk_scores.jsonl 共 {bad_lines} 行损坏"
+            )
 
         return records[-days:] if records else []
 
     def append_risk_score(self, date: str, risk_score: float, risk_level: str,
                           details: Dict = None):
-        """追加一条风险评分记录"""
+        """追加一条风险评分记录（线程安全，使用写入锁）"""
         history_file = os.path.join(self._processed_dir, "risk_scores.jsonl")
 
         record = {
@@ -271,8 +288,9 @@ class DataLoader:
             "recorded_at": datetime.now().isoformat()
         }
 
-        with open(history_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with self._write_lock:
+            with open(history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 # 模块级单例

@@ -12,7 +12,7 @@ import logging
 import threading
 from typing import Dict, List
 import numpy as np
-from utils.config import get_risk_weights
+from utils.config import get_risk_weights, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,10 @@ DEFAULT_WEIGHTS = {
     "refugee_change": 0.15,
     "event_severity": 0.10,
 }
+
+# 占位指标：尚未接入真实数据源的指标键名
+# 当这些指标值为 0 时，其权重将被重新分配给有效指标
+PLACEHOLDER_INDICATORS = {"nightlight_change", "refugee_change"}
 
 
 class RiskScorer:
@@ -86,25 +90,61 @@ class RiskScorer:
         """
         计算加权综合风险分（0-100 分制）
 
+        动态权重归一化：
+          - 占位指标（nightlight_change / refugee_change）若值为 0，
+            其权重按比例重新分配给有效指标，避免评分被"僵尸权重"稀释
+
         :param indicators: 各指标值（已归一化到 0~1）
         :return: {
             "risk_score": 62.5,      # 0-100
             "risk_level": "中风险",
             "indicator_scores": {...},
-            "weights_used": {...}
+            "weights_used": {...},
+            "weight_rebalanced": bool  # 是否发生了动态归一化
         }
         """
+        # ------ 动态权重归一化 ------
+        effective_weights = {}
+        skipped_weights = {}
+        for key, weight in self._weights.items():
+            value = indicators.get(key, 0.0)
+            # 占位指标且值为 0 → 跳过（视为无数据源）
+            if key in PLACEHOLDER_INDICATORS and value <= 0.0:
+                skipped_weights[key] = weight
+                continue
+            effective_weights[key] = weight
+
+        # 归一化有效权重到 1.0
+        rebalanced = False
+        total = sum(effective_weights.values())
+        if total > 0 and abs(total - 1.0) > 0.001:
+            effective_weights = {k: v / total for k, v in effective_weights.items()}
+            rebalanced = True
+        elif total <= 0:
+            # 全部指标都为 0 的极端情况 → 使用原始权重
+            effective_weights = dict(self._weights)
+
+        # ------ 加权评分 ------
         score = 0.0
         weighted_details = {}
-        for key, weight in self._weights.items():
+        for key, weight in effective_weights.items():
             value = indicators.get(key, 0.0)
             value = max(0.0, min(1.0, value))
             contribution = value * weight
             score += contribution
             weighted_details[key] = {
                 "value": round(value, 4),
-                "weight": weight,
+                "weight": round(weight, 4),
                 "contribution": round(contribution, 4)
+            }
+
+        # 记录被跳过的占位指标
+        for key, weight in skipped_weights.items():
+            weighted_details[key] = {
+                "value": 0.0,
+                "weight": 0.0,
+                "contribution": 0.0,
+                "note": "占位指标（数据源未接入）"
             }
 
         # 转换为 0-100 分制
@@ -118,11 +158,18 @@ class RiskScorer:
         else:
             level = "低风险"
 
+        if rebalanced:
+            logger.debug(
+                f"[RiskScorer] 动态归一化: 跳过 {list(skipped_weights.keys())}, "
+                f"有效权重 {list(effective_weights.keys())}"
+            )
+
         return {
             "risk_score": score_100,
             "risk_level": level,
             "indicator_scores": weighted_details,
-            "weights_used": self._weights
+            "weights_used": {k: round(v, 4) for k, v in effective_weights.items()},
+            "weight_rebalanced": rebalanced
         }
 
     # ============================================================
@@ -145,14 +192,17 @@ class RiskScorer:
 
         n = len(daily_news)
 
-        # 1. 冲突频次（基于关键词匹配）
-        conflict_keywords = [
-            "冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击",
-            "制裁", "政变", "难民", "抗议", "暴动",
-            # 英文关键词（GDELT 文章为英文）
-            "conflict", "attack", "airstrike", "armed", "ceasefire",
-            "sanction", "coup", "refugee", "protest", "military",
-        ]
+        # 1. 冲突频次（基于关键词匹配，从 config 读取）
+        _kw_cfg = load_config().get("conflict_keywords", {})
+        conflict_keywords = _kw_cfg.get("zh", []) + _kw_cfg.get("en", [])
+        if not conflict_keywords:
+            # 兜底默认值
+            conflict_keywords = [
+                "冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击",
+                "制裁", "政变", "难民", "抗议", "暴动",
+                "conflict", "attack", "airstrike", "armed", "ceasefire",
+                "sanction", "coup", "refugee", "protest", "military",
+            ]
         conflict_count = sum(
             1 for item in daily_news
             if any(kw.lower() in (item.get("text", "") or item.get("title", "")).lower()

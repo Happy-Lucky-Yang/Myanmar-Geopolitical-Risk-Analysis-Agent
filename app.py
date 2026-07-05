@@ -159,9 +159,11 @@ def analyze():
 
         # 5. 风险评分（0-100 分制）
         scorer = get_risk_scorer()
-        conflict_keywords_zh = ["冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击", "制裁"]
-        conflict_keywords_en = ["conflict", "attack", "airstrike", "armed", "ceasefire",
-                                "sanction", "coup", "refugee", "protest", "military"]
+        # 从 config 读取冲突关键词（带兜底默认值）
+        _kw_cfg = load_config().get("conflict_keywords", {})
+        conflict_keywords_zh = _kw_cfg.get("zh", ["冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击", "制裁"])
+        conflict_keywords_en = _kw_cfg.get("en", ["conflict", "attack", "airstrike", "armed", "ceasefire",
+                                "sanction", "coup", "refugee", "protest", "military"])
         text_lower = cleaned_text.lower()
         has_conflict = (
             any(kw in cleaned_text for kw in conflict_keywords_zh)
@@ -404,8 +406,8 @@ def trend():
         trend_analyzer = get_trend_analyzer()
         trend_result = trend_analyzer.full_analysis(scores)
 
-        # 简单预测（基于线性回归斜率外推 7 天）
-        forecast = _simple_forecast(scores, days_ahead=7)
+        # 预测（使用 trend.py 的完整线性回归外推，取代 _simple_forecast）
+        forecast_result = trend_analyzer.forecast(scores, days_ahead=7)
 
         # 异常检测
         anomalies = trend_analyzer.detect_anomalies(scores)
@@ -413,7 +415,12 @@ def trend():
         result = {
             "dates": dates,
             "history": scores,
-            "forecast": forecast,
+            "forecast": forecast_result["forecast"],
+            "forecast_meta": {
+                "slope": forecast_result["slope"],
+                "confidence": forecast_result["confidence"],
+                "r_squared": forecast_result.get("r_squared", 0.0)
+            },
             "trend_analysis": trend_result,
             "anomalies": anomalies
         }
@@ -465,41 +472,6 @@ def _build_province_risk_data(history: list) -> list:
         })
 
     return risk_data
-
-
-def _simple_forecast(scores: list, days_ahead: int = 7) -> list:
-    """
-    简单线性外推预测（基于最后 N 个数据点的斜率）
-
-    :param scores: 历史风险分序列
-    :param days_ahead: 预测天数
-    :return: 预测值列表
-    """
-    if len(scores) < 3:
-        return [scores[-1]] * days_ahead if scores else []
-
-    import numpy as np
-    # 用最后 7 个点做线性拟合
-    window = min(7, len(scores))
-    recent = np.array(scores[-window:], dtype=float)
-    x = np.arange(window, dtype=float)
-
-    # 简单最小二乘
-    n = len(x)
-    slope = (n * np.sum(x * recent) - np.sum(x) * np.sum(recent)) / \
-            (n * np.sum(x**2) - np.sum(x)**2)
-    intercept = (np.sum(recent) - slope * np.sum(x)) / n
-
-    # 外推
-    last_x = window - 1
-    forecast = []
-    for i in range(1, days_ahead + 1):
-        pred = slope * (last_x + i) + intercept
-        # 限制在 0-100 范围
-        pred = max(0, min(100, round(pred, 2)))
-        forecast.append(pred)
-
-    return forecast
 
 
 # ============================================================

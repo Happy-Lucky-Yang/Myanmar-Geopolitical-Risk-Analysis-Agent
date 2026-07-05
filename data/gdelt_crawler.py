@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -41,6 +42,12 @@ class GDELTCrawler:
         # 增量去重
         self._urls_seen_file = os.path.join(self._raw_dir, "gdelt_urls_seen.txt")
         self._urls_seen = self._load_urls_seen()
+        self._urls_lock = threading.Lock()  # URL 集合并发保护
+
+        # GDELT 指标缓存（TTL = 5分钟，避免频繁调用 API）
+        self._metrics_cache = None
+        self._metrics_cache_time = 0
+        self._metrics_ttl = self._cfg.get("metrics_cache_seconds", 300)
 
     # ============================================================
     # URL 去重
@@ -64,11 +71,12 @@ class GDELTCrawler:
                 f.write(url + "\n")
 
     def _is_new_url(self, url: str) -> bool:
-        """检查 URL 是否为新链接"""
+        """检查 URL 是否为新链接（线程安全）"""
         normalized = url.rstrip("/")
-        if normalized in self._urls_seen:
-            return False
-        self._urls_seen.add(normalized)
+        with self._urls_lock:
+            if normalized in self._urls_seen:
+                return False
+            self._urls_seen.add(normalized)
         return True
 
     # ============================================================
@@ -241,12 +249,20 @@ class GDELTCrawler:
         """
         查询 GDELT 并计算聚合风险指标
 
-        该方法可被 app.py 的 /api/analyze 接口调用，
-        用于替代硬编码的 conflict_frequency 和 event_severity。
+        TTL 缓存机制：同一 timespan_days 在缓存有效期内直接返回缓存结果，
+        避免 /api/analyze 每次请求都调用 GDELT API。
 
         :param timespan_days: 查询最近多少天
         :return: compute_gdelt_risk_metrics() 的返回字典
         """
+        # 检查缓存是否有效
+        now = time.time()
+        if (self._metrics_cache is not None
+                and self._metrics_cache.get("_timespan") == timespan_days
+                and (now - self._metrics_cache_time) < self._metrics_ttl):
+            logger.debug("[GDELT Crawler] 使用缓存指标")
+            return self._metrics_cache
+
         if not self._enabled:
             logger.info("[GDELT Crawler] 未启用，返回默认指标")
             return compute_gdelt_risk_metrics([])
@@ -268,7 +284,14 @@ class GDELTCrawler:
                 max_results=self._cfg.get("max_results", 100),
             )
 
-        return compute_gdelt_risk_metrics(raw_articles)
+        result = compute_gdelt_risk_metrics(raw_articles)
+        result["_timespan"] = timespan_days
+
+        # 更新缓存
+        self._metrics_cache = result
+        self._metrics_cache_time = now
+
+        return result
 
 
 # ============================================================

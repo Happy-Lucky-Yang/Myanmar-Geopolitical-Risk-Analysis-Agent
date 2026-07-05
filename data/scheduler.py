@@ -76,170 +76,193 @@ class CrawlerScheduler:
         self._running = False
         self._thread = None
 
+        # 任务互斥锁（防止手动触发与定时触发同时执行同一任务）
+        self._crawl_lock = threading.Lock()
+        self._gdelt_lock = threading.Lock()
+        self._analysis_lock = threading.Lock()
+
     # ============================================================
     # 任务执行
     # ============================================================
 
     def _run_crawl_job(self):
         """执行新闻爬取任务（缅华网 + 英文媒体 + RSS 源）"""
-        logger.info(f"[Scheduler] ====== 新闻爬取开始: {datetime.now()} ======")
-        self._last_crawl_time = datetime.now()
-        
-        all_news = []
-        
-        # 1a: 缅华网爬虫
+        if not self._crawl_lock.acquire(blocking=False):
+            logger.warning("[Scheduler] 爬取任务已在执行中，跳过本次")
+            return
         try:
-            from data.crawler import NewsCrawler
-            crawler = NewsCrawler()
-            news = crawler.crawl_all_sources()
-            crawler.save_news(news)
-            all_news.extend(news)
-            logger.info(f"[Scheduler] 缅华网: {len(news)} 条")
-        except Exception as e:
-            logger.error(f"[Scheduler] 缅华网爬取失败: {e}", exc_info=True)
-        
-        # 1b: 英文媒体（Myanmar Now + Irrawaddy）
-        try:
-            from data.myanmar_now_crawler import get_english_crawler
-            en_crawler = get_english_crawler()
-            en_news = en_crawler.crawl_all()
-            en_crawler.save_news(en_news)
-            all_news.extend(en_news)
-            logger.info(f"[Scheduler] 英文媒体: {len(en_news)} 条")
-        except Exception as e:
-            logger.error(f"[Scheduler] 英文媒体爬取失败: {e}", exc_info=True)
-        
-        # 1c: RSS 新闻源（Frontier Myanmar + DVB + The Diplomat）
-        try:
-            from data.rss_crawler import get_rss_crawler
-            rss_crawler = get_rss_crawler()
-            rss_news = rss_crawler.crawl_all()
-            rss_crawler.save_news(rss_news)
-            all_news.extend(rss_news)
-            logger.info(f"[Scheduler] RSS 源: {len(rss_news)} 条")
-        except Exception as e:
-            logger.error(f"[Scheduler] RSS 爬取失败: {e}", exc_info=True)
-        
-        self._last_crawl_result = {
-            "success": True,
-            "count": len(all_news),
-            "time": self._last_crawl_time.isoformat()
-        }
-        logger.info(f"[Scheduler] 爬取完成: 共 {len(all_news)} 条新闻")
+            logger.info(f"[Scheduler] ====== 新闻爬取开始: {datetime.now()} ======")
+            self._last_crawl_time = datetime.now()
+
+            all_news = []
+
+            # 1a: 缅华网爬虫
+            try:
+                from data.crawler import NewsCrawler
+                crawler = NewsCrawler()
+                news = crawler.crawl_all_sources()
+                crawler.save_news(news)
+                all_news.extend(news)
+                logger.info(f"[Scheduler] 缅华网: {len(news)} 条")
+            except Exception as e:
+                logger.error(f"[Scheduler] 缅华网爬取失败: {e}", exc_info=True)
+
+            # 1b: 英文媒体（Myanmar Now + Irrawaddy）
+            try:
+                from data.myanmar_now_crawler import get_english_crawler
+                en_crawler = get_english_crawler()
+                en_news = en_crawler.crawl_all()
+                en_crawler.save_news(en_news)
+                all_news.extend(en_news)
+                logger.info(f"[Scheduler] 英文媒体: {len(en_news)} 条")
+            except Exception as e:
+                logger.error(f"[Scheduler] 英文媒体爬取失败: {e}", exc_info=True)
+
+            # 1c: RSS 新闻源（Frontier Myanmar + DVB + The Diplomat）
+            try:
+                from data.rss_crawler import get_rss_crawler
+                rss_crawler = get_rss_crawler()
+                rss_news = rss_crawler.crawl_all()
+                rss_crawler.save_news(rss_news)
+                all_news.extend(rss_news)
+                logger.info(f"[Scheduler] RSS 源: {len(rss_news)} 条")
+            except Exception as e:
+                logger.error(f"[Scheduler] RSS 爬取失败: {e}", exc_info=True)
+
+            self._last_crawl_result = {
+                "success": True,
+                "count": len(all_news),
+                "time": self._last_crawl_time.isoformat()
+            }
+            logger.info(f"[Scheduler] 爬取完成: 共 {len(all_news)} 条新闻")
+        finally:
+            self._crawl_lock.release()
 
     def _run_gdelt_job(self):
         """执行 GDELT 查询任务"""
-        logger.info(f"[Scheduler] ====== GDELT 查询开始: {datetime.now()} ======")
-        self._last_gdelt_time = datetime.now()
-        
+        if not self._gdelt_lock.acquire(blocking=False):
+            logger.warning("[Scheduler] GDELT 任务已在执行中，跳过本次")
+            return
         try:
-            from data.gdelt_crawler import get_gdelt_crawler
-            gdelt = get_gdelt_crawler()
-            news = gdelt.crawl()
-            filepath = gdelt.save_news(news)
-            
-            # 计算风险指标
-            metrics = gdelt.get_risk_metrics(timespan_days=7)
-            
-            self._last_gdelt_result = {
-                "success": True,
-                "count": len(news),
-                "filepath": filepath,
-                "metrics": metrics,
-                "time": self._last_gdelt_time.isoformat()
-            }
-            logger.info(
-                f"[Scheduler] GDELT 完成: {len(news)} 条新闻, "
-                f"冲突 {metrics['conflict_count']} 条"
-            )
-            
-        except Exception as e:
-            self._last_gdelt_result = {
-                "success": False,
-                "error": str(e),
-                "time": self._last_gdelt_time.isoformat()
-            }
-            logger.error(f"[Scheduler] GDELT 失败: {e}", exc_info=True)
+            logger.info(f"[Scheduler] ====== GDELT 查询开始: {datetime.now()} ======")
+            self._last_gdelt_time = datetime.now()
+
+            try:
+                from data.gdelt_crawler import get_gdelt_crawler
+                gdelt = get_gdelt_crawler()
+                news = gdelt.crawl()
+                filepath = gdelt.save_news(news)
+
+                # 计算风险指标
+                metrics = gdelt.get_risk_metrics(timespan_days=7)
+
+                self._last_gdelt_result = {
+                    "success": True,
+                    "count": len(news),
+                    "filepath": filepath,
+                    "metrics": metrics,
+                    "time": self._last_gdelt_time.isoformat()
+                }
+                logger.info(
+                    f"[Scheduler] GDELT 完成: {len(news)} 条新闻, "
+                    f"冲突 {metrics['conflict_count']} 条"
+                )
+
+            except Exception as e:
+                self._last_gdelt_result = {
+                    "success": False,
+                    "error": str(e),
+                    "time": self._last_gdelt_time.isoformat()
+                }
+                logger.error(f"[Scheduler] GDELT 失败: {e}", exc_info=True)
+        finally:
+            self._gdelt_lock.release()
 
     def _run_analysis_job(self):
         """执行分析流水线任务"""
-        logger.info(f"[Scheduler] ====== 分析流水线开始: {datetime.now()} ======")
-        self._last_analysis_time = datetime.now()
-        
+        if not self._analysis_lock.acquire(blocking=False):
+            logger.warning("[Scheduler] 分析任务已在执行中，跳过本次")
+            return
         try:
-            from analyzer.data_loader import get_data_loader
-            from analyzer.ner import get_ner_extractor
-            from analyzer.sentiment import get_sentiment_analyzer
-            from analyzer.risk_scorer import get_risk_scorer
-            
-            loader = get_data_loader()
-            news_list = loader.load_raw_news()
-            
-            if not news_list:
+            logger.info(f"[Scheduler] ====== 分析流水线开始: {datetime.now()} ======")
+            self._last_analysis_time = datetime.now()
+
+            try:
+                from analyzer.data_loader import get_data_loader
+                from analyzer.ner import get_ner_extractor
+                from analyzer.sentiment import get_sentiment_analyzer
+                from analyzer.risk_scorer import get_risk_scorer
+
+                loader = get_data_loader()
+                news_list = loader.load_raw_news()
+
+                if not news_list:
+                    self._last_analysis_result = {
+                        "success": False,
+                        "error": "无数据可分析",
+                        "time": self._last_analysis_time.isoformat()
+                    }
+                    logger.warning("[Scheduler] 无数据可分析")
+                    return
+
+                # NER + 情感分析（双语感知）
+                ner = get_ner_extractor()
+                sentiment = get_sentiment_analyzer()
+
+                for item in news_list:
+                    text = item.get("content", "") or item.get("title", "")
+                    lang = item.get("language", None)  # "zh" / "en" / None
+
+                    if text:
+                        # 情感分析：GDELT 文章优先使用预计算的 tone
+                        gdelt_tone = item.get("gdelt_tone", None)
+                        sent_result = sentiment.get_risk_sentiment(
+                            text, lang=lang, gdelt_tone=gdelt_tone
+                        )
+                        item["sentiment_score"] = sent_result.get("risk_score", 0.5)
+                        item["sentiment_source"] = sent_result.get("source", "unknown")
+
+                        # NER（自动语言检测）
+                        try:
+                            entities = ner.extract_entities(text)
+                            item["entities"] = entities
+                        except ImportError:
+                            item["entities"] = {"locations": [], "organizations": [], "persons": [], "events": []}
+
+                # 风险评分
+                scorer = get_risk_scorer()
+                risk_result = scorer.compute_daily_risk(news_list)
+
+                # 保存到历史
+                today = datetime.now().strftime("%Y-%m-%d")
+                loader.append_risk_score(
+                    date=today,
+                    risk_score=risk_result["risk_score"],
+                    risk_level=risk_result["risk_level"],
+                    details=risk_result.get("raw_indicators", {})
+                )
+
                 self._last_analysis_result = {
-                    "success": False,
-                    "error": "无数据可分析",
+                    "success": True,
+                    "news_count": len(news_list),
+                    "risk_score": risk_result["risk_score"],
+                    "risk_level": risk_result["risk_level"],
                     "time": self._last_analysis_time.isoformat()
                 }
-                logger.warning("[Scheduler] 无数据可分析")
-                return
-            
-            # NER + 情感分析（双语感知）
-            ner = get_ner_extractor()
-            sentiment = get_sentiment_analyzer()
-            
-            for item in news_list:
-                text = item.get("content", "") or item.get("title", "")
-                lang = item.get("language", None)  # "zh" / "en" / None
-                
-                if text:
-                    # 情感分析：GDELT 文章优先使用预计算的 tone
-                    gdelt_tone = item.get("gdelt_tone", None)
-                    sent_result = sentiment.get_risk_sentiment(
-                        text, lang=lang, gdelt_tone=gdelt_tone
-                    )
-                    item["sentiment_score"] = sent_result.get("risk_score", 0.5)
-                    item["sentiment_source"] = sent_result.get("source", "unknown")
-                    
-                    # NER（自动语言检测）
-                    try:
-                        entities = ner.extract_entities(text)
-                        item["entities"] = entities
-                    except ImportError:
-                        item["entities"] = {"locations": [], "organizations": [], "persons": [], "events": []}
-            
-            # 风险评分
-            scorer = get_risk_scorer()
-            risk_result = scorer.compute_daily_risk(news_list)
-            
-            # 保存到历史
-            today = datetime.now().strftime("%Y-%m-%d")
-            loader.append_risk_score(
-                date=today,
-                risk_score=risk_result["risk_score"],
-                risk_level=risk_result["risk_level"],
-                details=risk_result.get("raw_indicators", {})
-            )
-            
-            self._last_analysis_result = {
-                "success": True,
-                "news_count": len(news_list),
-                "risk_score": risk_result["risk_score"],
-                "risk_level": risk_result["risk_level"],
-                "time": self._last_analysis_time.isoformat()
-            }
-            logger.info(
-                f"[Scheduler] 分析完成: {len(news_list)} 条新闻, "
-                f"风险分 {risk_result['risk_score']}"
-            )
-            
-        except Exception as e:
-            self._last_analysis_result = {
-                "success": False,
-                "error": str(e),
-                "time": self._last_analysis_time.isoformat()
-            }
-            logger.error(f"[Scheduler] 分析失败: {e}", exc_info=True)
+                logger.info(
+                    f"[Scheduler] 分析完成: {len(news_list)} 条新闻, "
+                    f"风险分 {risk_result['risk_score']}"
+                )
+
+            except Exception as e:
+                self._last_analysis_result = {
+                    "success": False,
+                    "error": str(e),
+                    "time": self._last_analysis_time.isoformat()
+                }
+                logger.error(f"[Scheduler] 分析失败: {e}", exc_info=True)
+        finally:
+            self._analysis_lock.release()
 
     # ============================================================
     # 调度循环
@@ -327,19 +350,19 @@ class CrawlerScheduler:
         }
 
     def trigger_crawl(self):
-        """手动触发一次爬取"""
+        """手动触发一次爬取（异步执行，立即返回）"""
         logger.info("[Scheduler] 手动触发: 新闻爬取")
-        self._run_crawl_job()
+        threading.Thread(target=self._run_crawl_job, daemon=True).start()
 
     def trigger_gdelt(self):
-        """手动触发一次 GDELT 查询"""
+        """手动触发一次 GDELT 查询（异步执行，立即返回）"""
         logger.info("[Scheduler] 手动触发: GDELT 查询")
-        self._run_gdelt_job()
+        threading.Thread(target=self._run_gdelt_job, daemon=True).start()
 
     def trigger_analysis(self):
-        """手动触发一次分析"""
+        """手动触发一次分析（异步执行，立即返回）"""
         logger.info("[Scheduler] 手动触发: 分析流水线")
-        self._run_analysis_job()
+        threading.Thread(target=self._run_analysis_job, daemon=True).start()
 
 
 # ============================================================

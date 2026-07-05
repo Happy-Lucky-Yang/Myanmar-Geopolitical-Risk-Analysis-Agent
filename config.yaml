@@ -92,12 +92,41 @@ storage:
   # 输出格式: csv / json
   format: "json"
 
+# ---------- 冲突关键词（用于文本冲突检测） ----------
+conflict_keywords:
+  zh:
+    - "冲突"
+    - "战斗"
+    - "空袭"
+    - "武装"
+    - "交火"
+    - "爆炸"
+    - "袭击"
+    - "制裁"
+    - "政变"
+    - "难民"
+    - "抗议"
+    - "暴动"
+  en:
+    - "conflict"
+    - "attack"
+    - "airstrike"
+    - "armed"
+    - "ceasefire"
+    - "sanction"
+    - "coup"
+    - "refugee"
+    - "protest"
+    - "military"
+
 # ---------- 风险评分权重 ----------
+# 注意: nightlight_change 和 refugee_change 为占位权重（数据源未接入）
+#       当这些指标值为 0 时，权重会被动态归一化分配给有效指标
 risk_weights:
   conflict_frequency: 0.30    # 冲突频次
   sentiment_avg: 0.25         # 情感均值（负面程度）
-  nightlight_change: 0.20     # 夜间灯光变化率
-  refugee_change: 0.15        # 难民变化
+  nightlight_change: 0.20     # 夜间灯光变化率 [占位 - 遥感数据未接入]
+  refugee_change: 0.15        # 难民变化 [占位 - 难民统计未接入]
   event_severity: 0.10        # 事件严重程度
 
 # ---------- 趋势分析 ----------
