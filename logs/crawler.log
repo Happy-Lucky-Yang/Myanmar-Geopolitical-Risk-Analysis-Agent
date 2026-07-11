@@ -37,3 +37,90 @@
 2026-07-12 00:37:01,748 [INFO] [Crawler] 缅甸缅华网: 获取 23 条新文章
 2026-07-12 00:37:04,351 [INFO] [Crawler] ====== 开始爬取: Myanmar Now (https://www.myanmar-now.org/en/news) ======
 2026-07-12 00:37:04,352 [WARNING] [Crawler] 未知来源 'Myanmar Now'，使用通用解析
+2026-07-12 00:37:09,815 [ERROR] HTTP 404 - https://www.myanmar-now.org/en/news
+2026-07-12 00:37:09,818 [INFO] [Crawler] Myanmar Now: 获取 0 条新文章
+2026-07-12 00:37:12,207 [INFO] [Crawler] ====== 本轮总计获取 23 条新闻 ======
+2026-07-12 00:37:12,210 [INFO] [Crawler] 已保存 23 条新闻至 data\raw\myanmar_news_20260712.json
+2026-07-12 00:37:12,211 [INFO] [Scheduler] 缅华网: 23 条
+2026-07-12 00:37:12,217 [INFO] [MyanmarNow] 爬取列表页: https://www.myanmar-now.org/en/news
+2026-07-12 00:37:14,312 [INFO] 127.0.0.1 - - [12/Jul/2026 00:37:14] "GET /api/trend?days=30 HTTP/1.1" 200 -
+2026-07-12 00:37:16,820 [WARNING] [EN-Crawler] HTTP 404: https://www.myanmar-now.org/en/news
+2026-07-12 00:37:16,825 [INFO] [MyanmarNow] 获取 0 条文章
+2026-07-12 00:37:16,826 [INFO] [Irrawaddy] 爬取列表页: https://www.irrawaddy.com/news/burma
+2026-07-12 00:37:18,121 [WARNING] [EN-Crawler] HTTP 403: https://www.irrawaddy.com/news/burma
+2026-07-12 00:37:18,123 [INFO] [Irrawaddy] 获取 0 条文章
+2026-07-12 00:37:18,124 [INFO] [EN-Crawler] 总计获取 0 条英文新闻
+2026-07-12 00:37:18,125 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-12 00:37:18,132 [INFO] [RSS] 爬取 Frontier Myanmar: https://www.frontiermyanmar.net/en/feed
+2026-07-12 00:37:19,492 [WARNING] [RSS] HTTP 403: https://www.frontiermyanmar.net/en/feed
+2026-07-12 00:37:19,494 [INFO] [RSS] RSS 失败，尝试 fallback: https://www.frontiermyanmar.net/en/news
+2026-07-12 00:37:20,510 [WARNING] [RSS] HTTP 403: https://www.frontiermyanmar.net/en/news
+2026-07-12 00:37:21,512 [INFO] [RSS] 爬取 Democratic Voice of Burma: https://www.dvb.no.org/feed
+2026-07-12 00:37:22,283 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:37:25,302 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:37:25,319 [INFO] 127.0.0.1 - - [12/Jul/2026 00:37:25] "GET /api/trend?days=30 HTTP/1.1" 200 -
+2026-07-12 00:37:29,302 [INFO] [RSS] RSS 失败，尝试 fallback: https://www.dvb.no.org/news
+2026-07-12 00:37:29,733 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:37:32,121 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:37:36,563 [INFO] 127.0.0.1 - - [12/Jul/2026 00:37:36] "GET / HTTP/1.1" 200 -
+2026-07-12 00:37:37,122 [INFO] [RSS] 爬取 The Diplomat (Myanmar): https://thediplomat.com/feed/
+2026-07-12 00:37:38,184 [INFO] [RSS] The Diplomat (Myanmar): 获取 30 条
+2026-07-12 00:37:39,187 [INFO] [RSS] 总计获取 30 条新闻
+2026-07-12 00:37:39,192 [INFO] [RSS] 已保存 30 条至 data\raw\rss_news_20260712.json
+2026-07-12 00:37:39,192 [INFO] [Scheduler] RSS 源: 30 条
+2026-07-12 00:37:39,193 [INFO] [Scheduler] 爬取完成: 共 53 条新闻
+2026-07-12 00:37:39,194 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-12 00:37:39.193953 ======
+2026-07-12 00:37:39,232 [INFO]  * Detected change in 'C:\\Users\\10748\\Desktop\\Myanmar-Geopolitical-Risk-Analysis-Agent\\data\\gdelt_crawler.py', reloading
+2026-07-12 00:38:17,265 [INFO] [Crawler] ====== 开始爬取: 缅甸缅华网 (https://www.mhwmm.com/miandianxinwen/) ======
+2026-07-12 00:38:17,265 [INFO] [缅华网] 解析列表页第 1 页: https://www.mhwmm.com/miandianxinwen/
+2026-07-12 00:38:20,533 [INFO] [缅华网] 解析列表页第 2 页: https://www.mhwmm.com/miandianxinwen/index_2.html
+2026-07-12 00:38:21,300 [ERROR] HTTP 404 - https://www.mhwmm.com/miandianxinwen/index_2.html
+2026-07-12 00:38:21,302 [INFO] [缅华网] 共发现 0 篇新文章
+2026-07-12 00:38:21,303 [INFO] [Crawler] 缅甸缅华网: 获取 0 条新文章
+2026-07-12 00:38:24,673 [INFO] [Crawler] ====== 开始爬取: Myanmar Now (https://www.myanmar-now.org/en/news) ======
+2026-07-12 00:38:24,674 [WARNING] [Crawler] 未知来源 'Myanmar Now'，使用通用解析
+2026-07-12 00:38:29,277 [ERROR] HTTP 404 - https://www.myanmar-now.org/en/news
+2026-07-12 00:38:29,279 [INFO] [Crawler] Myanmar Now: 获取 0 条新文章
+2026-07-12 00:38:32,384 [INFO] [Crawler] ====== 本轮总计获取 0 条新闻 ======
+2026-07-12 00:38:32,385 [INFO] [Crawler] 无数据可保存
+2026-07-12 00:38:32,385 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-12 00:38:32,390 [INFO] [MyanmarNow] 爬取列表页: https://www.myanmar-now.org/en/news
+2026-07-12 00:38:36,159 [WARNING] [EN-Crawler] HTTP 404: https://www.myanmar-now.org/en/news
+2026-07-12 00:38:36,162 [INFO] [MyanmarNow] 获取 0 条文章
+2026-07-12 00:38:36,163 [INFO] [Irrawaddy] 爬取列表页: https://www.irrawaddy.com/news/burma
+2026-07-12 00:38:37,443 [WARNING] [EN-Crawler] HTTP 403: https://www.irrawaddy.com/news/burma
+2026-07-12 00:38:37,445 [INFO] [Irrawaddy] 获取 0 条文章
+2026-07-12 00:38:37,447 [INFO] [EN-Crawler] 总计获取 0 条英文新闻
+2026-07-12 00:38:37,448 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-12 00:38:37,481 [INFO] [RSS] 爬取 Frontier Myanmar: https://www.frontiermyanmar.net/en/feed
+2026-07-12 00:38:38,504 [WARNING] [RSS] HTTP 403: https://www.frontiermyanmar.net/en/feed
+2026-07-12 00:38:38,506 [INFO] [RSS] RSS 失败，尝试 fallback: https://www.frontiermyanmar.net/en/news
+2026-07-12 00:38:39,685 [WARNING] [RSS] HTTP 403: https://www.frontiermyanmar.net/en/news
+2026-07-12 00:38:40,688 [INFO] [RSS] 爬取 Democratic Voice of Burma: https://www.dvb.no.org/feed
+2026-07-12 00:38:41,192 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:38:43,650 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:38:47,651 [INFO] [RSS] RSS 失败，尝试 fallback: https://www.dvb.no.org/news
+2026-07-12 00:38:48,166 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:38:50,618 [WARNING] [RSS] 请求异常: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+2026-07-12 00:38:55,619 [INFO] [RSS] 爬取 The Diplomat (Myanmar): https://thediplomat.com/feed/
+2026-07-12 00:38:56,427 [INFO] [RSS] The Diplomat (Myanmar): 获取 0 条
+2026-07-12 00:38:57,431 [INFO] [RSS] 总计获取 0 条新闻
+2026-07-12 00:38:57,432 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-12 00:38:57,432 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-12 00:38:57,433 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-12 00:38:57.433598 ======
+2026-07-12 00:38:57,440 [INFO] [GDELT] 多关键词查询 (1/8): 'Myanmar conflict' [lang=english]
+2026-07-12 00:38:57,441 [INFO] [GDELT] 查询: query='Myanmar conflict...', timespan=7days, country=BM
+2026-07-12 00:39:07,259 [WARNING] [GDELT] API 限流 (429), 等待 5s 后重试
+2026-07-12 00:39:16,988 [INFO] 127.0.0.1 - - [12/Jul/2026 00:39:16] "GET / HTTP/1.1" 200 -
+2026-07-12 00:39:23,159 [INFO] 127.0.0.1 - - [12/Jul/2026 00:39:23] "GET /map HTTP/1.1" 200 -
+2026-07-12 00:39:23,192 [INFO] 127.0.0.1 - - [12/Jul/2026 00:39:23] "GET /trend HTTP/1.1" 200 -
+2026-07-12 00:39:26,068 [INFO] [GDELT] 获取 100 条文章
+2026-07-12 00:39:29,527 [INFO] 127.0.0.1 - - [12/Jul/2026 00:39:29] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-07-12 00:39:31,069 [INFO] [GDELT] 多关键词查询 (2/8): 'Myanmar military ceasefire' [lang=english]
+2026-07-12 00:39:31,069 [INFO] [GDELT] 查询: query='Myanmar military ceasefire...', timespan=7days, country=BM
+2026-07-12 00:39:41,336 [WARNING] [GDELT] API 限流 (429), 等待 5s 后重试
+2026-07-12 00:39:56,654 [WARNING] [GDELT] API 限流 (429), 等待 10s 后重试
+2026-07-12 00:40:32,530 [INFO] [GDELT] 获取 8 条文章
+2026-07-12 00:40:37,532 [INFO] [GDELT] 多关键词查询 (3/8): 'Myanmar refugee crisis' [lang=english]
+2026-07-12 00:40:37,533 [INFO] [GDELT] 查询: query='Myanmar refugee crisis...', timespan=7days, country=BM
+2026-07-12 00:40:49,536 [WARNING] [GDELT] API 限流 (429), 等待 5s 后重试
