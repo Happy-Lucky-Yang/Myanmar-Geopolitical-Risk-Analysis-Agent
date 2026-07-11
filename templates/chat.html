@@ -17,6 +17,80 @@
     </nav>
 
     <main class="container">
+        <h2>新闻文本分析</h2>
+        <p class="subtitle">粘贴缅甸相关新闻文本，点击分析按钮获取结构化结果</p>
+
+        <!-- 输入区 -->
+        <div class="input-area">
+            <textarea id="news-input" placeholder="请输入或粘贴缅甸相关新闻内容..." rows="8"></textarea>
+            <div class="input-footer">
+                <span id="char-count" class="char-count">0 / 10000</span>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="fillSampleText()">填充示例</button>
+                    <button id="analyze-btn" class="btn btn-primary" onclick="analyzeText()">开始分析</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果区 -->
+        <div id="result-area" style="display:none">
+            <div class="result-grid">
+                <!-- 实体识别 -->
+                <div class="card">
+                    <div class="card-title"><span class="icon">🏷️</span> 实体识别</div>
+                    <div id="entities-body"></div>
+                </div>
+
+                <!-- 情感分析 -->
+                <div class="card">
+                    <div class="card-title"><span class="icon">💬</span> 情感分析</div>
+                    <div id="sentiment-body"></div>
+                </div>
+
+                <!-- 风险评分 -->
+                <div class="card">
+                    <div class="card-title"><span class="icon">🎯</span> 风险评分</div>
+                    <div id="risk-body"></div>
+                </div>
+
+                <!-- 大模型分析 -->
+                <div class="card">
+                    <div class="card-title"><span class="icon">🤖</span> 大模型分析</div>
+                    <div id="llm-body"></div>
+                </div>
+
+                <!-- GDELT 指标 -->
+                <div class="card" style="grid-column: 1 / -1">
+                    <div class="card-title"><span class="icon">📡</span> GDELT 全球事件指标</div>
+                    <div id="gdelt-body"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缅甸地缘风险分析 - 对话分析</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
+        <ul class="nav-links">
+            <li><a href="/" class="active">对话分析</a></li>
+            <li><a href="/map">风险地图</a></li>
+            <li><a href="/trend">趋势预测</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
         <section class="analysis-section">
             <h2>新闻文本分析</h2>
             <p class="subtitle">粘贴缅甸相关新闻文本，点击分析按钮获取结构化结果</p>

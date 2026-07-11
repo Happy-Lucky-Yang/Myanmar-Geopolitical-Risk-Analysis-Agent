@@ -5,6 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 趋势预测</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
+        <ul class="nav-links">
+            <li><a href="/">对话分析</a></li>
+            <li><a href="/map">风险地图</a></li>
+            <li><a href="/trend" class="active">趋势预测</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <h2>风险趋势分析</h2>
+        <p class="subtitle">基于历史数据的风险评分走势与趋势研判</p>
+
+        <div class="controls">
+            <label>时间范围
+                <select id="days-select">
+                    <option value="30" selected>近30天</option>
+                    <option value="60">近60天</option>
+                    <option value="90">近90天</option>
+                </select>
+            </label>
+            <button class="btn btn-primary" onclick="loadTrend()">刷新</button>
+        </div>
+
+        <!-- 摘要卡片 -->
+        <div class="summary-cards" id="summary-cards"></div>
+
+        <!-- ECharts 图表 -->
+        <div id="trend-chart"></div>
+
+        <!-- 预测信息 -->
+        <div class="forecast-section">
+            <h3>📈 短期预测 (7天)</h3>
+            <div id="forecast-area"></div>
+        </div>
+
+        <!-- 异常事件 -->
+        <div class="forecast-section">
+            <h3>⚡ 异常事件检测</h3>
+            <div id="anomaly-area"></div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/trend.js') }}"></script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缅甸地缘风险分析 - 趋势预测</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>

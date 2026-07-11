@@ -5,6 +5,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 风险地图</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
+        <ul class="nav-links">
+            <li><a href="/">对话分析</a></li>
+            <li><a href="/map" class="active">风险地图</a></li>
+            <li><a href="/trend">趋势预测</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <h2>缅甸省级风险热力地图</h2>
+        <p class="subtitle">颜色深浅反映各省份综合风险评分，点击标记查看详情</p>
+
+        <div class="controls">
+            <label>查看最近
+                <select id="days-select">
+                    <option value="7">7天</option>
+                    <option value="14">14天</option>
+                    <option value="30" selected>30天</option>
+                </select>
+                数据
+            </label>
+            <button class="btn btn-primary" onclick="loadMap()">刷新地图</button>
+        </div>
+
+        <div class="info-banner">
+            ⚠️ 当前无历史数据时，各省风险分为基于地理特征的简化模拟值，不代表实际风险评估
+        </div>
+
+        <div id="map-container">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p class="loading-text">加载地图中...</p>
+            </div>
+        </div>
+
+        <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted)">
+            数据来源: 系统历史风险评分 + GDELT 事件数据 | 地图引擎: Folium (Leaflet)
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+    <script>
+        async function loadMap() {
+            var days = document.getElementById('days-select').value;
+            var container = document.getElementById('map-container');
+            renderLoading(container);
+
+            try {
+                var resp = await fetch('/api/map?days=' + encodeURIComponent(days));
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                var html = await resp.text();
+
+                // 安全检查：确保返回的是有效 HTML
+                if (!html || html.length < 50) {
+                    throw new Error('地图数据为空');
+                }
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = '<div class="error-card">'
+                    + '<div class="error-icon">🗺️</div>'
+                    + '<div class="error-msg">' + escapeHtml('地图加载失败: ' + e.message) + '</div>'
+                    + '<button class="btn btn-secondary" style="margin-top:1rem" onclick="loadMap()">重试</button>'
+                    + '</div>';
+            }
+        }
+
+        // 页面加载时自动加载
+        loadMap();
+    </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缅甸地缘风险分析 - 风险地图</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
         #map-container {
             width: 100%;

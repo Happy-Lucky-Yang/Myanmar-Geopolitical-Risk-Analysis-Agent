@@ -1,0 +1,39 @@
+2026-07-12 00:35:44,288 [INFO] [Crawler] ====== 开始爬取: 缅甸缅华网 (https://www.mhwmm.com/miandianxinwen/) ======
+2026-07-12 00:35:44,289 [INFO] [缅华网] 解析列表页第 1 页: https://www.mhwmm.com/miandianxinwen/
+2026-07-12 00:35:48,117 [INFO] [缅华网] 解析列表页第 2 页: https://www.mhwmm.com/miandianxinwen/index_2.html
+2026-07-12 00:35:49,771 [ERROR] HTTP 404 - https://www.mhwmm.com/miandianxinwen/index_2.html
+2026-07-12 00:35:49,779 [INFO] [缅华网] 共发现 23 篇新文章
+2026-07-12 00:35:49,780 [INFO] [缅华网] 解析文章 (1/23): https://www.mhwmm.com/miandianxinwen/85179.html
+2026-07-12 00:35:53,557 [INFO] [缅华网] 解析文章 (2/23): https://www.mhwmm.com/miandianxinwen/85178.html
+2026-07-12 00:35:56,708 [INFO] [缅华网] 解析文章 (3/23): https://www.mhwmm.com/miandianxinwen/85171.html
+2026-07-12 00:35:59,576 [INFO] [缅华网] 解析文章 (4/23): https://www.mhwmm.com/miandianxinwen/85170.html
+2026-07-12 00:36:02,877 [INFO] [缅华网] 解析文章 (5/23): https://www.mhwmm.com/miandianxinwen/85169.html
+2026-07-12 00:36:04,767 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:04] "GET / HTTP/1.1" 200 -
+2026-07-12 00:36:06,214 [INFO] [缅华网] 解析文章 (6/23): https://www.mhwmm.com/miandianxinwen/81512.html
+2026-07-12 00:36:12,161 [INFO] [缅华网] 解析文章 (7/23): https://www.mhwmm.com/miandianxinwen/85168.html
+2026-07-12 00:36:13,951 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:13] "GET /map HTTP/1.1" 200 -
+2026-07-12 00:36:15,643 [INFO] [缅华网] 解析文章 (8/23): https://www.mhwmm.com/miandianxinwen/85167.html
+2026-07-12 00:36:17,936 [INFO] [缅华网] 解析文章 (9/23): https://www.mhwmm.com/miandianxinwen/85166.html
+2026-07-12 00:36:18,919 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:18] "GET /trend HTTP/1.1" 200 -
+2026-07-12 00:36:20,997 [INFO] [缅华网] 解析文章 (10/23): https://www.mhwmm.com/miandianxinwen/85165.html
+2026-07-12 00:36:23,430 [INFO] [缅华网] 解析文章 (11/23): https://www.mhwmm.com/miandianxinwen/85156.html
+2026-07-12 00:36:27,603 [INFO] [缅华网] 解析文章 (12/23): https://www.mhwmm.com/miandianxinwen/85155.html
+2026-07-12 00:36:29,744 [INFO] [缅华网] 解析文章 (13/23): https://www.mhwmm.com/miandianxinwen/85154.html
+2026-07-12 00:36:30,816 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:30] "GET /static/js/common.js HTTP/1.1" 200 -
+2026-07-12 00:36:32,371 [INFO] [缅华网] 解析文章 (14/23): https://www.mhwmm.com/miandianxinwen/85153.html
+2026-07-12 00:36:34,966 [INFO] [缅华网] 解析文章 (15/23): https://www.mhwmm.com/miandianxinwen/85152.html
+2026-07-12 00:36:37,254 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:37] "GET /static/js/chat.js HTTP/1.1" 200 -
+2026-07-12 00:36:37,259 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:37] "GET /static/js/trend.js HTTP/1.1" 200 -
+2026-07-12 00:36:37,262 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:37] "GET /health HTTP/1.1" 200 -
+2026-07-12 00:36:37,422 [INFO] [缅华网] 解析文章 (16/23): https://www.mhwmm.com/miandianxinwen/85151.html
+2026-07-12 00:36:40,874 [INFO] [缅华网] 解析文章 (17/23): https://www.mhwmm.com/miandianxinwen/85150.html
+2026-07-12 00:36:43,902 [INFO] [缅华网] 解析文章 (18/23): https://www.mhwmm.com/miandianxinwen/85149.html
+2026-07-12 00:36:46,192 [INFO] [缅华网] 解析文章 (19/23): https://www.mhwmm.com/miandianxinwen/85000.html
+2026-07-12 00:36:48,857 [INFO] 127.0.0.1 - - [12/Jul/2026 00:36:48] "GET /api/trend?days=30 HTTP/1.1" 200 -
+2026-07-12 00:36:49,945 [INFO] [缅华网] 解析文章 (20/23): https://www.mhwmm.com/miandianxinwen/84998.html
+2026-07-12 00:36:53,782 [INFO] [缅华网] 解析文章 (21/23): https://www.mhwmm.com/miandianxinwen/84820.html
+2026-07-12 00:36:56,058 [INFO] [缅华网] 解析文章 (22/23): https://www.mhwmm.com/miandianxinwen/84812.html
+2026-07-12 00:36:58,199 [INFO] [缅华网] 解析文章 (23/23): https://www.mhwmm.com/miandianxinwen/84674.html
+2026-07-12 00:37:01,748 [INFO] [Crawler] 缅甸缅华网: 获取 23 条新文章
+2026-07-12 00:37:04,351 [INFO] [Crawler] ====== 开始爬取: Myanmar Now (https://www.myanmar-now.org/en/news) ======
+2026-07-12 00:37:04,352 [WARNING] [Crawler] 未知来源 'Myanmar Now'，使用通用解析
