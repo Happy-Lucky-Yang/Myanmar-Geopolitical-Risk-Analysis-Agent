@@ -35,6 +35,7 @@ from analyzer.trend import get_trend_analyzer
 from analyzer.prompts import NEWS_ANALYSIS_PROMPT, build_analysis_prompt
 from analyzer.data_loader import get_data_loader
 from analyzer.knowledge_graph import get_knowledge_graph
+from analyzer.report_generator import get_report_generator
 from visualization.map_gen import get_map_generator
 from visualization.chart_gen import get_chart_generator
 from data.scheduler import get_scheduler
@@ -189,12 +190,30 @@ def analyze():
                 "gdelt_max_severity": gdelt_metrics["max_severity"],
             }
 
+        # 尝试获取夜光遥感指标
+        nightlight_change = 0.0
+        try:
+            from data.nightlight_crawler import get_nightlight_crawler
+            nl = get_nightlight_crawler()
+            nightlight_change = nl.get_nightlight_change()
+        except Exception:
+            pass  # 遥感数据不可用时静默跳过
+
+        # 尝试获取经济指标
+        refugee_change = 0.0
+        try:
+            from data.economic_crawler import get_economic_crawler
+            econ = get_economic_crawler()
+            refugee_change = econ.get_refugee_change()
+        except Exception:
+            pass
+
         # 使用 compute_daily_risk 进行融合评分
         indicators = {
             "conflict_frequency": 1.0 if has_conflict else 0.2,
             "sentiment_avg": sentiment_result["risk_score"],
-            "nightlight_change": 0.0,   # TODO: 接入遥感数据
-            "refugee_change": 0.0,      # TODO: 接入难民统计
+            "nightlight_change": nightlight_change,
+            "refugee_change": refugee_change,
             "event_severity": 0.8 if has_conflict else 0.3
         }
         # 如果有 GDELT 数据，融合到指标中
@@ -239,6 +258,15 @@ def analyze():
             details=indicators
         )
 
+        # 8. 预警检查
+        alert = None
+        try:
+            from analyzer.alert_monitor import get_alert_monitor
+            monitor = get_alert_monitor()
+            alert = monitor.check_risk_score(risk_result["risk_score"], details=indicators)
+        except Exception:
+            pass
+
         return jsonify({
             "success": True,
             "data": {
@@ -246,10 +274,137 @@ def analyze():
                 "sentiment": sentiment_result,
                 "llm_analysis": llm_result,
                 "risk_score": risk_result,
-                "gdelt_metrics": gdelt_metrics if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0 else None
+                "gdelt_metrics": gdelt_metrics if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0 else None,
+                "alert": alert
             }
         })
 
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/chain", methods=["POST"])
+def chain_analysis():
+    """
+    链式推理分析接口
+
+    请求体: {"text": "...", "chain_depth": 2}  # depth: 1-4
+    """
+    try:
+        req_data = request.get_json()
+        text = req_data.get("text", "")
+        depth = req_data.get("chain_depth", 2)
+
+        if not text.strip():
+            return jsonify({"success": False, "error": "缺少 text 字段"}), 400
+
+        from analyzer.chain_reasoner import get_chain_reasoner
+        reasoner = get_chain_reasoner()
+        result = reasoner.run_chain(text, depth=int(depth))
+
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/history", methods=["GET"])
+def history_events():
+    """
+    历史事件查询接口
+
+    参数: event_type, severity_min, year
+    """
+    try:
+        from data.historical_events import get_historical_events
+        he = get_historical_events()
+
+        event_type = request.args.get("event_type", None)
+        severity_min = request.args.get("severity_min", 0, type=int)
+        year = request.args.get("year", None, type=int)
+
+        events = he.get_events(event_type=event_type, severity_min=severity_min, year=year)
+        stats = he.get_event_stats()
+        markers = he.get_markers_for_chart()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "events": events,
+                "stats": stats,
+                "chart_markers": markers
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/multimodal", methods=["GET"])
+def multimodal_alignment():
+    """
+    多模态时空对齐接口
+
+    参数: months (默认12)
+    返回: 对齐矩阵 + 相关性分析
+    """
+    try:
+        from analyzer.multimodal_aligner import get_multimodal_aligner
+        aligner = get_multimodal_aligner()
+        months = request.args.get("months", 12, type=int)
+
+        aligned = aligner.align_monthly(months=months)
+        correlations = aligner.compute_correlations(aligned)
+        province_data = aligner.get_province_alignment()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "aligned": aligned,
+                "correlations": correlations,
+                "province_alignment": province_data
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/alert", methods=["GET"])
+def alert_status():
+    """
+    预警状态查询接口
+
+    返回: 当前预警等级、活跃预警数、历史记录
+    """
+    try:
+        from analyzer.alert_monitor import get_alert_monitor
+        monitor = get_alert_monitor()
+
+        status = monitor.get_current_status()
+        history = monitor.get_alert_history(limit=20)
+        thresholds = monitor.get_threshold_lines()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "status": status,
+                "history": history,
+                "thresholds": thresholds
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/alert/acknowledge", methods=["POST"])
+def acknowledge_alert():
+    """确认预警"""
+    try:
+        from analyzer.alert_monitor import get_alert_monitor
+        monitor = get_alert_monitor()
+        body = request.get_json() or {}
+        alert_id = body.get("alert_id", "")
+
+        success = monitor.acknowledge_alert(alert_id)
+        return jsonify({"success": success})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -323,6 +478,12 @@ def scheduler_control():
         elif action == "analysis":
             scheduler.trigger_analysis()
             return jsonify({"success": True, "message": "分析流水线已触发"})
+        elif action == "nightlight":
+            scheduler.trigger_nightlight()
+            return jsonify({"success": True, "message": "夜光数据刷新已触发"})
+        elif action == "economic":
+            scheduler.trigger_economic()
+            return jsonify({"success": True, "message": "经济数据刷新已触发"})
         else:
             return jsonify({
                 "success": True,
@@ -425,17 +586,129 @@ def trend():
             "anomalies": anomalies
         }
 
+        # 添加预警阈值参考线
+        try:
+            from analyzer.alert_monitor import get_alert_monitor
+            monitor = get_alert_monitor()
+            result["threshold_lines"] = monitor.get_threshold_lines()
+        except Exception:
+            pass
+
+        # 添加历史事件标注
+        try:
+            from data.historical_events import get_historical_events
+            he = get_historical_events()
+            result["event_markers"] = he.get_markers_for_chart()
+        except Exception:
+            pass
+
         # 生成图表数据
         if include_chart:
             chart_gen = get_chart_generator()
             chart_data = chart_gen.generate_trend_data(
                 dates=dates,
                 scores=scores,
-                moving_avg=trend_result.get("moving_average", [])
+                moving_avg=trend_result.get("moving_average", []),
+                forecast=forecast_result.get("forecast", []),
+                forecast_meta=result.get("forecast_meta"),
+                threshold_lines=result.get("threshold_lines"),
+                event_markers=result.get("event_markers")
             )
             result["chart_data"] = chart_data
 
         return jsonify({"success": True, "data": result})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================================
+# 知识图谱接口
+# ============================================================
+
+@app.route("/api/kg/query", methods=["GET"])
+def kg_query():
+    """
+    知识图谱查询接口
+
+    参数: entity (实体名), max_nodes (最大节点数, 默认30)
+    """
+    try:
+        entity = request.args.get("entity", None)
+        max_nodes = request.args.get("max_nodes", 30, type=int)
+
+        kg = get_knowledge_graph()
+        if entity:
+            data = kg.query_entities(entity)
+        else:
+            data = kg.get_graph_data_for_vis(max_nodes=max_nodes)
+
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/kg/seed", methods=["POST"])
+def kg_seed():
+    """知识图谱种子数据填充 (仅当 Neo4j 启用时有效)"""
+    try:
+        from data.kg_seeder import KGSeeder
+        seeder = KGSeeder()
+        result = seeder.seed_all()
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/network", methods=["GET"])
+def network_analysis():
+    """
+    关系网络分析接口 (NetworkX)
+
+    返回: 中心性指标、关键行为体、社区结构
+    """
+    try:
+        from analyzer.network_analyzer import get_network_analyzer
+        analyzer = get_network_analyzer()
+        result = analyzer.analyze()
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================================
+# 报告生成接口
+# ============================================================
+
+@app.route("/api/report", methods=["GET"])
+def generate_report():
+    """
+    自动化结构化报告生成接口
+
+    查询参数:
+        - format: html | docx (默认 html)
+        - days: 分析最近多少天 (默认 30)
+
+    响应:
+        - html: 返回 HTML 页面
+        - docx: 返回 docx 文件下载
+    """
+    try:
+        fmt = request.args.get("format", "html").lower()
+        days = request.args.get("days", 30, type=int)
+
+        generator = get_report_generator()
+
+        if fmt == "docx":
+            docx_bytes = generator.generate_docx_report(days=days)
+            return Response(
+                docx_bytes,
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                headers={"Content-Disposition": f"attachment; filename=myanmar_risk_report_{days}d.docx"}
+            )
+        else:
+            html = generator.generate_html_report(days=days)
+            return Response(html, mimetype="text/html")
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

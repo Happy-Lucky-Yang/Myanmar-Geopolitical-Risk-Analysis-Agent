@@ -85,6 +85,26 @@ rss_feeds:
     enabled: false   # 有付费墙，先关闭
     language: "en"
 
+# ---------- 夜间灯光遥感 ----------
+nightlight:
+  enabled: true
+  # 数据源: worldbank (默认, 免费无需Key)
+  source: "worldbank"
+  # 缓存有效期 (天)
+  cache_days: 7
+
+# ---------- 宏观经济统计 ----------
+economic:
+  enabled: true
+  # World Bank API (免费)
+  worldbank_indicators:
+    gdp_growth: "NY.GDP.MKTP.KD.ZG"       # GDP 增长率
+    gdp_per_capita: "NY.GDP.PCAP.CD"       # 人均 GDP
+    inflation: "FP.CPI.TOTL.ZG"            # 通胀率
+    trade_pct_gdp: "NE.TRD.GNFS.ZS"        # 贸易占GDP比重
+  # 缓存有效期 (天)
+  cache_days: 30
+
 # ---------- 数据存储 ----------
 storage:
   # 新闻数据存放目录
@@ -120,13 +140,11 @@ conflict_keywords:
     - "military"
 
 # ---------- 风险评分权重 ----------
-# 注意: nightlight_change 和 refugee_change 为占位权重（数据源未接入）
-#       当这些指标值为 0 时，权重会被动态归一化分配给有效指标
 risk_weights:
   conflict_frequency: 0.30    # 冲突频次
   sentiment_avg: 0.25         # 情感均值（负面程度）
-  nightlight_change: 0.20     # 夜间灯光变化率 [占位 - 遥感数据未接入]
-  refugee_change: 0.15        # 难民变化 [占位 - 难民统计未接入]
+  nightlight_change: 0.20     # 夜间灯光变化率 (WB代理)
+  refugee_change: 0.15        # 难民变化 (经济推断)
   event_severity: 0.10        # 事件严重程度
 
 # ---------- 趋势分析 ----------

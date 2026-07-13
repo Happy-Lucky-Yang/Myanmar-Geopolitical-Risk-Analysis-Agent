@@ -11,6 +11,10 @@ class TrendChartGenerator:
 
     def generate_trend_data(self, dates: List[str], scores: List[float],
                             moving_avg: List[float] = None,
+                            forecast: List[float] = None,
+                            forecast_meta: Dict = None,
+                            threshold_lines: List[Dict] = None,
+                            event_markers: List[Dict] = None,
                             title: str = "缅甸地缘风险趋势") -> Dict:
         """
         生成趋势折线图数据（JSON 格式，供前端 ECharts 渲染）
@@ -18,6 +22,10 @@ class TrendChartGenerator:
         :param dates: 日期列表 ["2026-01-01", "2026-01-02", ...]
         :param scores: 风险分列表 [0.5, 0.6, ...]
         :param moving_avg: 移动平均序列（可选）
+        :param forecast: 预测序列（可选）
+        :param forecast_meta: 预测元数据（可选）
+        :param threshold_lines: 预警阈值线（可选）
+        :param event_markers: 历史事件标注（可选）
         :param title: 图表标题
         :return: 图表数据字典
         """
@@ -55,6 +63,59 @@ class TrendChartGenerator:
                 "lineStyle": {"width": 2, "type": "dashed"},
                 "symbol": "none"
             })
+
+        # 添加预测序列 (虚线 + 置信区间阴影)
+        if forecast and len(forecast) > 0:
+            # 预测日期扩展
+            from datetime import datetime, timedelta
+            if dates:
+                try:
+                    last_date = datetime.strptime(dates[-1], "%Y-%m-%d")
+                    forecast_dates = [(last_date + timedelta(days=i+1)).strftime("%Y-%m-%d")
+                                     for i in range(len(forecast))]
+                    chart_data["xAxis"] = dates + forecast_dates
+                except Exception:
+                    chart_data["xAxis"] = dates + [f"D+{i+1}" for i in range(len(forecast))]
+
+            # 实际数据填充 None 占位
+            actual_padded = [round(s, 4) for s in scores] + [None] * len(forecast)
+            chart_data["series"][0]["data"] = actual_padded
+
+            # 预测序列
+            forecast_padded = [None] * len(scores) + [round(f, 4) for f in forecast]
+            # 连接点: 预测序列的第一个点 = 实际数据的最后一个点
+            if scores:
+                forecast_padded[len(scores) - 1] = round(scores[-1], 4)
+
+            chart_data["series"].append({
+                "name": "预测",
+                "type": "line",
+                "data": forecast_padded,
+                "smooth": True,
+                "lineStyle": {"width": 2, "type": "dashed"},
+                "itemStyle": {"color": "#d29922"},
+                "symbol": "none"
+            })
+
+            chart_data["forecast_meta"] = forecast_meta or {}
+
+        # 添加预警阈值参考线 (markLine)
+        if threshold_lines:
+            mark_lines = [
+                {"yAxis": line["yAxis"], "name": line["name"],
+                 "lineStyle": {"color": line["color"], "type": "dotted", "width": 1}}
+                for line in threshold_lines
+            ]
+            chart_data["series"][0].setdefault("markLine", {})
+            chart_data["series"][0]["markLine"]["data"] = mark_lines
+            chart_data["series"][0]["markLine"]["silent"] = True
+
+        # 添加历史事件标注 (markPoint)
+        if event_markers:
+            chart_data["series"][0].setdefault("markPoint", {})
+            chart_data["series"][0]["markPoint"]["data"] = event_markers[:10]
+            chart_data["series"][0]["markPoint"]["symbol"] = "triangle"
+            chart_data["series"][0]["markPoint"]["symbolSize"] = 12
 
         return chart_data
 

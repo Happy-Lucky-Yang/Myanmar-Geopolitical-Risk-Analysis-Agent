@@ -8,7 +8,25 @@ var trendChart = null;
 /* ---------- 初始化 ---------- */
 document.addEventListener('DOMContentLoaded', function () {
     loadTrend();
+    loadAlertStatus();
 });
+
+/* ---------- 预警状态指示灯 ---------- */
+async function loadAlertStatus() {
+    try {
+        var json = await fetchJSON('/api/alert');
+        if (json.success && json.data.status) {
+            var s = json.data.status;
+            var el = document.getElementById('alert-indicator');
+            if (el) {
+                el.innerHTML = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+                    + 'background:' + escapeHtml(s.color) + ';margin-right:6px;"></span>'
+                    + '<span style="color:' + escapeHtml(s.color) + ';font-size:0.85rem;">'
+                    + escapeHtml(s.label) + '</span>';
+            }
+        }
+    } catch (e) { /* silent */ }
+}
 
 /* ---------- 加载趋势数据 ---------- */
 async function loadTrend() {
@@ -204,6 +222,11 @@ function renderChart(chartData) {
             }
             if (s.lineStyle) item.lineStyle = Object.assign(item.lineStyle || {}, s.lineStyle);
             if (s.areaStyle) item.areaStyle = Object.assign(item.areaStyle || {}, s.areaStyle);
+            if (s.itemStyle) item.itemStyle = Object.assign(item.itemStyle || {}, s.itemStyle);
+            if (s.markLine) item.markLine = s.markLine;
+            if (s.markPoint) item.markPoint = s.markPoint;
+            if (s.symbol) item.symbol = s.symbol;
+            if (s.symbolSize) item.symbolSize = s.symbolSize;
             return item;
         })
     };

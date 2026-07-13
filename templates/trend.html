@@ -14,6 +14,7 @@
             <li><a href="/">对话分析</a></li>
             <li><a href="/map">风险地图</a></li>
             <li><a href="/trend" class="active">趋势预测</a></li>
+            <li id="alert-indicator" style="margin-left:auto;padding-right:16px;"></li>
         </ul>
     </nav>
 
@@ -48,6 +49,12 @@
         <div class="forecast-section">
             <h3>⚡ 异常事件检测</h3>
             <div id="anomaly-area"></div>
+        </div>
+
+        <!-- 报告导出 -->
+        <div class="forecast-section" style="text-align:center;margin-top:1.5rem;">
+            <a href="/api/report?format=html&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;margin-right:8px;">导出 HTML 报告</a>
+            <a href="/api/report?format=docx&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;">导出 DOCX 报告</a>
         </div>
     </main>
 

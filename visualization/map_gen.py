@@ -38,17 +38,13 @@ class RiskMapGenerator:
         生成缅甸风险热力地图
 
         :param risk_data: 风险数据列表，每条包含省份和风险分
-            [
-                {"province": "仰光省", "risk_score": 0.8, "lat": 16.87, "lon": 96.20},
-                ...
-            ]
-        :return: HTML 字符串（可直接嵌入网页或返回给前端）
+        :return: HTML 字符串
         """
         # 创建基础地图
         m = folium.Map(
             location=MYANMAR_CENTER,
             zoom_start=6,
-            tiles="CartoDB positron"
+            tiles="CartoDB dark_matter"
         )
 
         # 准备热力数据
@@ -57,15 +53,13 @@ class RiskMapGenerator:
             province = item.get("province", "")
             risk_score = item.get("risk_score", 0.5)
 
-            # 查找坐标
             if "lat" in item and "lon" in item:
                 lat, lon = item["lat"], item["lon"]
             elif province in MYANMAR_PROVINCES:
                 lat, lon = MYANMAR_PROVINCES[province]
             else:
-                continue  # 跳过未知省份
+                continue
 
-            # 热力权重 = 风险分 * 10（folium HeatMap 需要正数值）
             heat_data.append([lat, lon, risk_score * 10])
 
         # 添加热力图层
@@ -78,7 +72,7 @@ class RiskMapGenerator:
                 gradient={0.2: "green", 0.5: "yellow", 0.8: "orange", 1.0: "red"}
             ).add_to(m)
 
-        # 为每个省份添加标记
+        # 为每个省份添加详细标记
         for item in risk_data:
             province = item.get("province", "")
             risk_score = item.get("risk_score", 0.5)
@@ -86,14 +80,20 @@ class RiskMapGenerator:
 
             if province in MYANMAR_PROVINCES:
                 lat, lon = MYANMAR_PROVINCES[province]
-
-                # 根据风险等级选择颜色
                 color = self._risk_color(risk_score)
 
-                popup_text = (
-                    f"<b>{province}</b><br>"
-                    f"风险分: {risk_score:.2f}<br>"
-                    f"风险等级: {risk_level}"
+                # 详细弹窗内容
+                trend_dir = "↑" if risk_score > 60 else "↓" if risk_score < 40 else "→"
+                popup_html = (
+                    f"<div style='min-width:150px'>"
+                    f"<b style='font-size:14px'>{province}</b><br>"
+                    f"<hr style='border:1px solid #ddd;margin:4px 0'>"
+                    f"风险分: <b>{risk_score:.1f}</b><br>"
+                    f"风险等级: <b>{risk_level}</b><br>"
+                    f"趋势: {trend_dir}<br>"
+                    f"<span style='font-size:11px;color:#666'>"
+                    f"经纬度: ({lat:.2f}, {lon:.2f})"
+                    f"</span></div>"
                 )
 
                 folium.CircleMarker(
@@ -102,23 +102,30 @@ class RiskMapGenerator:
                     color=color,
                     fill=True,
                     fill_opacity=0.7,
-                    popup=folium.Popup(popup_text, max_width=200)
+                    popup=folium.Popup(popup_html, max_width=250),
+                    tooltip=f"{province}: {risk_score:.1f}"
                 ).add_to(m)
 
-        # 渲染为 HTML 字符串
-        html_str = m._repr_html_()
-        return html_str
+        # 添加数据来源说明
+        title_html = (
+            '<div style="position:fixed;bottom:10px;left:60px;z-index:999;'
+            'background:rgba(0,0,0,0.7);padding:6px 12px;border-radius:4px;'
+            'color:#ccc;font-size:11px;">'
+            '数据源: 新闻文本 + GDELT + VIIRS遥感 + World Bank'
+            '</div>'
+        )
+        m.get_root().html.add_child(folium.Element(title_html))
+
+        return m._repr_html_()
 
     def generate_default_map(self) -> str:
         """
         生成默认地图（无数据时展示缅甸行政区划）
-
-        :return: HTML 字符串
         """
         m = folium.Map(
             location=MYANMAR_CENTER,
             zoom_start=6,
-            tiles="CartoDB positron"
+            tiles="CartoDB dark_matter"
         )
 
         # 标注所有省份

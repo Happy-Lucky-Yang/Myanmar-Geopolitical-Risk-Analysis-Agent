@@ -14,3 +14,159 @@
 2026-07-12 00:38:57,432 [INFO] [Scheduler] RSS 源: 0 条
 2026-07-12 00:38:57,432 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
 2026-07-12 00:38:57,433 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-12 00:38:57.433598 ======
+2026-07-12 00:42:05,050 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-12 00:42:05,050 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-12 00:42:05,050 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-12 00:42:05.050541 ======
+2026-07-12 00:42:17,244 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-12 00:42:23,607 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-12 00:42:43,127 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-12 00:42:43,127 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-12 00:42:43,130 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-12 00:42:43.130238 ======
+2026-07-12 00:46:07,593 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-12 00:46:07,593 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-12 00:46:07,594 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-12 00:46:07.594213 ======
+2026-07-12 00:46:24,041 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-12 00:46:33,234 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-12 00:46:55,778 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-12 00:46:55,780 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-12 00:46:55,781 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-12 00:46:55.781568 ======
+2026-07-13 00:13:47,872 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 00:13:47,873 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 00:13:47,873 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 00:13:47.873674 ======
+2026-07-13 00:14:04,576 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 00:14:11,643 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 00:15:16,351 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 00:15:16,351 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 00:15:16,351 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 00:15:16.351833 ======
+2026-07-13 00:15:31,318 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 00:15:37,609 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 00:16:23,570 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 00:16:23,570 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 00:16:23,570 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 00:16:23.570931 ======
+2026-07-13 00:16:38,412 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 00:16:44,331 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 00:17:38,523 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-13 00:17:38,525 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-13 00:17:38,526 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-13 00:17:38.526599 ======
+2026-07-13 00:35:30,299 [INFO] [Scheduler] GDELT 完成: 156 条新闻, 冲突 0 条
+2026-07-13 00:35:30,300 [INFO] [Scheduler] ====== 分析流水线开始: 2026-07-13 00:35:30.300402 ======
+2026-07-13 00:35:32,151 [ERROR] [Scheduler] 分析失败: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+Traceback (most recent call last):
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\data\scheduler.py", line 285, in _run_analysis_job
+    entities = ner.extract_entities(text)
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 87, in extract_entities
+    entities = self._extract_en(text)
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 119, in _extract_en
+    self._ensure_spacy_loaded()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 59, in _ensure_spacy_loaded
+    self._nlp_en = spacy.load("en_core_web_sm")
+                   ~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\10748\AppData\Local\Programs\Python\Python314\Lib\site-packages\spacy\__init__.py", line 74, in load
+    return util.load_model(
+           ~~~~~~~~~~~~~~~^
+        name,
+        ^^^^^
+    ...<4 lines>...
+        config=config,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\10748\AppData\Local\Programs\Python\Python314\Lib\site-packages\spacy\util.py", line 531, in load_model
+    raise IOError(Errors.E050.format(name=name))
+OSError: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+2026-07-13 00:35:32,219 [INFO] [Scheduler] ====== 夜光数据刷新: 2026-07-13 00:35:32.219505 ======
+2026-07-13 00:35:32,221 [INFO] [Scheduler] 夜光数据: nl_change=None
+2026-07-13 00:35:32,221 [INFO] [Scheduler] ====== 经济数据刷新: 2026-07-13 00:35:32.221312 ======
+2026-07-13 00:35:32,223 [INFO] [Scheduler] 经济数据: GDP=None, 难民变化=None
+2026-07-13 00:36:18,038 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 00:36:18,039 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 00:36:18,040 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 00:36:18.040040 ======
+2026-07-13 00:36:31,225 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 00:36:38,966 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 00:37:34,900 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-13 00:37:34,901 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-13 00:37:34,901 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-13 00:37:34.901710 ======
+2026-07-13 00:50:02,853 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 00:50:02,853 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 00:50:02,854 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 00:50:02.854323 ======
+2026-07-13 00:50:16,721 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 00:50:24,391 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 00:51:19,970 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-13 00:51:19,972 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-13 00:51:19,974 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-13 00:51:19.974639 ======
+2026-07-13 01:11:22,873 [INFO] [Scheduler] GDELT 完成: 0 条新闻, 冲突 0 条
+2026-07-13 01:11:22,874 [INFO] [Scheduler] ====== 分析流水线开始: 2026-07-13 01:11:22.874594 ======
+2026-07-13 01:11:24,157 [ERROR] [Scheduler] 分析失败: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+Traceback (most recent call last):
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\data\scheduler.py", line 285, in _run_analysis_job
+    entities = ner.extract_entities(text)
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 87, in extract_entities
+    entities = self._extract_en(text)
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 119, in _extract_en
+    self._ensure_spacy_loaded()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 59, in _ensure_spacy_loaded
+    self._nlp_en = spacy.load("en_core_web_sm")
+                   ~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\10748\AppData\Local\Programs\Python\Python314\Lib\site-packages\spacy\__init__.py", line 74, in load
+    return util.load_model(
+           ~~~~~~~~~~~~~~~^
+        name,
+        ^^^^^
+    ...<4 lines>...
+        config=config,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\10748\AppData\Local\Programs\Python\Python314\Lib\site-packages\spacy\util.py", line 531, in load_model
+    raise IOError(Errors.E050.format(name=name))
+OSError: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+2026-07-13 01:11:24,163 [INFO] [Scheduler] ====== 夜光数据刷新: 2026-07-13 01:11:24.163358 ======
+2026-07-13 01:11:39,780 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 01:11:39,780 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 01:11:39,780 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 01:11:39.780785 ======
+2026-07-13 01:11:53,242 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 01:11:59,341 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 01:12:53,771 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-13 01:12:53,772 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-13 01:12:53,773 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-13 01:12:53.773569 ======
+2026-07-13 01:33:01,487 [INFO] [Scheduler] GDELT 完成: 3 条新闻, 冲突 0 条
+2026-07-13 01:33:01,488 [INFO] [Scheduler] ====== 分析流水线开始: 2026-07-13 01:33:01.488352 ======
+2026-07-13 01:33:03,107 [ERROR] [Scheduler] 分析失败: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+Traceback (most recent call last):
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\data\scheduler.py", line 285, in _run_analysis_job
+    entities = ner.extract_entities(text)
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 87, in extract_entities
+    entities = self._extract_en(text)
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 119, in _extract_en
+    self._ensure_spacy_loaded()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\10748\Desktop\Myanmar-Geopolitical-Risk-Analysis-Agent\analyzer\ner.py", line 59, in _ensure_spacy_loaded
+    self._nlp_en = spacy.load("en_core_web_sm")
+                   ~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\10748\AppData\Local\Programs\Python\Python314\Lib\site-packages\spacy\__init__.py", line 74, in load
+    return util.load_model(
+           ~~~~~~~~~~~~~~~^
+        name,
+        ^^^^^
+    ...<4 lines>...
+        config=config,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\10748\AppData\Local\Programs\Python\Python314\Lib\site-packages\spacy\util.py", line 531, in load_model
+    raise IOError(Errors.E050.format(name=name))
+OSError: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+2026-07-13 01:33:03,184 [INFO] [Scheduler] ====== 夜光数据刷新: 2026-07-13 01:33:03.184746 ======
+2026-07-13 01:33:04,888 [INFO] [Scheduler] 夜光数据: nl_change=None
+2026-07-13 01:33:04,888 [INFO] [Scheduler] ====== 经济数据刷新: 2026-07-13 01:33:04.888388 ======
+2026-07-13 01:33:04,892 [INFO] [Scheduler] 经济数据: GDP=None, 难民变化=None
+2026-07-13 08:10:31,755 [INFO] [Scheduler] 启动成功 | 爬取间隔=4h, GDELT间隔=6h, 分析间隔=12h
+2026-07-13 08:10:31,756 [INFO] [Scheduler] 后台调度线程已启动
+2026-07-13 08:10:31,757 [INFO] [Scheduler] ====== 新闻爬取开始: 2026-07-13 08:10:31.757025 ======
+2026-07-13 08:10:48,792 [INFO] [Scheduler] 缅华网: 0 条
+2026-07-13 08:10:55,076 [INFO] [Scheduler] 英文媒体: 0 条
+2026-07-13 08:11:49,825 [INFO] [Scheduler] RSS 源: 0 条
+2026-07-13 08:11:49,826 [INFO] [Scheduler] 爬取完成: 共 0 条新闻
+2026-07-13 08:11:49,827 [INFO] [Scheduler] ====== GDELT 查询开始: 2026-07-13 08:11:49.827368 ======

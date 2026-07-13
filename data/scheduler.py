@@ -4,6 +4,8 @@ data.scheduler - 统一定时调度器
   1. 缅华网新闻爬取
   2. GDELT 全球事件数据库查询
   3. 新闻分析流水线（NER + 情感 + 风险评分）
+  4. 夜间灯光遥感数据刷新（月度）
+  5. 宏观经济统计数据刷新（季度）
 
 使用方式：
   - 在 app.py 启动时自动启动后台线程
@@ -80,6 +82,14 @@ class CrawlerScheduler:
         self._crawl_lock = threading.Lock()
         self._gdelt_lock = threading.Lock()
         self._analysis_lock = threading.Lock()
+
+        # 遥感/经济数据刷新间隔（小时）
+        self._nightlight_interval = scheduler_cfg.get("nightlight_interval_hours", 168)  # 7天
+        self._economic_interval = scheduler_cfg.get("economic_interval_hours", 720)     # 30天
+        self._last_nightlight_time = None
+        self._last_economic_time = None
+        self._last_nightlight_result = None
+        self._last_economic_result = None
 
     # ============================================================
     # 任务执行
@@ -177,6 +187,54 @@ class CrawlerScheduler:
                 logger.error(f"[Scheduler] GDELT 失败: {e}", exc_info=True)
         finally:
             self._gdelt_lock.release()
+
+    def _run_nightlight_job(self):
+        """刷新夜间灯光遥感数据（月度/周度）"""
+        try:
+            logger.info(f"[Scheduler] ====== 夜光数据刷新: {datetime.now()} ======")
+            self._last_nightlight_time = datetime.now()
+
+            from data.nightlight_crawler import get_nightlight_crawler
+            nl = get_nightlight_crawler()
+            result = nl.force_refresh()
+
+            self._last_nightlight_result = {
+                "success": True,
+                "nightlight_change": result.get("nightlight_change"),
+                "time": self._last_nightlight_time.isoformat()
+            }
+            logger.info(f"[Scheduler] 夜光数据: nl_change={result.get('nightlight_change')}")
+        except Exception as e:
+            self._last_nightlight_result = {
+                "success": False, "error": str(e),
+                "time": datetime.now().isoformat()
+            }
+            logger.error(f"[Scheduler] 夜光刷新失败: {e}", exc_info=True)
+
+    def _run_economic_job(self):
+        """刷新宏观经济统计数据（季度/月度）"""
+        try:
+            logger.info(f"[Scheduler] ====== 经济数据刷新: {datetime.now()} ======")
+            self._last_economic_time = datetime.now()
+
+            from data.economic_crawler import get_economic_crawler
+            econ = get_economic_crawler()
+            result = econ.force_refresh()
+
+            self._last_economic_result = {
+                "success": True,
+                "gdp_growth": result.get("gdp_growth"),
+                "refugee_change": result.get("refugee_change"),
+                "time": self._last_economic_time.isoformat()
+            }
+            logger.info(f"[Scheduler] 经济数据: GDP={result.get('gdp_growth')}, "
+                        f"难民变化={result.get('refugee_change')}")
+        except Exception as e:
+            self._last_economic_result = {
+                "success": False, "error": str(e),
+                "time": datetime.now().isoformat()
+            }
+            logger.error(f"[Scheduler] 经济数据刷新失败: {e}", exc_info=True)
 
     def _run_analysis_job(self):
         """执行分析流水线任务"""
@@ -279,11 +337,15 @@ class CrawlerScheduler:
         self._run_crawl_job()
         self._run_gdelt_job()
         self._run_analysis_job()
+        self._run_nightlight_job()
+        self._run_economic_job()
         
         # 计算下次执行时间
         next_crawl = time.time() + self._crawl_interval * 3600
         next_gdelt = time.time() + self._gdelt_interval * 3600
         next_analysis = time.time() + self._analysis_interval * 3600
+        next_nightlight = time.time() + self._nightlight_interval * 3600
+        next_economic = time.time() + self._economic_interval * 3600
         
         while self._running:
             now = time.time()
@@ -302,6 +364,16 @@ class CrawlerScheduler:
             if now >= next_analysis:
                 self._run_analysis_job()
                 next_analysis = now + self._analysis_interval * 3600
+
+            # 检查是否需要刷新夜光数据
+            if now >= next_nightlight:
+                self._run_nightlight_job()
+                next_nightlight = now + self._nightlight_interval * 3600
+
+            # 检查是否需要刷新经济数据
+            if now >= next_economic:
+                self._run_economic_job()
+                next_economic = now + self._economic_interval * 3600
             
             # 每 60 秒检查一次
             time.sleep(60)
@@ -347,6 +419,8 @@ class CrawlerScheduler:
             "last_crawl": self._last_crawl_result,
             "last_gdelt": self._last_gdelt_result,
             "last_analysis": self._last_analysis_result,
+            "last_nightlight": self._last_nightlight_result,
+            "last_economic": self._last_economic_result,
         }
 
     def trigger_crawl(self):
@@ -363,6 +437,16 @@ class CrawlerScheduler:
         """手动触发一次分析（异步执行，立即返回）"""
         logger.info("[Scheduler] 手动触发: 分析流水线")
         threading.Thread(target=self._run_analysis_job, daemon=True).start()
+
+    def trigger_nightlight(self):
+        """手动触发夜光数据刷新"""
+        logger.info("[Scheduler] 手动触发: 夜光数据刷新")
+        threading.Thread(target=self._run_nightlight_job, daemon=True).start()
+
+    def trigger_economic(self):
+        """手动触发经济数据刷新"""
+        logger.info("[Scheduler] 手动触发: 经济数据刷新")
+        threading.Thread(target=self._run_economic_job, daemon=True).start()
 
 
 # ============================================================

@@ -1,3 +1,53 @@
+# ========================================
+# 缅甸地缘风险智能分析原型系统 - Git 忽略规则
+# ========================================
+
+# Python 字节码缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 环境变量（含 API 密钥，绝不提交）
+.env
+
+# 大型数据文件（按需手动备份）
+data/raw/*.json
+data/raw/*.txt
+data/processed/
+data/external/
+
+# 日志
+logs/
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node / 前端工具
+node_modules/
+
+# 分发 / 打包
+dist/
+build/
+*.egg-info/
+
+# 临时文件
+*.tmp
+*_temp.*
+docs/_proposal_temp.txt
 # 环境配置（敏感信息）
 .env
 

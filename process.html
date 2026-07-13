@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地缘环境智能计算技术路线图 · 简洁版</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #d9e2ec;
+            font-family: 'Inter', 'Noto Serif SC', sans-serif;
+            padding: 36px 20px;
+            color: #1e2f3a;
+            line-height: 1.5;
+        }
+
+        .document {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #ffffff;
+            box-shadow: 0 8px 20px rgba(0, 20, 30, 0.08);
+            border-radius: 20px;
+            border: 1px solid #c0d0e0;
+            overflow: hidden;
+        }
+
+        .inner {
+            padding: 40px 36px 48px;
+        }
+
+        .title-section {
+            text-align: left;
+            margin-bottom: 40px;
+            padding-bottom: 16px;
+            border-bottom: 3px solid #a0b8cc;
+        }
+
+        .title-section h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'Noto Serif SC', serif;
+            color: #0f3147;
+            letter-spacing: -0.01em;
+            margin-bottom: 8px;
+        }
+
+        .title-section .sub {
+            font-size: 0.95rem;
+            color: #2c5a77;
+            font-weight: 500;
+            background: none;
+            padding: 0;
+            display: block;
+        }
+
+        .flow-sequence {
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+        }
+
+        .layer {
+            background: #ffffff;
+            border: 1px solid #b8cbd9;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0, 20, 40, 0.06);
+            transition: box-shadow 0.15s;
+        }
+
+        .layer:hover {
+            box-shadow: 0 10px 22px -8px rgba(20, 70, 100, 0.15);
+        }
+
+        .layer-header {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+            padding: 20px 28px 12px 28px;
+            background: #f8fbfe;
+            border-bottom: 1px solid #cbdae6;
+        }
+
+        .layer-number {
+            background: #174f6e;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            width: 42px;
+            height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 42px;
+            font-family: 'Inter', sans-serif;
+            flex-shrink: 0;
+        }
+
+        .layer-title {
+            font-size: 1.4rem;
+            font-weight: 680;
+            font-family: 'Noto Serif SC', serif;
+            color: #0f3147;
+            letter-spacing: -0.2px;
+        }
+
+        .layer-desc {
+            font-size: 0.85rem;
+            color: #1d4f6e;
+            margin-left: auto;
+            font-weight: 500;
+            background: #d9e7f2;
+            padding: 6px 18px;
+            border-radius: 40px;
+            border: 1px solid #b1c9dd;
+        }
+
+        .modules-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            padding: 24px 28px 28px 28px;
+        }
+
+        .module-item {
+            flex: 1 1 0;
+            min-width: 180px;
+            background: #e5eff8;
+            border: 1px solid #b0c8db;
+            border-radius: 14px;
+            padding: 18px 16px 18px 16px;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.04);
+            transition: all 0.15s;
+        }
+
+        .module-item:hover {
+            border-color: #7fa5c2;
+            background: #dbe9f5;
+            box-shadow: 0 6px 12px rgba(28, 80, 120, 0.08);
+        }
+
+        .module-name {
+            font-weight: 800;
+            font-size: 1rem;
+            color: #123f58;
+            margin-bottom: 10px;
+            font-family: 'Noto Serif SC', serif;
+            border-left: 5px solid #1f6a97;
+            padding-left: 14px;
+            line-height: 1.4;
+        }
+
+        .module-detail {
+            font-size: 0.8rem;
+            color: #1b3e54;
+            line-height: 1.6;
+            margin-top: 8px;
+            padding-left: 18px;
+            font-weight: 450;
+            opacity: 1;
+        }
+
+        .connector {
+            text-align: center;
+            padding: 4px 0 0 0;
+            color: #2d5b7a;
+            font-size: 0.9rem;
+            font-weight: 600;
+            letter-spacing: 2px;
+        }
+
+        .connector span {
+            background: transparent;
+            display: inline-block;
+        }
+
+        .layer-core {
+            background: #fbf6ef;
+            border: 1px solid #cfbaa8;
+            box-shadow: 0 4px 14px rgba(140, 80, 30, 0.06);
+        }
+
+        .layer-core .layer-header {
+            background: #f5e9dd;
+            border-bottom: 1px solid #d9c3ae;
+        }
+
+        .layer-core .layer-number {
+            background: #9c592f;
+            color: #fff8f0;
+        }
+
+        .layer-core .layer-title {
+            color: #6b3f1e;
+        }
+
+        .layer-core .layer-desc {
+            background: #e4cfba;
+            color: #6d401e;
+            border-color: #c4aa92;
+        }
+
+        .layer-core .module-item {
+            background: #f2e1d2;
+            border-color: #c8ad93;
+        }
+
+        .layer-core .module-item:hover {
+            background: #ecd5c2;
+            border-color: #b08463;
+        }
+
+        .layer-core .module-name {
+            color: #8c4e26;
+            border-left-color: #b5703e;
+        }
+
+        .layer-core .module-detail {
+            color: #3f2f22;
+        }
+
+        .footer-note {
+            margin-top: 48px;
+            text-align: left;
+            font-size: 0.8rem;
+            color: #1f4a66;
+            border-top: 2px solid #b8cedf;
+            padding-top: 24px;
+            line-height: 1.7;
+            font-weight: 450;
+            letter-spacing: 0.2px;
+        }
+
+        @media (max-width: 850px) {
+            .modules-grid {
+                flex-wrap: wrap;
+            }
+            .module-item {
+                flex: 1 1 200px;
+            }
+        }
+
+        @media (max-width: 750px) {
+            .inner {
+                padding: 28px 20px;
+            }
+            .title-section {
+                text-align: left;
+            }
+            .modules-grid {
+                flex-direction: column;
+            }
+            .layer-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .layer-desc {
+                margin-left: 0;
+            }
+            .layer-title {
+                font-size: 1.25rem;
+            }
+        }
+
+        .module-detail strong {
+            font-weight: 700;
+            color: #0d3953;
+        }
+    </style>
+</head>
+<body>
+<div class="document">
+    <div class="inner">
+        <div class="title-section">
+            <h1>区域国别地缘环境智能计算技术图</h1>
+            <div class="sub">缅甸案例 · 多源数据 · 大模型API · 轻量智能</div>
+        </div>
+
+        <div class="flow-sequence">
+            <!-- 数据采集 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-number">一</div>
+                    <div class="layer-title">数据采集</div>
+                    <div class="layer-desc">数据获取与汇聚收集</div>
+                </div>
+                <div class="modules-grid">
+                    <div class="module-item"><div class="module-name">遥感影像数据</div><div class="module-detail">夜间灯光遥感（VIIRS/DMSP）、土地利用覆盖、地形数据</div></div>
+                    <div class="module-item"><div class="module-name">新闻数据</div><div class="module-detail">多语种媒体报道（缅、英、中文）、GDELT数据库、社交平台关键事件</div></div>
+                    <div class="module-item"><div class="module-name">经济社会统计</div><div class="module-detail">GDP、人口、贸易往来、基础设施分布（世界银行、缅甸官方统计）</div></div>
+                    <div class="module-item"><div class="module-name">历史文献档案</div><div class="module-detail">地缘政治研究论文、冲突记录、智库分析报告、历史文本</div></div>
+                </div>
+            </div>
+            <div class="connector"><span>▼ 数据处理 ▼</span></div>
+
+            <!-- 数据处理 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-number">二</div>
+                    <div class="layer-title">数据清洗与结构化处理</div>
+                    <div class="layer-desc">多源融合</div>
+                </div>
+                <div class="modules-grid">
+                    <div class="module-item"><div class="module-name">检查数据质量</div><div class="module-detail">去重、缺失值插补、时空基准统一、异常值检测</div></div>
+                    <div class="module-item"><div class="module-name">多模态对齐</div><div class="module-detail">遥感影像与文本事件的时空匹配（基于时间戳与地理坐标）</div></div>
+                    <div class="module-item"><div class="module-name">提取特征信息</div><div class="module-detail">命名实体识别（LAC/HanLP）、关系抽取、事件属性结构化</div></div>
+                    <div class="module-item"><div class="module-name">构建地缘知识图谱</div><div class="module-detail">实体-关系-事件知识网络（Neo4j），支持检索与可视化</div></div>
+                </div>
+            </div>
+            <div class="connector"><span>▼ 核心智能计算 ▼</span></div>
+
+            <!-- 核心层（修改后的可行技术） -->
+            <div class="layer layer-core">
+                <div class="layer-header">
+                    <div class="layer-number">三</div>
+                    <div class="layer-title">地缘环境智能计算</div>
+                    <div class="layer-desc">轻量级 · 可落地</div>
+                </div>
+                <div class="modules-grid">
+                    <div class="module-item"><div class="module-name">大语言模型调用</div><div class="module-detail">调用智谱/文心/DeepSeek API + 提示词工程，实现地缘术语理解、摘要生成、事件分类</div></div>
+                    <div class="module-item"><div class="module-name">轻量算法库</div><div class="module-detail">时间序列趋势分析（移动平均/线性回归）、关系网络分析（NetworkX）、空间自相关</div></div>
+                    <div class="module-item"><div class="module-name">地缘位势评估</div><div class="module-detail">距离加权打分模型（影响力 ∝ 1/距离²），多指标综合评分</div></div>
+                    <div class="module-item"><div class="module-name">链式推理模拟</div><div class="module-detail">多轮API问答串联分析步骤，模拟分步逻辑推理</div></div>
+                </div>
+            </div>
+            <div class="connector"><span>▼ 多维态势分析与模拟 ▼</span></div>
+
+            <!-- 态势分析 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-number">四</div>
+                    <div class="layer-title">多维态势分析与模拟</div>
+                    <div class="layer-desc">现状描述+情景预判</div>
+                </div>
+                <div class="modules-grid">
+                    <div class="module-item"><div class="module-name">描述性分析</div><div class="module-detail">地缘风险格局识别、冲突热点现状呈现</div></div>
+                    <div class="module-item"><div class="module-name">探索性分析</div><div class="module-detail">关联模式挖掘、异常事件探测与聚类</div></div>
+                    <div class="module-item"><div class="module-name">诊断性分析</div><div class="module-detail">驱动机制解析、关键影响因素归因</div></div>
+                    <div class="module-item"><div class="module-name">预测性分析</div><div class="module-detail">基于历史趋势的情景推演（移动平均/回归），早期预警</div></div>
+                </div>
+            </div>
+            <div class="connector"><span>▼ 输出与可视化 ▼</span></div>
+
+            <!-- 输出 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-number">五</div>
+                    <div class="layer-title">输出与可视化</div>
+                    <div class="layer-desc">决策支持+成果呈现</div>
+                </div>
+                <div class="modules-grid">
+                    <div class="module-item"><div class="module-name">地缘环境态势图</div><div class="module-detail">空间可视化地图（folium/pyecharts）、风险热力图、时序动态演变</div></div>
+                    <div class="module-item"><div class="module-name">智能分析报告</div><div class="module-detail">自动化生成结构化报告（docx/html），包含量化指标与趋势研判</div></div>
+                    <div class="module-item"><div class="module-name">动态预警面板</div><div class="module-detail">关键阈值监测、实时风险提示、辅助决策</div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-note">
+            技术支撑：地缘环境智能计算实验室 · 调用现成大模型API · Python开源生态（pandas, NetworkX, scikit-learn）<br>
+            项目遵循“数据—知识—智能—决策”闭环，采用轻量级可落地技术，确保大二团队能够完成。
+        </div>
+    </div>
+</div>
+</body>
+</html>
