@@ -926,3 +926,184 @@ textarea::placeholder {
     }
 }
 
+/* ========================================
+   综合态势仪表盘 (dashboard) 专用样式
+   ======================================== */
+
+/* 导航栏预警指示灯 */
+.alert-indicator {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+}
+.alert-indicator .dot,
+.ah-item .dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+/* 标题提示小标签 */
+.tag-hint {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    padding: 1px 8px;
+    margin-left: 6px;
+}
+.muted-note {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: 0.4rem 0;
+}
+.sub-title {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin: 0.6rem 0 0.4rem;
+    font-weight: 600;
+}
+
+/* 预警面板 */
+.alert-status-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.alert-big {
+    border: 2px solid var(--border-default);
+    border-radius: var(--radius);
+    padding: 0.8rem 1.4rem;
+    text-align: center;
+    min-width: 160px;
+}
+.alert-level { font-size: 1.1rem; font-weight: 700; }
+.alert-score { font-size: 2rem; font-weight: 700; color: var(--text-heading); }
+.alert-desc { font-size: 0.75rem; color: var(--text-muted); }
+.alert-meta { color: var(--text-secondary); font-size: 0.85rem; }
+.alert-history { margin-top: 0.8rem; }
+.ah-title { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.4rem; font-weight: 600; }
+.ah-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 0.8rem;
+    border-bottom: 1px solid var(--border-default);
+}
+.ah-label { color: var(--text-primary); }
+.ah-score { color: var(--text-secondary); }
+.ah-time { margin-left: auto; color: var(--text-muted); font-size: 0.72rem; }
+
+/* Moran's I / 空间自相关 */
+.moran-box { text-align: center; margin: 0.5rem 0; }
+.moran-val { font-size: 2.4rem; font-weight: 700; }
+.moran-label { font-size: 0.75rem; color: var(--text-muted); }
+.moran-interp {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    background: var(--bg-input);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.7rem;
+    margin: 0.5rem 0;
+}
+.hotspot-title { font-size: 0.82rem; color: var(--text-secondary); margin: 0.5rem 0 0.3rem; font-weight: 600; }
+.hotspot-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+
+/* 统计芯片 */
+.net-stats, .corr-row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.stat-chip, .corr-chip {
+    flex: 1 1 0;
+    min-width: 70px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius);
+    padding: 0.6rem;
+    text-align: center;
+}
+.sc-value, .cc-value { font-size: 1.3rem; font-weight: 700; color: var(--accent-blue); }
+.sc-label, .cc-label { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
+/* 诊断归因 */
+.diag-summary { display: flex; align-items: baseline; gap: 6px; margin-bottom: 0.4rem; }
+.diag-delta { font-size: 1.6rem; font-weight: 700; }
+.diag-text {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    background: var(--bg-input);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.7rem;
+}
+.change-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border-default);
+}
+
+/* 时间线 */
+.timeline { position: relative; margin-top: 0.6rem; padding-left: 1.2rem; }
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 4px; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--border-default);
+}
+.tl-item { position: relative; padding: 0 0 1rem 1rem; }
+.tl-dot {
+    position: absolute;
+    left: -1rem;
+    top: 4px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-card);
+}
+.tl-date { font-size: 0.78rem; color: var(--text-secondary); }
+.tl-desc { font-size: 0.85rem; color: var(--text-primary); margin: 2px 0; line-height: 1.5; }
+.tl-meta { font-size: 0.72rem; color: var(--text-muted); }
+
+/* 链式推理面板 (chat 页) */
+.chain-step {
+    border-left: 3px solid var(--accent-blue);
+    background: var(--bg-input);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.6rem;
+}
+.chain-step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 0.3rem; }
+.chain-step-num {
+    background: var(--accent-blue);
+    color: #fff;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.chain-step-name { font-weight: 600; font-size: 0.88rem; color: var(--text-heading); }
+.chain-step-conf { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); }
+.chain-qa { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
+.chain-qa .cq-q { color: var(--text-muted); }
+
+/* 链式推理开关 */
+.chain-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-right: 8px;
+}
+.chain-toggle input { cursor: pointer; }
+

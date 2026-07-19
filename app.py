@@ -80,6 +80,12 @@ def page_trend():
     return render_template("trend.html")
 
 
+@app.route("/dashboard")
+def page_dashboard():
+    """综合态势仪表盘页面"""
+    return render_template("dashboard.html")
+
+
 # ============================================================
 # API 接口
 # ============================================================
@@ -267,6 +273,15 @@ def analyze():
         except Exception:
             pass
 
+        # 9. 诊断性归因分析
+        diagnostic = None
+        try:
+            from analyzer.diagnostic import get_diagnostic_analyzer
+            diag = get_diagnostic_analyzer()
+            diagnostic = diag.diagnose(risk_result)
+        except Exception:
+            pass
+
         return jsonify({
             "success": True,
             "data": {
@@ -275,7 +290,8 @@ def analyze():
                 "llm_analysis": llm_result,
                 "risk_score": risk_result,
                 "gdelt_metrics": gdelt_metrics if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0 else None,
-                "alert": alert
+                "alert": alert,
+                "diagnostic": diagnostic
             }
         })
 
@@ -363,6 +379,40 @@ def multimodal_alignment():
                 "province_alignment": province_data
             }
         })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/geo_potential", methods=["GET"])
+def geo_potential():
+    """
+    地缘位势评估接口 (距离加权模型 + 空间自相关)
+
+    返回: 各省位势评分、Moran's I、风险热点
+    """
+    try:
+        from analyzer.geo_potential import get_geo_potential_analyzer
+        analyzer = get_geo_potential_analyzer()
+        result = analyzer.full_analysis()
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/diagnostic", methods=["GET"])
+def diagnostic_analysis():
+    """
+    诊断性分析接口 (驱动机制归因)
+
+    参数: days (变化归因窗口, 默认14)
+    返回: 基于历史数据的风险变化归因
+    """
+    try:
+        from analyzer.diagnostic import get_diagnostic_analyzer
+        diag = get_diagnostic_analyzer()
+        days = request.args.get("days", 14, type=int)
+        result = diag.diagnose_from_history(days=days)
+        return jsonify({"success": True, "data": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

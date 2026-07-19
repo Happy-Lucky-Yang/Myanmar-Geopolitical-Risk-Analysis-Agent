@@ -63,6 +63,14 @@ async function analyzeText() {
         if (json.success) {
             displayResults(json.data);
             resultArea.style.display = 'block';
+            // 链式推理（可选）
+            var chainEnabled = document.getElementById('chain-enable');
+            if (chainEnabled && chainEnabled.checked) {
+                runChainReasoning(text);
+            } else {
+                var chainCard = document.getElementById('chain-card');
+                if (chainCard) chainCard.style.display = 'none';
+            }
         } else {
             showToast('分析失败: ' + (json.error || '未知错误'), 'error');
         }
@@ -80,7 +88,98 @@ function displayResults(data) {
     renderSentimentCard(data.sentiment);
     renderRiskCard(data.risk_score);
     renderLlmCard(data.llm_analysis);
+    renderDiagnosticCard(data.diagnostic);
     renderGdeltCard(data.gdelt_metrics);
+    // 预警 toast
+    if (data.alert) {
+        showToast('❗ 触发' + (data.alert.label || '预警') + ' (风险分 ' + formatNumber(data.alert.risk_score, 1) + ')', 'error');
+    }
+}
+
+/* -- 诊断归因 -- */
+function renderDiagnosticCard(diag) {
+    var el = document.getElementById('diagnostic-body');
+    if (!el) return;
+    if (!diag || !diag.drivers || diag.drivers.length === 0) {
+        el.innerHTML = '<span style="color:var(--text-muted)">暂无归因数据</span>';
+        return;
+    }
+    var html = '<div class="diag-text">' + escapeHtml(diag.attribution_text || '') + '</div>';
+    html += '<div class="sub-title">驱动因素贡献度</div>';
+    diag.drivers.forEach(function (d) {
+        html += metricBarHTML(d.name + ' (' + escapeHtml(formatNumber(d.contribution_pct, 0)) + '%)', d.contribution_pct, 100);
+    });
+    if (diag.primary_driver) {
+        html += '<div class="info-banner" style="margin-top:0.5rem">🎯 主导因素: ' + escapeHtml(diag.primary_driver) + '</div>';
+    }
+    el.innerHTML = html;
+}
+
+/* ---------- 链式推理 ---------- */
+async function runChainReasoning(text) {
+    var card = document.getElementById('chain-card');
+    var body = document.getElementById('chain-body');
+    if (!card || !body) return;
+    card.style.display = 'block';
+    renderLoading(body);
+    try {
+        var json = await fetchJSON('/api/chain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, chain_depth: 4 })
+        }, 60000);
+        hideLoading(body);
+        if (!json.success) {
+            body.innerHTML = '<span style="color:var(--text-muted)">链式推理失败: ' + escapeHtml(json.error || '') + '</span>';
+            return;
+        }
+        renderChain(json.data);
+    } catch (e) {
+        hideLoading(body);
+        body.innerHTML = '<span style="color:var(--text-muted)">链式推理请求失败: ' + escapeHtml(e.message) + '</span>';
+    }
+}
+
+function renderChain(data) {
+    var body = document.getElementById('chain-body');
+    if (!body) return;
+    var chain = data.chain || [];
+    if (chain.length === 0) {
+        body.innerHTML = '<span style="color:var(--text-muted)">无推理步骤</span>';
+        return;
+    }
+    var html = '<div class="muted-note">共 ' + chain.length + ' 步推理（事件识别 → 影响分析 → 趋势研判 → 建议生成）</div>';
+    chain.forEach(function (step) {
+        html += '<div class="chain-step">';
+        html += '<div class="chain-step-head">';
+        html += '<span class="chain-step-num">' + escapeHtml(String(step.step)) + '</span>';
+        html += '<span class="chain-step-name">' + escapeHtml(step.name || '') + '</span>';
+        html += '<span class="chain-step-conf">置信度 ' + escapeHtml(formatNumber((step.confidence || 0) * 100, 0)) + '%</span>';
+        html += '</div>';
+        html += '<div class="chain-qa"><span class="cq-q">' + escapeHtml(step.question || '') + '</span></div>';
+        html += '<div class="chain-qa">' + formatChainAnswer(step.answer) + '</div>';
+        html += '</div>';
+    });
+    // 最终摘要
+    var fs = data.final_summary;
+    if (fs) {
+        html += '<div class="info-banner" style="margin-top:0.5rem">📋 摘要: ' + escapeHtml(fs.event_type || '') + ' | 风险 ' + escapeHtml(fs.risk_level || '') + '</div>';
+    }
+    body.innerHTML = html;
+}
+
+function formatChainAnswer(answer) {
+    if (!answer || typeof answer !== 'object') return escapeHtml(String(answer || ''));
+    if (answer.error) return '<span style="color:var(--risk-high)">' + escapeHtml(answer.error) + '</span>';
+    var parts = [];
+    Object.keys(answer).forEach(function (k) {
+        if (k === 'raw_response') return;
+        var v = answer[k];
+        if (Array.isArray(v)) v = v.join('、');
+        else if (typeof v === 'object') v = JSON.stringify(v);
+        parts.push('<div><span class="cq-q">' + escapeHtml(k) + ':</span> ' + escapeHtml(String(v)) + '</div>');
+    });
+    return parts.join('');
 }
 
 /* -- 实体识别 -- */
