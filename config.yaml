@@ -3,10 +3,13 @@
 # ========================================
 
 # ---------- 大模型 API ----------
+# ⚠️ 安全规则：此文件被 git 追踪并开源，禁止填入真实密钥！
+# 真实密钥请写入项目根目录 .env（已被 .gitignore 拦截），
+# 系统会自动用 .env 中的 LLM_API_KEY 等环境变量覆盖以下占位符（见 utils/config.py）
 llm:
-  # 实验室部署的大模型地址（兼容 OpenAI Chat Completions 格式）
+  # 兼容 OpenAI Chat Completions 格式的服务地址
   base_url: "https://open.bigmodel.cn/api/paas/v4/"
-  api_key: "0c235e78054142f99f9ab4c1d09de73c.L8q1QwZV5r3hrNpL"
+  api_key: "your-api-key-here"
   model_name: "glm-4-flash"
   temperature: 0.3
   max_tokens: 2048
