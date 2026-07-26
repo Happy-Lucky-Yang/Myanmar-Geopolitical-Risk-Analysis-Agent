@@ -29,6 +29,15 @@ _DATA_DIR = os.path.join(os.path.dirname(__file__), "raw")
 _CACHE_FILE = os.path.join(_DATA_DIR, "nightlight_cache.json")
 os.makedirs(_DATA_DIR, exist_ok=True)
 
+
+def _get_cache_file() -> str:
+    """运行时解析缓存文件路径（支持 DATA_ROOT 外置，失败时回退项目内）"""
+    try:
+        from utils.config import get_data_paths
+        return os.path.join(get_data_paths()["raw"], "nightlight_cache.json")
+    except Exception:
+        return _CACHE_FILE
+
 # 缅甸 World Bank 国家代码
 MYANMAR_COUNTRY_CODE = "MMR"
 
@@ -47,6 +56,7 @@ class NightlightCrawler:
         from utils.config import load_config
         self._cfg = config or load_config()
         self._lock = threading.Lock()
+        self._cache_file = _get_cache_file()
         self._cache = self._load_cache()
 
     # ============================================================
@@ -225,8 +235,8 @@ class NightlightCrawler:
     def _load_cache(self) -> Dict:
         """加载本地缓存"""
         try:
-            if os.path.exists(_CACHE_FILE):
-                with open(_CACHE_FILE, "r", encoding="utf-8") as f:
+            if os.path.exists(self._cache_file):
+                with open(self._cache_file, "r", encoding="utf-8") as f:
                     return json.load(f)
         except Exception as e:
             logger.warning(f"[Nightlight] 缓存读取失败: {e}")
@@ -235,7 +245,7 @@ class NightlightCrawler:
     def _save_cache(self, data: Dict):
         """保存缓存到本地"""
         try:
-            with open(_CACHE_FILE, "w", encoding="utf-8") as f:
+            with open(self._cache_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning(f"[Nightlight] 缓存写入失败: {e}")

@@ -37,8 +37,9 @@ class EnglishNewsCrawler:
         self._backoff = self._cfg.get("backoff", 2)
         self._max_pages = self._cfg.get("max_pages", 2)
 
-        # 数据目录
-        self._raw_dir = os.path.join("data", "raw")
+        # 数据目录（统一路径中枢，支持 DATA_ROOT 外置）
+        from utils.config import get_data_paths
+        self._raw_dir = get_data_paths()["raw"]
         os.makedirs(self._raw_dir, exist_ok=True)
 
         # URL 去重

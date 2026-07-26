@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# 历史事件是团队手工标注的成果数据，固定存放项目内随 git 同步（不受 DATA_ROOT 外置影响）
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "raw")
 _EVENTS_FILE = os.path.join(_DATA_DIR, "historical_events.json")
 os.makedirs(_DATA_DIR, exist_ok=True)

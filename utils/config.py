@@ -131,6 +131,72 @@ def get_storage_config() -> dict:
     return cfg.get("storage", {})
 
 
+# 数据路径缓存（避免重复 makedirs）
+_data_paths_cache = None
+
+
+def get_data_paths() -> dict:
+    """
+    获取统一的数据存储路径（支持将爬取数据外置到项目外的私密目录）。
+
+    路径优先级：
+      1. 环境变量 DATA_ROOT（可写在 .env，指向项目外私密文件夹）
+      2. config.yaml 中 storage.data_root
+      3. 默认：项目根目录/data
+
+    说明：爬取新闻、去重记录、缓存、处理结果等运行时产物写入此处；
+    团队成果数据（如 historical_events.json）固定在项目内，不受此影响。
+
+    :return: {"root", "raw", "processed", "external"} 绝对路径字典
+    """
+    global _data_paths_cache
+    if _data_paths_cache is not None:
+        return _data_paths_cache
+
+    cfg = load_config()  # 触发 .env 加载
+    storage = cfg.get("storage", {})
+
+    data_root = os.environ.get("DATA_ROOT", "").strip() or storage.get("data_root", "").strip()
+    # 跳过空值与模板占位符
+    if data_root and "your-" not in data_root and "path\\to" not in data_root and "path/to" not in data_root:
+        root = os.path.abspath(os.path.expanduser(data_root))
+    else:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        root = os.path.join(project_root, "data")
+
+    paths = {
+        "root": root,
+        "raw": os.path.join(root, "raw"),
+        "processed": os.path.join(root, "processed"),
+        "external": os.path.join(root, "external"),
+    }
+    for p in (paths["raw"], paths["processed"], paths["external"]):
+        try:
+            os.makedirs(p, exist_ok=True)
+        except Exception:
+            pass
+
+    _data_paths_cache = paths
+    return paths
+
+
+def get_project_raw_dir() -> str:
+    """
+    获取项目内部固定的 data/raw 路径（不随 DATA_ROOT 外置）。
+    仅用于团队成果数据（如 historical_events.json）等应随 git 同步的文件。
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    raw_dir = os.path.join(project_root, "data", "raw")
+    os.makedirs(raw_dir, exist_ok=True)
+    return raw_dir
+
+
+def reset_data_paths():
+    """重置数据路径缓存（用于测试）"""
+    global _data_paths_cache
+    _data_paths_cache = None
+
+
 def get_risk_weights() -> dict:
     """获取风险评分权重配置"""
     cfg = load_config()

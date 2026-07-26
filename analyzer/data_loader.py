@@ -39,16 +39,23 @@ class DataLoader:
         "%Y-%m-%d %H:%M",
     ]
 
-    def __init__(self, raw_dir: str = "./data/raw",
-                 processed_dir: str = "./data/processed",
-                 external_dir: str = "./data/external"):
-        self._raw_dir = raw_dir
-        self._processed_dir = processed_dir
-        self._external_dir = external_dir
+    def __init__(self, raw_dir: str = None,
+                 processed_dir: str = None,
+                 external_dir: str = None):
+        # 从统一路径中枢获取（支持通过 DATA_ROOT 外置到项目外私密目录）
+        try:
+            from utils.config import get_data_paths
+            _paths = get_data_paths()
+        except Exception:
+            _paths = {"raw": "./data/raw", "processed": "./data/processed",
+                      "external": "./data/external"}
+        self._raw_dir = raw_dir or _paths["raw"]
+        self._processed_dir = processed_dir or _paths["processed"]
+        self._external_dir = external_dir or _paths["external"]
         self._write_lock = threading.Lock()  # JSONL 并发写入锁
 
         # 确保目录存在
-        for d in [raw_dir, processed_dir, external_dir]:
+        for d in [self._raw_dir, self._processed_dir, self._external_dir]:
             os.makedirs(d, exist_ok=True)
 
     # ============================================================

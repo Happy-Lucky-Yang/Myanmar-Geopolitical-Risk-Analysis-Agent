@@ -175,7 +175,12 @@ class KGSeeder:
     def seed_from_news_data(self, news_dir: str = None) -> int:
         """从已有新闻分析结果中提取实体和关系填充 KG"""
         if news_dir is None:
-            news_dir = os.path.join(os.path.dirname(__file__), "raw")
+            # 从统一路径中枢获取（支持 DATA_ROOT 外置）
+            try:
+                from utils.config import get_data_paths
+                news_dir = get_data_paths()["raw"]
+            except Exception:
+                news_dir = os.path.join(os.path.dirname(__file__), "raw")
 
         kg = self._get_kg()
         if not kg._enabled:
@@ -183,6 +188,8 @@ class KGSeeder:
 
         count = 0
         # 扫描 JSONL 文件
+        if not os.path.isdir(news_dir):
+            return 0
         for fname in os.listdir(news_dir):
             if not fname.endswith(".jsonl"):
                 continue

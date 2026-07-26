@@ -110,8 +110,10 @@ economic:
 
 # ---------- 数据存储 ----------
 storage:
-  # 新闻数据存放目录
-  news_dir: "./data/raw"
+  # 数据根目录：留空=项目内 ./data；可指向项目外私密目录将爬取数据外置。
+  # 优先级: 环境变量 DATA_ROOT (写在 .env) > 此处 data_root > 默认 ./data
+  # 注: raw/processed/external 子目录会在根目录下自动创建
+  data_root: ""
   # 输出格式: csv / json
   format: "json"
 

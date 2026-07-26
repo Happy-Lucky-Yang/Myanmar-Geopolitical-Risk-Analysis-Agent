@@ -95,8 +95,26 @@ pip install -r requirements.txt
 ```
 核心依赖：Flask、flask-cors、requests、beautifulsoup4、pandas、numpy、LAC、snownlp、nltk、openai、folium、pyecharts、**networkx**、**wbgapi**（World Bank）、**python-docx**、**Jinja2**、neo4j（可选）。
 
-### 3. 配置文件
-程序通过 `config.yaml` 读取配置（大模型地址、爬虫源、风险权重、夜光/经济数据源、调度间隔、Neo4j）。API 密钥等敏感信息可放入 `.env`。
+### 3. 配置文件与密钥（新成员必读）
+非敏感配置（权重/爬虫源/调度间隔等）由 `config.yaml` 管理，随仓库同步。
+**密钥绝不入库**：`config.yaml` 中的 `api_key` 永远保持占位符，真实密钥写入本地 `.env`（已被 .gitignore 拦截），运行时由 `utils/config.py` 自动覆盖：
+
+```bash
+# clone 后的三步上手
+ copy .env.example .env      # 1. 复制模板（Linux/Mac 用 cp）
+# 2. 编辑 .env，填入你自己的 LLM_API_KEY（智谱 GLM-4-Flash 免费注册）
+python app.py                # 3. 启动验证
+```
+
+> 拉取代码后若发现"LLM 分析无输出/降级"，先检查自己本地是否存在 `.env`——这是新成员最常见的"假 bug"。
+
+### 4. 数据存储位置（可选外置）
+爬取的新闻、缓存、去重记录、风险历史等**运行时产物**默认写入项目内 `./data`。若希望避免第三方新闻内容、日志随仓库分发，可在 `.env` 中设置 `DATA_ROOT` 指向项目外的私密目录：
+```
+DATA_ROOT=C:\path\to\私密目录\运行数据
+```
+系统会自动在该根目录下创建 `raw/processed/external` 子目录（优先级：`DATA_ROOT` 环境变量 > `config.yaml` 的 `storage.data_root` > 默认 `./data`）。
+> 例外：团队手工标注的 `data/raw/historical_events.json`（历史事件集）属项目成果，**固定存放项目内随 git 同步**，不受 `DATA_ROOT` 影响。
 
 ## 运行方式
 
@@ -207,6 +225,8 @@ python run_full_pipeline.py --demo    # 模拟数据全流程（无需网络）
 - Git 分支：`main` 稳定版、`dev` 开发分支、`feature/xxx` 功能分支
 - 提交格式：`[模块] 简短描述`，如 `[geo_potential] 添加距离加权位势模型`
 - 每周同步，使用 `tests/` 验证核心函数
+- **密钥红线**：禁止将真实密钥写入 config.yaml 或任何被 git 追踪的文件；禁止 `git add -f .env`；密钥通过私聊传递或各自注册（推荐后者）
+- **数据不同步是正常现象**：`data/raw/` 爬取数据不入库，各成员本地趋势图/风险历史不同属预期行为；演示前在演示机提前 1-2 天运行调度器积累数据，或由数据负责人打包共享（网盘，不走 git）
 
 ## 致谢
 感谢胡志丁老师、吴苑彬老师提供实验室大模型资源和地缘理论指导。本项目依托华东师范大学地缘环境智能计算实验室。

@@ -35,8 +35,9 @@ class GDELTCrawler:
         self._enabled = self._cfg.get("enabled", True)
         self._client = GDELTClient(self._cfg)
 
-        # 数据目录
-        self._raw_dir = os.path.join("data", "raw")
+        # 数据目录（统一路径中枢，支持 DATA_ROOT 外置）
+        from utils.config import get_data_paths
+        self._raw_dir = get_data_paths()["raw"]
         os.makedirs(self._raw_dir, exist_ok=True)
 
         # 增量去重
