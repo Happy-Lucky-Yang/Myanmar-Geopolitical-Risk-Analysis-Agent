@@ -5,9 +5,9 @@
 # ---------- 大模型 API ----------
 llm:
   # 实验室部署的大模型地址（兼容 OpenAI Chat Completions 格式）
-  base_url: "http://your-lab-server:8000/v1"
-  api_key: "your-api-key-here"
-  model_name: "geopolitical-gpt"
+  base_url: "https://open.bigmodel.cn/api/paas/v4/"
+  api_key: "0c235e78054142f99f9ab4c1d09de73c.L8q1QwZV5r3hrNpL"
+  model_name: "glm-4-flash"
   temperature: 0.3
   max_tokens: 2048
 
