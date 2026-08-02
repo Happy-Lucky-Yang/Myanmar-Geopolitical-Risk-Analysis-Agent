@@ -19,7 +19,7 @@
 | 层级 | 模块 | 实现情况 |
 |------|------|----------|
 | **一 数据采集** | 遥感/新闻/经济/历史文献 | ✅ 新闻(4源) + 夜光(WB代理) + 经济(WB) + 历史事件(48条) |
-| **二 清洗结构化** | 质量检查/多模态对齐/NER/知识图谱 | ✅ 清洗去重 + 多模态时空对齐 + LAC NER + Neo4j 图谱(可选) |
+| **二 清洗结构化** | 质量检查/多模态对齐/NER/知识图谱 | ✅ 清洗去重 + 多模态时空对齐 + LAC + spaCy 双语 NER + Neo4j 图谱(可选) |
 | **三 智能计算** | LLM/轻量算法/地缘位势/链式推理 | ✅ LLM 封装 + NetworkX + **地缘位势(1/d²)** + **空间自相关(Moran's I)** + 链式推理 |
 | **四 态势分析** | 描述/探索/诊断/预测 | ✅ 描述性 + 异常探测 + **诊断归因** + 趋势预测 |
 | **五 输出可视化** | 态势图/智能报告/预警面板 | ✅ Folium 热力图 + HTML/DOCX 报告 + 动态预警面板 |
@@ -29,7 +29,7 @@
 Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── config.yaml                   # 配置（权重/数据源/夜光/经济/调度）
 ├── requirements.txt              # Python 依赖
-├── app.py                        # Flask 主入口（4 页面 + 20 API 接口）
+├── app.py                        # Flask 主入口（4 页面 + 16 业务 API + 健康检查）
 ├── analyzer/                     # 核心分析模块
 │   ├── data_loader.py            # 数据读取与清洗
 │   ├── ner.py                    # 命名实体识别（LAC）
@@ -82,6 +82,11 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 
 ## 环境配置
 
+### 0. Python 版本
+
+项目验收环境统一使用 **Python 3.10**。LAC 等 NLP 依赖在其他 Python
+大版本上可能无法安装或行为不一致。
+
 ### 1. 创建虚拟环境（推荐）
 ```bash
 python -m venv venv
@@ -92,8 +97,13 @@ source venv/bin/activate   # Linux/Mac
 ### 2. 安装依赖
 ```bash
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+python -c "import nltk; nltk.download(\"vader_lexicon\")"
+python scripts/check_environment.py
 ```
-核心依赖：Flask、flask-cors、requests、beautifulsoup4、pandas、numpy、LAC、snownlp、nltk、openai、folium、pyecharts、**networkx**、**wbgapi**（World Bank）、**python-docx**、**Jinja2**、neo4j（可选）。
+
+其中英文情感资源的等价 Python 调用为 `nltk.download("vader_lexicon")`。
+核心依赖：Flask、flask-cors、requests、beautifulsoup4、pandas、numpy、LAC、spaCy、snownlp、nltk、folium、pyecharts、**networkx**、**wbgapi**（World Bank）、**python-docx**、**Jinja2**。LLM 和 Neo4j 均为运行时可选能力；`openai` 或 `neo4j` 驱动、密钥或服务缺失时，系统会返回可见的降级状态。
 
 ### 3. 配置文件与密钥（新成员必读）
 非敏感配置（权重/爬虫源/调度间隔等）由 `config.yaml` 管理，随仓库同步。
@@ -124,6 +134,10 @@ python app.py
 ```
 默认地址：http://127.0.0.1:5000
 
+默认仅监听本机并关闭 debug，CORS 也仅允许本机页面。若需部署到局域网或公网，
+请在反向代理层配置 HTTPS、身份认证和请求限流后再修改监听地址；不要直接暴露
+调度触发与 LLM 分析接口。
+
 > Flask 启动时自动启动后台调度线程：缅华网每 4h、GDELT 每 6h、分析每 12h、夜光每 7 天、经济每 30 天。间隔可在 `config.yaml` 的 `scheduler` 段调整。
 
 ### 独立运行
@@ -132,7 +146,12 @@ python run_crawler_only.py            # 单次爬取
 python run_crawler_only.py --schedule # 定时爬取模式
 python -m data.kg_seeder              # 填充知识图谱种子数据（需 Neo4j）
 python run_full_pipeline.py --demo    # 模拟数据全流程（无需网络）
+python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 ```
+
+`--demo` 会强制关闭爬虫、GDELT、World Bank、LLM 和 Neo4j 网络访问，
+并在 `DATA_ROOT/processed/runs/<timestamp>/` 生成摘要、地图、趋势数据和 HTML 报告。
+每个阶段均返回 `ok / skipped / degraded / failed` 状态及可见警告。
 
 ## 页面说明
 
@@ -143,7 +162,7 @@ python run_full_pipeline.py --demo    # 模拟数据全流程（无需网络）
 | 风险地图 | `/map` | Folium 缅甸省级风险热力图（暗色主题 + 详细弹窗 + 多源标注） |
 | 趋势预测 | `/trend` | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
 
-## API 接口一览（20 个）
+## API 接口一览（16 个业务端点 + 健康检查）
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -187,7 +206,7 @@ python run_full_pipeline.py --demo    # 模拟数据全流程（无需网络）
 
 ### ✅ 已完成
 - **6 类数据源**：缅华网 + GDELT + Myanmar Now/Irrawaddy + RSS + 夜光(WB) + 经济(WB)
-- 双语 NER（LAC）+ 双语情感（SnowNLP/VADER/GDELT tone）
+- 双语 NER（LAC + spaCy）+ 双语情感（SnowNLP/VADER/GDELT tone）
 - 风险评分 5 维指标**全部接入**（动态权重归一化）
 - 趋势分析（移动平均/回归/异常/7 天预测）
 - **地缘位势评估**（距离加权 1/d² + Moran's I + 热点识别）
@@ -195,9 +214,12 @@ python run_full_pipeline.py --demo    # 模拟数据全流程（无需网络）
 - 链式推理、关系网络分析、多模态时空对齐
 - 动态预警（四级阈值）、自动化报告（HTML/DOCX）
 - 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（48 条）
-- **4 个前端页面 + 20 个 API 接口**，暗色监控主题、XSS 防护
+- **4 个前端页面 + 16 个业务 API + 健康检查**，暗色监控主题、XSS 防护
 - 自动定时调度器、全流程集成脚本、爬虫单元测试
 - 完整文档（数据库设计 / 算法细节 / 研究报告框架）
+
+> 上述为功能实现状态，不代表已通过人工验收。NER、情感、LLM 与协作模块的
+> 可重复验收方法及尚需团队提供的标注数据见 [docs/acceptance.md](docs/acceptance.md)。
 
 ### ⚠️ 部分完成 / 依赖外部条件
 - 大模型 API（框架完整含重试/降级，需接入可用端点）；链式推理依赖 LLM 端点
@@ -211,7 +233,7 @@ python run_full_pipeline.py --demo    # 模拟数据全流程（无需网络）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
 - 扩充历史事件至 100+ 条并补充智库/文献来源标注
 - 深度学习 NER 模型、社交媒体数据源、实时流式处理
-- 扩充单元测试覆盖（当前仅爬虫模块）
+- 持续扩充边界条件与外部服务兼容性测试
 
 ## 数据可信度标记规范
 | 标记 | 含义 | 示例 |

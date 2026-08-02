@@ -79,6 +79,14 @@ class NERExtractor:
             "events": ["武装冲突", ...]
         }
         """
+        if not text or not text.strip():
+            return {
+                "locations": [],
+                "organizations": [],
+                "persons": [],
+                "events": [],
+            }
+
         lang = self._detect_language(text)
 
         if lang == "zh":

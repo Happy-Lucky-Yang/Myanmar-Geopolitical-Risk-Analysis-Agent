@@ -1,84 +1,148 @@
 """
-analyzer.llm_client - 大模型 API 调用模块
-对接实验室部署的地缘环境大模型（兼容 OpenAI Chat Completions 格式）
-内置重试机制、JSON 解析、降级处理
+大模型 API 客户端。
+
+对外始终返回稳定的地缘分析字段，并通过 analysis_status/cached/error
+显式标记正常、缓存或降级状态。OpenAI SDK、API Key 或远端服务不可用时，
+模块本身仍可导入，调用方也不会因可选能力缺失而崩溃。
 """
+import hashlib
 import json
-import time
 import logging
+import os
+import re
 import threading
-from typing import Dict, Optional, List
-from openai import OpenAI
-from utils.config import get_llm_config
-from analyzer.prompts import NEWS_ANALYSIS_PROMPT, build_analysis_prompt
+import time
+from pathlib import Path
+from typing import Dict, List, Optional
+
+try:
+    from openai import OpenAI
+except ImportError:  # LLM 是可选能力
+    OpenAI = None
+
+from analyzer.prompts import NEWS_ANALYSIS_PROMPT, get_prompt_by_name
+from utils.config import get_data_paths, get_llm_config
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_ANALYSIS = {
+    "event_type": "未知",
+    "severity": 1,
+    "china_myanmar_impact": "暂无可靠分析",
+    "risk_warning": "大模型分析不可用，请结合规则结果复核",
+    "key_entities": [],
+    "key_locations": [],
+    "summary": "暂无可靠的大模型分析结果",
+    "sentiment": "neutral",
+}
+_REQUIRED_FIELDS = tuple(_DEFAULT_ANALYSIS.keys())
+_TEXT_FIELDS = ("event_type", "china_myanmar_impact", "risk_warning", "summary")
+
+
+def build_degraded_result(error: str) -> Dict:
+    """Build the public stable response used when LLM setup/calls fail."""
+    result = dict(_DEFAULT_ANALYSIS)
+    result["key_entities"] = []
+    result["key_locations"] = []
+    result.update({
+        "analysis_status": "degraded",
+        "cached": False,
+        "error": str(error),
+    })
+    return result
+
 
 class LLMClient:
-    """大模型客户端，封装 HTTP POST 调用逻辑"""
+    """OpenAI Chat Completions 兼容客户端，含校验、重试和本地缓存。"""
 
-    def __init__(self):
-        """初始化 OpenAI 兼容客户端"""
-        cfg = get_llm_config()
-        self._client = OpenAI(
-            base_url=cfg.get("base_url", "http://localhost:8000/v1"),
-            api_key=cfg.get("api_key", "dummy-key"),
-        )
+    def __init__(self, config: Dict = None, client=None, cache_path=None,
+                 sleep_fn=None):
+        cfg = dict(config or get_llm_config())
         self._model = cfg.get("model_name", "geopolitical-gpt")
         self._temperature = cfg.get("temperature", 0.3)
         self._max_tokens = cfg.get("max_tokens", 2048)
-        self._max_retries = cfg.get("max_retries", 3)
-        self._timeout_seconds = cfg.get("timeout_seconds", 30)
+        self._max_retries = max(1, int(cfg.get("max_retries", 3)))
+        self._timeout_seconds = max(1, int(cfg.get("timeout_seconds", 30)))
+        self._cache_enabled = bool(cfg.get("cache_enabled", True))
+        self._sleep = sleep_fn or time.sleep
+        self._api_key = str(cfg.get("api_key", "")).strip()
+        self._availability_error = ""
+
+        if client is not None:
+            self._client = client
+        elif OpenAI is None:
+            self._client = None
+            self._availability_error = "openai SDK 未安装"
+        elif self._is_placeholder_key(self._api_key):
+            self._client = None
+            self._availability_error = "LLM API Key 未配置"
+        else:
+            self._client = OpenAI(
+                base_url=cfg.get("base_url", "http://localhost:8000/v1"),
+                api_key=self._api_key,
+            )
+
+        default_cache = Path(get_data_paths()["raw"]) / "llm_cache.jsonl"
+        self._cache_path = Path(cache_path) if cache_path else default_cache
+        self._cache_lock = threading.Lock()
+        self._cache = self._load_cache() if self._cache_enabled else {}
+
+    @staticmethod
+    def _is_placeholder_key(api_key: str) -> bool:
+        return not api_key or "your-" in api_key.lower() or "粘贴" in api_key
 
     def analyze_news(self, text: str, instruction: str = None) -> Dict:
-        """
-        将新闻文本发送给大模型，获取结构化分析结果
-
-        :param text: 新闻文本
-        :param instruction: 分析指令（可选），默认使用 prompts.py 中的模板
-        :return: 结构化字典
-        """
-        # 使用 prompts.py 中的提示词模板
-        if instruction is None:
-            instruction = NEWS_ANALYSIS_PROMPT.format(text="")
-
+        """分析单条新闻；自定义指令只作为附加关注点，不覆盖 JSON 契约。"""
+        system_prompt = NEWS_ANALYSIS_PROMPT.format(text="")
+        if instruction and instruction.strip():
+            system_prompt += f"\n\n用户额外关注：{instruction.strip()}"
         messages = [
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": text}
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
         ]
-
-        return self._call_with_retry(messages)
+        return self._analyze_messages(messages, text)
 
     def call_with_prompt(self, prompt_name: str, text: str) -> Dict:
-        """
-        使用指定名称的提示词模板调用大模型
-
-        :param prompt_name: 提示词名称（如 "risk_assessment", "event_classification"）
-        :param text: 新闻文本
-        :return: 分析结果字典
-        """
-        from analyzer.prompts import get_prompt_by_name
-        prompt_template = get_prompt_by_name(prompt_name)
-        instruction = prompt_template.format(text="")
-
+        """使用命名模板调用，仍应用统一返回契约和缓存。"""
+        instruction = get_prompt_by_name(prompt_name).format(text="")
         messages = [
             {"role": "system", "content": instruction},
-            {"role": "user", "content": text}
+            {"role": "user", "content": text},
         ]
+        return self._analyze_messages(messages, text)
 
-        return self._call_with_retry(messages)
+    def _analyze_messages(self, messages: List[Dict], text: str) -> Dict:
+        cache_key = self._build_cache_key(messages, text)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            result = self._normalize_result(cached)
+            if result["analysis_status"] == "ok":
+                result["analysis_status"] = "cached"
+                result["cached"] = True
+                return result
+            logger.warning("[LLM] 缓存条目校验失败，重新请求: %s", result["error"])
+            self._cache.pop(cache_key, None)
 
-    def _call_with_retry(self, messages: List[Dict]) -> Dict:
+        if self._is_placeholder_key(self._api_key):
+            return self._degraded_result("LLM API Key 未配置")
+        if self._client is None:
+            return self._degraded_result(self._availability_error or "LLM 客户端不可用")
+
+        result = self._call_with_retry(messages, normalize=True)
+        if self._cache_enabled and result["analysis_status"] == "ok":
+            self._store_cache(cache_key, result)
+        return result
+
+    def _call_with_retry(self, messages: List[Dict], normalize: bool = False) -> Dict:
+        """Call the model; normalize only the main news-analysis contract.
+
+        Chain reasoning uses this compatibility method with its own JSON schema,
+        so the default preserves arbitrary JSON dictionaries.
         """
-        带重试机制的 LLM 调用
-
-        :param messages: OpenAI Chat 格式消息列表
-        :return: 解析后的字典
-        """
-        last_error = None
-
+        last_error: Optional[Exception] = None
+        last_degraded = None
         for attempt in range(self._max_retries):
+            normalized_failure = None
             try:
                 response = self._client.chat.completions.create(
                     model=self._model,
@@ -87,98 +151,171 @@ class LLMClient:
                     max_tokens=self._max_tokens,
                     timeout=self._timeout_seconds,
                 )
-                content = response.choices[0].message.content.strip()
-
-                # 尝试解析 JSON
-                result = self._parse_json_response(content)
-                return result
-
-            except Exception as e:
-                last_error = e
-                wait = 2 * (2 ** attempt)
+                content = (response.choices[0].message.content or "").strip()
+                parsed = self._parse_json_response(content)
+                if normalize:
+                    normalized = self._normalize_result(parsed)
+                    if normalized["analysis_status"] != "ok":
+                        normalized_failure = normalized
+                        raise ValueError(normalized["error"])
+                    return normalized
+                if parsed.get("_parse_error"):
+                    raise ValueError(parsed["_parse_error"])
+                return parsed
+            except Exception as exc:
+                last_error = exc
+                last_degraded = normalized_failure
                 logger.warning(
-                    f"[LLM] 调用失败 (尝试 {attempt+1}/{self._max_retries}): {e}"
+                    "[LLM] 调用失败 (尝试 %s/%s): %s",
+                    attempt + 1,
+                    self._max_retries,
+                    exc,
                 )
                 if attempt < self._max_retries - 1:
-                    logger.info(f"[LLM] 等待 {wait}s 后重试...")
-                    time.sleep(wait)
+                    self._sleep(2 * (2 ** attempt))
 
-        # 所有重试均失败，返回降级结果
-        logger.error(f"[LLM] 调用最终失败，返回降级结果")
-        return {
-            "event_type": "未知",
-            "china_myanmar_impact": "分析失败",
-            "risk_warning": "大模型调用异常",
-            "key_entities": [],
-            "summary": f"LLM Error: {str(last_error)}"
-        }
+        error = str(last_error or "未知错误")
+        if normalize:
+            return last_degraded or self._degraded_result(error)
+        return {"error": error}
 
     def _parse_json_response(self, content: str) -> Dict:
-        """
-        解析大模型返回的 JSON 内容
-        处理可能的 markdown 代码块包裹情况
-
-        :param content: 原始返回文本
-        :return: 解析后的字典
-        """
         content = content.strip()
-
-        # 去除 ```json ... ``` 包裹
         if content.startswith("```"):
-            lines = content.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [line for line in content.splitlines()
+                     if not line.strip().startswith("```")]
             content = "\n".join(lines).strip()
 
         try:
-            return json.loads(content)
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
             pass
 
-        # 尝试用正则提取 JSON 块
-        json_match = None
-        import re
-        # 查找最外层的 { ... }
         pattern = re.compile(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', re.DOTALL)
-        matches = pattern.findall(content)
-        for match in matches:
+        for match in pattern.findall(content):
             try:
-                result = json.loads(match)
-                if isinstance(result, dict):
-                    return result
+                parsed = json.loads(match)
+                if isinstance(parsed, dict):
+                    return parsed
             except json.JSONDecodeError:
                 continue
+        return {"_parse_error": "LLM 响应不是有效 JSON", "raw_response": content[:500]}
 
-        logger.warning(f"[LLM] JSON 解析失败，返回原始文本")
-        return {
-            "event_type": "解析失败",
-            "raw_response": content[:500]
-        }
+    def _normalize_result(self, payload: Dict) -> Dict:
+        parse_error = payload.get("_parse_error")
+        invalid = [field for field in _REQUIRED_FIELDS if field not in payload]
+        result = dict(payload)
+        result.pop("_parse_error", None)
+        for field, default in _DEFAULT_ANALYSIS.items():
+            result.setdefault(field, list(default) if isinstance(default, list) else default)
+
+        for field in _TEXT_FIELDS:
+            value = payload.get(field)
+            if not isinstance(value, str) or not value.strip():
+                result[field] = _DEFAULT_ANALYSIS[field]
+                invalid.append(field)
+
+        severity = payload.get("severity")
+        if (
+            isinstance(severity, bool)
+            or not isinstance(severity, (int, float))
+            or not float(severity).is_integer()
+            or not 1 <= int(severity) <= 5
+        ):
+            result["severity"] = 1
+            invalid.append("severity")
+        else:
+            result["severity"] = int(severity)
+
+        for field in ("key_entities", "key_locations"):
+            value = payload.get(field)
+            if (
+                not isinstance(value, list)
+                or any(not isinstance(item, str) or not item.strip() for item in value)
+            ):
+                result[field] = []
+                invalid.append(field)
+            else:
+                result[field] = value
+
+        if payload.get("sentiment") not in ("positive", "negative", "neutral"):
+            result["sentiment"] = "neutral"
+            invalid.append("sentiment")
+
+        if parse_error:
+            result["event_type"] = "解析失败"
+            result["analysis_status"] = "degraded"
+            result["error"] = parse_error
+        elif invalid:
+            result["analysis_status"] = "degraded"
+            result["error"] = "LLM 响应缺少或包含无效字段: " + ", ".join(sorted(set(invalid)))
+        else:
+            result["analysis_status"] = "ok"
+            result["error"] = ""
+        result["cached"] = False
+        return result
+
+    def _degraded_result(self, error: str) -> Dict:
+        return build_degraded_result(error)
+
+    def _build_cache_key(self, messages: List[Dict], text: str) -> str:
+        material = json.dumps(
+            {"model": self._model, "messages": messages, "text": text},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+    def _load_cache(self) -> Dict[str, Dict]:
+        if not self._cache_path.exists():
+            return {}
+        cache = {}
+        try:
+            with self._cache_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        record = json.loads(line)
+                        if record.get("key") and isinstance(record.get("result"), dict):
+                            cache[record["key"]] = record["result"]
+                    except json.JSONDecodeError:
+                        logger.warning("[LLM] 忽略损坏的缓存行")
+        except OSError as exc:
+            logger.warning("[LLM] 缓存读取失败: %s", exc)
+        return cache
+
+    def _store_cache(self, key: str, result: Dict):
+        record_result = dict(result)
+        record_result["cached"] = False
+        with self._cache_lock:
+            try:
+                self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+                with self._cache_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(
+                        {"key": key, "result": record_result},
+                        ensure_ascii=False,
+                    ) + os.linesep)
+                self._cache[key] = record_result
+            except OSError as exc:
+                logger.warning("[LLM] 缓存写入失败: %s", exc)
 
     def batch_analyze(self, texts: list, delay: float = 1.0) -> list:
-        """
-        批量分析（带延迟避免过载）
-
-        :param texts: 文本列表
-        :param delay: 每次调用间隔（秒）
-        :return: 分析结果列表
-        """
         results = []
-        for i, text in enumerate(texts):
-            logger.info(f"[LLM] 分析第 {i+1}/{len(texts)} 条...")
+        for index, text in enumerate(texts):
             result = self.analyze_news(text)
             results.append(result)
-            if i < len(texts) - 1:
-                time.sleep(delay)
+            if index < len(texts) - 1 and result["analysis_status"] != "cached":
+                self._sleep(delay)
         return results
 
 
-# 模块级单例
 _llm_instance = None
 _llm_lock = threading.Lock()
 
 
 def get_llm_client() -> LLMClient:
-    """获取全局 LLM 客户端单例（线程安全）"""
+    """获取全局 LLM 单例。"""
     global _llm_instance
     if _llm_instance is None:
         with _llm_lock:
