@@ -86,7 +86,8 @@ Base URL: `http://localhost:5000`
       "avg_severity": 0.54,
       "max_severity": 0.9,
       "event_summary": {"conflict": 23, "unrest": 15, "diplomacy": 8}
-    }
+    },
+    "warnings": []
   }
 }
 ```
@@ -254,10 +255,33 @@ Content-Type: `text/html`
 | `/`      | chat.html  | 对话分析：输入文本 → 结构化分析结果 |
 | `/map`   | map.html   | 风险地图：folium 热力地图 |
 | `/trend` | trend.html | 趋势预测：ECharts 折线图 |
+| `/dashboard` | dashboard.html | 综合态势：预警、位势、网络和多源融合 |
 
 ---
 
-## 7. 快速测试命令
+## 7. 其他业务接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/chain` | 分步链式推理，参数 `chain_depth` 为 1-4 |
+| GET | `/api/history` | 查询历史事件 |
+| GET | `/api/multimodal` | 夜光、冲突与情感的时空对齐 |
+| GET | `/api/geo_potential` | 地缘位势与空间自相关 |
+| GET | `/api/diagnostic` | 风险变化归因 |
+| GET | `/api/alert` | 当前预警与阈值线 |
+| POST | `/api/alert/acknowledge` | 确认预警 |
+| GET/POST | `/api/scheduler` | 调度状态或手动触发任务 |
+| GET | `/api/kg/query` | 查询知识图谱 |
+| POST | `/api/kg/seed` | 写入知识图谱种子数据 |
+| GET | `/api/network` | 关系网络分析 |
+| GET | `/api/report` | 导出 HTML 或 DOCX 报告 |
+
+`/api/analyze` 的 `data.warnings` 会列出 LLM、GDELT、夜光、经济、Neo4j、
+预警或诊断模块的降级原因。可选模块失败不会把成功的规则分析改成 HTTP 500。
+
+---
+
+## 8. 快速测试命令
 
 ```bash
 # 健康检查

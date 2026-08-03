@@ -205,7 +205,9 @@ class RiskScorer:
             ]
         conflict_count = sum(
             1 for item in daily_news
-            if any(kw.lower() in (item.get("text", "") or item.get("title", "")).lower()
+            if any(kw.lower() in (
+                item.get("content", "") or item.get("text", "") or item.get("title", "")
+            ).lower()
                    for kw in conflict_keywords)
         )
         text_conflict_freq = conflict_count / max(n, 1)

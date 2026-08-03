@@ -105,6 +105,8 @@ class CrawlerScheduler:
             self._last_crawl_time = datetime.now()
 
             all_news = []
+            successful_collectors = 0
+            errors = []
 
             # 1a: 缅华网爬虫
             try:
@@ -113,8 +115,10 @@ class CrawlerScheduler:
                 news = crawler.crawl_all_sources()
                 crawler.save_news(news)
                 all_news.extend(news)
+                successful_collectors += 1
                 logger.info(f"[Scheduler] 缅华网: {len(news)} 条")
             except Exception as e:
+                errors.append(f"缅华网: {e}")
                 logger.error(f"[Scheduler] 缅华网爬取失败: {e}", exc_info=True)
 
             # 1b: 英文媒体（Myanmar Now + Irrawaddy）
@@ -124,8 +128,10 @@ class CrawlerScheduler:
                 en_news = en_crawler.crawl_all()
                 en_crawler.save_news(en_news)
                 all_news.extend(en_news)
+                successful_collectors += 1
                 logger.info(f"[Scheduler] 英文媒体: {len(en_news)} 条")
             except Exception as e:
+                errors.append(f"英文媒体: {e}")
                 logger.error(f"[Scheduler] 英文媒体爬取失败: {e}", exc_info=True)
 
             # 1c: RSS 新闻源（Frontier Myanmar + DVB + The Diplomat）
@@ -135,16 +141,22 @@ class CrawlerScheduler:
                 rss_news = rss_crawler.crawl_all()
                 rss_crawler.save_news(rss_news)
                 all_news.extend(rss_news)
+                successful_collectors += 1
                 logger.info(f"[Scheduler] RSS 源: {len(rss_news)} 条")
             except Exception as e:
+                errors.append(f"RSS: {e}")
                 logger.error(f"[Scheduler] RSS 爬取失败: {e}", exc_info=True)
 
             self._last_crawl_result = {
-                "success": True,
+                "success": successful_collectors > 0,
                 "count": len(all_news),
+                "errors": errors,
                 "time": self._last_crawl_time.isoformat()
             }
-            logger.info(f"[Scheduler] 爬取完成: 共 {len(all_news)} 条新闻")
+            if successful_collectors:
+                logger.info(f"[Scheduler] 爬取完成: 共 {len(all_news)} 条新闻")
+            else:
+                logger.error("[Scheduler] 爬取失败: 所有新闻源均不可用")
         finally:
             self._crawl_lock.release()
 
@@ -246,72 +258,27 @@ class CrawlerScheduler:
             self._last_analysis_time = datetime.now()
 
             try:
-                from analyzer.data_loader import get_data_loader
-                from analyzer.ner import get_ner_extractor
-                from analyzer.sentiment import get_sentiment_analyzer
-                from analyzer.risk_scorer import get_risk_scorer
-
-                loader = get_data_loader()
-                news_list = loader.load_raw_news()
-
-                if not news_list:
-                    self._last_analysis_result = {
-                        "success": False,
-                        "error": "无数据可分析",
-                        "time": self._last_analysis_time.isoformat()
-                    }
-                    logger.warning("[Scheduler] 无数据可分析")
-                    return
-
-                # NER + 情感分析（双语感知）
-                ner = get_ner_extractor()
-                sentiment = get_sentiment_analyzer()
-
-                for item in news_list:
-                    text = item.get("content", "") or item.get("title", "")
-                    lang = item.get("language", None)  # "zh" / "en" / None
-
-                    if text:
-                        # 情感分析：GDELT 文章优先使用预计算的 tone
-                        gdelt_tone = item.get("gdelt_tone", None)
-                        sent_result = sentiment.get_risk_sentiment(
-                            text, lang=lang, gdelt_tone=gdelt_tone
-                        )
-                        item["sentiment_score"] = sent_result.get("risk_score", 0.5)
-                        item["sentiment_source"] = sent_result.get("source", "unknown")
-
-                        # NER（自动语言检测）
-                        try:
-                            entities = ner.extract_entities(text)
-                            item["entities"] = entities
-                        except ImportError:
-                            item["entities"] = {"locations": [], "organizations": [], "persons": [], "events": []}
-
-                # 风险评分
-                scorer = get_risk_scorer()
-                risk_result = scorer.compute_daily_risk(news_list)
-
-                # 保存到历史
-                today = datetime.now().strftime("%Y-%m-%d")
-                loader.append_risk_score(
-                    date=today,
-                    risk_score=risk_result["risk_score"],
-                    risk_level=risk_result["risk_level"],
-                    details=risk_result.get("raw_indicators", {})
+                from pipeline import run_pipeline
+                pipeline_result = run_pipeline(
+                    source_mode="existing", include_llm=False, persist=True
                 )
-
+                risk_result = pipeline_result.get("risk", {})
                 self._last_analysis_result = {
-                    "success": True,
-                    "news_count": len(news_list),
-                    "risk_score": risk_result["risk_score"],
-                    "risk_level": risk_result["risk_level"],
-                    "time": self._last_analysis_time.isoformat()
+                    "success": pipeline_result["success"],
+                    "news_count": pipeline_result["processed_count"],
+                    "risk_score": risk_result.get("risk_score"),
+                    "risk_level": risk_result.get("risk_level"),
+                    "warnings": pipeline_result.get("warnings", []),
+                    "time": self._last_analysis_time.isoformat(),
                 }
-                logger.info(
-                    f"[Scheduler] 分析完成: {len(news_list)} 条新闻, "
-                    f"风险分 {risk_result['risk_score']}"
-                )
-
+                if pipeline_result["success"]:
+                    logger.info(
+                        "[Scheduler] 分析完成: %s 条新闻, 风险分 %s",
+                        pipeline_result["processed_count"],
+                        risk_result.get("risk_score"),
+                    )
+                else:
+                    logger.error("[Scheduler] 分析流水线失败: %s", pipeline_result.get("stages"))
             except Exception as e:
                 self._last_analysis_result = {
                     "success": False,

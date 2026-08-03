@@ -17,26 +17,31 @@ API 接口：
 """
 import sys
 import os
+import logging
 
 # 确保项目根目录在 sys.path 中，以便各模块相互导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, request, jsonify, Response, render_template
-from flask_cors import CORS
+try:
+    from flask_cors import CORS
+except ImportError:
+    def CORS(flask_app, *args, **kwargs):
+        logging.getLogger(__name__).warning("flask-cors 未安装，跨域支持已禁用")
+        return flask_app
 from datetime import datetime
 
 # 导入各模块
 from utils.config import load_config, get_flask_config
 from analyzer.ner import get_ner_extractor
 from analyzer.sentiment import get_sentiment_analyzer
-from analyzer.llm_client import get_llm_client
+from analyzer.llm_client import build_degraded_result, get_llm_client
 from analyzer.risk_scorer import get_risk_scorer
 from analyzer.trend import get_trend_analyzer
 from analyzer.prompts import NEWS_ANALYSIS_PROMPT, build_analysis_prompt
 from analyzer.data_loader import get_data_loader
 from analyzer.knowledge_graph import get_knowledge_graph
 from analyzer.report_generator import get_report_generator
-from visualization.map_gen import get_map_generator
 from visualization.chart_gen import get_chart_generator
 from data.scheduler import get_scheduler
 
@@ -44,16 +49,23 @@ from data.scheduler import get_scheduler
 # Flask 应用初始化
 # ============================================================
 app = Flask(__name__)
-CORS(app)  # 允许前端跨域请求
+_flask_runtime_cfg = get_flask_config()
+CORS(
+    app,
+    resources={r"/api/*": {"origins": _flask_runtime_cfg.get(
+        "cors_origins", ["http://127.0.0.1:5000", "http://localhost:5000"]
+    )}},
+)
+logger = logging.getLogger(__name__)
 
-# 启动后台调度器（仅在 Flask 实际服务进程中启动）
-# Flask debug 模式下：父进程 (reloader) WERKZEUG_RUN_MAIN 未设置 → 不启动
-#                      子进程 (实际服务) WERKZEUG_RUN_MAIN="true" → 启动
-# 非 debug 模式：直接启动
-import os as _os
-_werkzeug_child = _os.environ.get("WERKZEUG_RUN_MAIN") == "true"
-_not_debug = not load_config().get("flask", {}).get("debug", True)
-if _werkzeug_child or _not_debug:
+
+def get_map_generator():
+    """延迟加载 folium，使地图依赖缺失时其他 API 仍可启动。"""
+    from visualization.map_gen import get_map_generator as factory
+    return factory()
+
+def _start_scheduler():
+    """仅在实际启动服务时启用调度器，导入 Flask app 不产生网络副作用。"""
     _scheduler = get_scheduler()
     _scheduler.start()
 
@@ -123,6 +135,7 @@ def analyze():
     }
     """
     try:
+        warnings = []
         req_data = request.get_json()
         if not req_data or not isinstance(req_data, dict):
             return jsonify({"success": False, "error": "请求体必须为 JSON 对象"}), 400
@@ -143,26 +156,52 @@ def analyze():
             }), 400
 
         instruction = req_data.get("instruction", None)
+        if instruction is not None and not isinstance(instruction, str):
+            return jsonify({"success": False, "error": "'instruction' 必须为字符串"}), 400
+        MAX_INSTRUCTION_LENGTH = 2000
+        if instruction and len(instruction) > MAX_INSTRUCTION_LENGTH:
+            return jsonify({
+                "success": False,
+                "error": f"instruction 过长，最大支持 {MAX_INSTRUCTION_LENGTH} 字符",
+            }), 400
 
         # 1. 文本预处理
         loader = get_data_loader()
         cleaned_text = loader.clean_text(text)
 
         # 2. 命名实体识别
-        ner = get_ner_extractor()
-        entities = ner.extract_entities(cleaned_text)
+        try:
+            ner = get_ner_extractor()
+            entities = ner.extract_entities(cleaned_text)
+        except Exception as e:
+            entities = {"locations": [], "organizations": [], "persons": [], "events": []}
+            warnings.append(f"NER 降级: {e}")
+            logger.warning("NER 降级: %s", e)
 
         # 3. 情感分析（双语感知：中文 SnowNLP / 英文 VADER）
-        sentiment_analyzer = get_sentiment_analyzer()
-        sentiment_result = sentiment_analyzer.get_risk_sentiment(cleaned_text)
+        try:
+            sentiment_analyzer = get_sentiment_analyzer()
+            sentiment_result = sentiment_analyzer.get_risk_sentiment(cleaned_text)
+        except Exception as e:
+            sentiment_result = {
+                "sentiment_score": 0.5,
+                "risk_score": 0.5,
+                "risk_level": "medium",
+                "source": "fallback",
+            }
+            warnings.append(f"情感分析降级: {e}")
+            logger.warning("情感分析降级: %s", e)
 
         # 4. 大模型分析（使用 prompts.py 模板）
         llm_result = None
         try:
             llm = get_llm_client()
             llm_result = llm.analyze_news(cleaned_text, instruction)
+            if llm_result.get("analysis_status") == "degraded":
+                warnings.append(f"LLM 降级: {llm_result.get('error', '未知原因')}")
         except Exception as e:
-            llm_result = {"error": f"LLM 分析失败: {str(e)}"}
+            llm_result = build_degraded_result(f"LLM 分析失败: {e}")
+            warnings.append(f"LLM 分析失败: {e}")
 
         # 5. 风险评分（0-100 分制）
         scorer = get_risk_scorer()
@@ -183,8 +222,9 @@ def analyze():
             from data.gdelt_crawler import get_gdelt_crawler
             gdelt = get_gdelt_crawler()
             gdelt_metrics = gdelt.get_risk_metrics(timespan_days=7)
-        except Exception:
-            pass  # GDELT 不可用时静默跳过
+        except Exception as e:
+            warnings.append(f"GDELT 指标不可用: {e}")
+            logger.warning("GDELT 指标不可用: %s", e)
 
         # 构建外部数据
         external_data = {}
@@ -202,8 +242,9 @@ def analyze():
             from data.nightlight_crawler import get_nightlight_crawler
             nl = get_nightlight_crawler()
             nightlight_change = nl.get_nightlight_change()
-        except Exception:
-            pass  # 遥感数据不可用时静默跳过
+        except Exception as e:
+            warnings.append(f"夜光指标不可用: {e}")
+            logger.warning("夜光指标不可用: %s", e)
 
         # 尝试获取经济指标
         refugee_change = 0.0
@@ -211,8 +252,9 @@ def analyze():
             from data.economic_crawler import get_economic_crawler
             econ = get_economic_crawler()
             refugee_change = econ.get_refugee_change()
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.append(f"经济指标不可用: {e}")
+            logger.warning("经济指标不可用: %s", e)
 
         # 使用 compute_daily_risk 进行融合评分
         indicators = {
@@ -241,8 +283,9 @@ def analyze():
                 entities=entities,
                 llm_result=llm_result
             )
-        except Exception:
-            pass  # Neo4j 不可用时静默跳过
+        except Exception as e:
+            warnings.append(f"Neo4j 写入已跳过: {e}")
+            logger.warning("Neo4j 写入已跳过: %s", e)
 
         # 7. 保存分析结果
         analysis_record = {
@@ -253,16 +296,19 @@ def analyze():
             "risk_score": risk_result,
             "analyzed_at": datetime.now().isoformat()
         }
-        loader.save_analysis_result(analysis_record)
-
-        # 追加风险分记录
-        today = datetime.now().strftime("%Y-%m-%d")
-        loader.append_risk_score(
-            date=today,
-            risk_score=risk_result["risk_score"],
-            risk_level=risk_result["risk_level"],
-            details=indicators
-        )
+        try:
+            loader.save_analysis_result(analysis_record)
+            # 追加风险分记录
+            today = datetime.now().strftime("%Y-%m-%d")
+            loader.append_risk_score(
+                date=today,
+                risk_score=risk_result["risk_score"],
+                risk_level=risk_result["risk_level"],
+                details=indicators
+            )
+        except Exception as e:
+            warnings.append(f"分析结果持久化失败: {e}")
+            logger.warning("分析结果持久化失败: %s", e)
 
         # 8. 预警检查
         alert = None
@@ -270,8 +316,9 @@ def analyze():
             from analyzer.alert_monitor import get_alert_monitor
             monitor = get_alert_monitor()
             alert = monitor.check_risk_score(risk_result["risk_score"], details=indicators)
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.append(f"预警检查不可用: {e}")
+            logger.warning("预警检查不可用: %s", e)
 
         # 9. 诊断性归因分析
         diagnostic = None
@@ -279,8 +326,9 @@ def analyze():
             from analyzer.diagnostic import get_diagnostic_analyzer
             diag = get_diagnostic_analyzer()
             diagnostic = diag.diagnose(risk_result)
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.append(f"诊断分析不可用: {e}")
+            logger.warning("诊断分析不可用: %s", e)
 
         return jsonify({
             "success": True,
@@ -291,11 +339,13 @@ def analyze():
                 "risk_score": risk_result,
                 "gdelt_metrics": gdelt_metrics if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0 else None,
                 "alert": alert,
-                "diagnostic": diagnostic
+                "diagnostic": diagnostic,
+                "warnings": warnings,
             }
         })
 
     except Exception as e:
+        logger.exception("/api/analyze 处理失败")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -593,6 +643,7 @@ def trend():
     try:
         days = request.args.get("days", 30, type=int)
         include_chart = request.args.get("chart", "true").lower() == "true"
+        warnings = []
 
         loader = get_data_loader()
         history = loader.load_risk_history(days=days)
@@ -641,16 +692,18 @@ def trend():
             from analyzer.alert_monitor import get_alert_monitor
             monitor = get_alert_monitor()
             result["threshold_lines"] = monitor.get_threshold_lines()
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.append(f"预警阈值不可用: {e}")
+            logger.warning("预警阈值不可用: %s", e)
 
         # 添加历史事件标注
         try:
             from data.historical_events import get_historical_events
             he = get_historical_events()
             result["event_markers"] = he.get_markers_for_chart()
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.append(f"历史事件标注不可用: {e}")
+            logger.warning("历史事件标注不可用: %s", e)
 
         # 生成图表数据
         if include_chart:
@@ -666,6 +719,7 @@ def trend():
             )
             result["chart_data"] = chart_data
 
+        result["warnings"] = warnings
         return jsonify({"success": True, "data": result})
 
     except Exception as e:
@@ -810,8 +864,12 @@ if __name__ == "__main__":
     print(f"  启动地址: http://{flask_cfg.get('host', '0.0.0.0')}:{flask_cfg.get('port', 5000)}")
     print("=" * 60)
 
+    # debug 模式仅在 reloader 子进程启动；非 debug 模式直接启动。
+    if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        _start_scheduler()
+
     app.run(
-        host=flask_cfg.get("host", "0.0.0.0"),
+        host=flask_cfg.get("host", "127.0.0.1"),
         port=flask_cfg.get("port", 5000),
-        debug=flask_cfg.get("debug", True)
+        debug=flask_cfg.get("debug", False)
     )

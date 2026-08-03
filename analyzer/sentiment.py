@@ -12,9 +12,12 @@ import re
 import threading
 from typing import Dict, List
 
-from snownlp import SnowNLP
+try:
+    from snownlp import SnowNLP
+except ImportError:
+    SnowNLP = None
 
-# 英文情感：NLTK VADER（词典方法，无需模型下载）
+# 英文情感：NLTK VADER（词典资源需在环境配置阶段显式安装）
 try:
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
     _VADER_AVAILABLE = True
@@ -36,13 +39,8 @@ class SentimentAnalyzer:
             try:
                 self._vader = SentimentIntensityAnalyzer()
             except LookupError:
-                # vader_lexicon 未下载，尝试自动下载
-                try:
-                    import nltk
-                    nltk.download("vader_lexicon", quiet=True)
-                    self._vader = SentimentIntensityAnalyzer()
-                except Exception:
-                    self._vader = None
+                # 资源下载必须由环境配置显式完成，运行时保持离线可控。
+                self._vader = None
 
     def _detect_language(self, text: str) -> str:
         """简单语言检测：基于中文字符比例"""
@@ -73,11 +71,35 @@ class SentimentAnalyzer:
 
     def _analyze_zh(self, text: str) -> float:
         """中文情感分析：SnowNLP"""
+        score, _ = self._analyze_zh_with_source(text)
+        return score
+
+    def _analyze_zh_with_source(self, text: str):
+        """返回中文得分及真实使用的数据来源。"""
+        if SnowNLP is None:
+            return self._analyze_zh_fallback(text), "fallback"
         try:
             s = SnowNLP(text)
-            return round(s.sentiments, 4)
+            return round(s.sentiments, 4), "snownlp"
         except Exception:
+            return self._analyze_zh_fallback(text), "fallback"
+
+    def _analyze_zh_fallback(self, text: str) -> float:
+        """SnowNLP 不可用时使用透明、可复核的关键词基线。"""
+        positive_words = [
+            "和平", "合作", "协议", "进展", "增长", "稳定", "改善",
+            "援助", "恢复", "成功", "发展", "对话",
+        ]
+        negative_words = [
+            "冲突", "空袭", "爆炸", "难民", "政变", "暴力", "危机",
+            "制裁", "动荡", "袭击", "伤亡", "死亡", "破坏", "武装",
+        ]
+        pos = sum(1 for word in positive_words if word in text)
+        neg = sum(1 for word in negative_words if word in text)
+        total = pos + neg
+        if total == 0:
             return 0.5
+        return round(pos / total, 4)
 
     def _analyze_en(self, text: str) -> float:
         """
@@ -141,11 +163,11 @@ class SentimentAnalyzer:
         else:
             if lang is None:
                 lang = self._detect_language(text)
-            score = self.analyze(text, lang=lang)
             if lang == "en":
+                score = self._analyze_en(text)
                 source = "vader" if self._vader else "fallback"
             else:
-                source = "snownlp"
+                score, source = self._analyze_zh_with_source(text)
 
         risk_score = round(1.0 - score, 4)
 
