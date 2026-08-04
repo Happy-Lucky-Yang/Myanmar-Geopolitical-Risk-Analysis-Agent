@@ -228,6 +228,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 夜光/经济为 **World Bank 代理指标**（非 NASA VIIRS 原始栅格，属轻量替代方案）
 
 ### ❌ 后续工作建议
+- **GDELT 重用量场景切换原始数据文件接入**：当前通过 DOC 2.0 API 查询（受每 IP 每 5 秒 1 请求限流，已用全局限速器 + 指数退避 + 关键词 OR 合并缓解）；若后续需要全量事件流分析，可改为直接下载 GDELT 每 15 分钟发布的原始 CSV 文件（`data.gdeltproject.org/gdeltv2/`，不限流，学术界标准做法）
 - **接入 NASA VIIRS 原始遥感栅格**（rasterio 提取各省夜光均值，替代 WB 电力代理）
 - **地图省级风险真实化**：将 NER 提取地名精确关联到省份（当前为边境省份简化乘数）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）

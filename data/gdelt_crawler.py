@@ -45,10 +45,11 @@ class GDELTCrawler:
         self._urls_seen = self._load_urls_seen()
         self._operation_lock = threading.Lock()  # 统一实例级操作锁（URL集合 + 缓存 + 文件写入）
 
-        # GDELT 指标缓存（TTL = 5分钟，避免频繁调用 API）
+        # GDELT 指标缓存（默认 TTL = 15分钟：GDELT 数据本身每 15 分钟才更新一次，
+        # 缓存过短只会徒增 API 请求、提高被限流概率）
         self._metrics_cache = None
         self._metrics_cache_time = 0
-        self._metrics_ttl = self._cfg.get("metrics_cache_seconds", 300)
+        self._metrics_ttl = self._cfg.get("metrics_cache_seconds", 900)
 
     # ============================================================
     # URL 去重

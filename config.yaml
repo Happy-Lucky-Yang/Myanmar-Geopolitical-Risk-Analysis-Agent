@@ -61,7 +61,10 @@ gdelt:
   max_retries: 3                      # 请求重试次数
   timeout: 30                         # 请求超时（秒）
   backoff: 5                          # 重试退避基数（GDELT 要求每 5 秒一个请求）
-  use_multi_query: true               # 使用多关键词查询（覆盖面更广）
+  min_interval: 5.5                     # 全局限速：任意两次请求最小间隔（秒，留 0.5s 余量）
+  jitter: 2.0                           # 限速/重试叠加的随机抖动上限（秒，避免贴边被拒）
+  metrics_cache_seconds: 900            # 指标缓存 TTL（15分钟，与 GDELT 数据更新频率对齐）
+  use_multi_query: true               # 使用多关键词查询（按语言合并为 OR 组合请求，覆盖面广且省配额）
   # 多关键词查询列表（use_multi_query=true 时使用，支持中英文混合）
   query_keywords:
     - "Myanmar conflict"

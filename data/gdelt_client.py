@@ -11,7 +11,9 @@ GDELT DOC 2.0 API:
 参考文档：https://blog.gdeltproject.org/gdelt-doc-2-0-api-released/
 """
 import time
+import random
 import logging
+import threading
 import requests
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -74,6 +76,15 @@ GEOPOLITICAL_THEMES = [
 # GDELT DOC 2.0 API 基础 URL
 GDELT_DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
+# ============================================================
+# 全局请求限速器（模块级，跨实例/跨线程生效）
+# ============================================================
+# GDELT 官方限流按 IP 计：每 5 秒最多 1 个请求。
+# 同一进程内可能有多个调用方（定时任务 + /api/analyze + 页面刷新），
+# 因此在模块级维护"上次请求时间戳"，确保任意两次请求间隔达标。
+_pace_lock = threading.Lock()
+_last_request_ts = 0.0  # 使用 time.monotonic() 时钟
+
 
 class GDELTClient:
     """GDELT DOC 2.0 API 客户端"""
@@ -87,6 +98,9 @@ class GDELTClient:
         self._timeout = cfg.get("timeout", 30)
         self._max_retries = cfg.get("max_retries", 3)
         self._backoff = cfg.get("backoff", 5)  # GDELT 要求每5秒一个请求
+        # 全局限速参数：最小请求间隔（留 0.5s 余量）+ 随机抖动上限
+        self._min_interval = cfg.get("min_interval", 5.5)
+        self._jitter = cfg.get("jitter", 2.0)
         # 默认关键词（缅甸地缘政治）
         self._default_query = cfg.get(
             "query",
@@ -94,6 +108,23 @@ class GDELTClient:
         )
         # 默认国家过滤：Myanmar (BM)
         self._default_country = cfg.get("source_country", "BM")
+
+    def _pace_request(self):
+        """
+        全局限速：确保任意两次 GDELT 请求间隔 >= min_interval + 随机抖动。
+
+        在锁内预定本次请求的时间槽再睡眠，多线程并发时自动排队，
+        避免多个调用方同时发出请求触发 429。
+        """
+        global _last_request_ts
+        with _pace_lock:
+            now = time.monotonic()
+            target = max(now, _last_request_ts + self._min_interval
+                         + random.uniform(0.0, self._jitter))
+            _last_request_ts = target
+        delay = target - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
 
     def _make_request(self, params: Dict) -> Optional[Dict]:
         """
@@ -103,6 +134,8 @@ class GDELTClient:
         :return: JSON 响应字典，或 None（请求失败）
         """
         for attempt in range(self._max_retries):
+            # 全局限速排队（含重试请求）
+            self._pace_request()
             try:
                 resp = requests.get(
                     self._base_url,
@@ -118,10 +151,20 @@ class GDELTClient:
                     data = resp.json()
                     return data
                 elif resp.status_code == 429:
-                    # GDELT 免费 API 要求每 5 秒一个请求
-                    wait = max(5, self._backoff * (2 ** attempt))
+                    # 限流重试：优先遵循服务器返回的 Retry-After 头，
+                    # 否则回退到指数退避；均叠加随机抖动避免贴边再被拒
+                    retry_after = resp.headers.get("Retry-After")
+                    try:
+                        wait = float(retry_after) if retry_after else 0.0
+                    except ValueError:
+                        wait = 0.0
+                    if wait > 0:
+                        wait += random.uniform(0.0, self._jitter)
+                    else:
+                        wait = max(5, self._backoff * (2 ** attempt)) \
+                            + random.uniform(0.0, self._jitter)
                     logger.warning(
-                        f"[GDELT] API 限流 (429), 等待 {wait}s 后重试"
+                        f"[GDELT] API 限流 (429), 等待 {wait:.0f}s 后重试"
                     )
                     time.sleep(wait)
                 elif resp.status_code == 503:
@@ -203,12 +246,16 @@ class GDELTClient:
         max_results_per_query: int = None,
     ) -> List[Dict]:
         """
-        多关键词查询（合并结果并去重）
+        多关键词查询（按语言合并为 OR 组合查询 + 去重）
+
+        优化策略：GDELT 限流每 IP 每 5 秒 1 个请求，因此将关键词按
+        语言分组，每组用 OR 合并为一次请求（N 个关键词 -> 最多 2 次请求），
+        大幅减少请求次数；请求间隔由全局限速器 _pace_request() 保障。
 
         :param queries: 关键词列表
         :param timespan_days: 查询最近多少天
         :param source_country: 来源国家代码
-        :param max_results_per_query: 每次查询最大返回数
+        :param max_results_per_query: 每组查询最大返回数
         :return: 合并去重后的文章列表
         """
         if queries is None:
@@ -220,24 +267,30 @@ class GDELTClient:
                 'Myanmar China economic',
             ]
 
+        # 按语言分组（中文/英文），每组合并为一条 OR 查询
+        groups = {"english": [], "chinese": []}
+        for q in queries:
+            if any('\u4e00' <= c <= '\u9fff' for c in q):
+                groups["chinese"].append(q)
+            else:
+                groups["english"].append(q)
+        group_items = [(lang, qs) for lang, qs in groups.items() if qs]
+
         all_articles = []
         seen_urls = set()
 
-        for i, q in enumerate(queries):
-            # 自动检测查询语言，设置语言过滤
-            query_lang = None
-            if any('\u4e00' <= c <= '\u9fff' for c in q):
-                query_lang = "chinese"  # 中文查询
-            else:
-                query_lang = "english"  # 英文查询
-
-            logger.info(f"[GDELT] 多关键词查询 ({i+1}/{len(queries)}): '{q}' [lang={query_lang}]")
+        for i, (lang, qs) in enumerate(group_items):
+            combined_query = " OR ".join(f'("{q}")' for q in qs)
+            logger.info(
+                f"[GDELT] 合并查询 ({i+1}/{len(group_items)}): "
+                f"{len(qs)} 个关键词 [lang={lang}]"
+            )
             articles = self.search_articles(
-                query=q,
+                query=combined_query,
                 timespan_days=timespan_days,
                 source_country=source_country,
                 max_results=max_results_per_query or self._max_results,
-                language=query_lang,
+                language=lang,
             )
 
             for article in articles:
@@ -246,9 +299,7 @@ class GDELTClient:
                     seen_urls.add(url)
                     all_articles.append(article)
 
-            # 查询间隔，避免触发限流（GDELT 要求每 5 秒一个请求）
-            if i < len(queries) - 1:
-                time.sleep(5.0)
+            # 请求间隔由全局限速器保障，无需额外 sleep
 
         logger.info(f"[GDELT] 多关键词查询完成，共 {len(all_articles)} 条去重文章")
         return all_articles
