@@ -161,6 +161,18 @@
     "source": "全球新闻"
   },
   {
+    "date": "2021-12-24",
+    "event_type": "外交",
+    "actors": [
+      "俄罗斯",
+      "缅甸"
+    ],
+    "location": "全国",
+    "severity": 1,
+    "description": "缅甸、俄罗斯联合举办第十二届东盟反恐专家组会议",
+    "source": "全球新闻"
+  },
+  {
     "date": "2022-01-20",
     "event_type": "军事冲突",
     "actors": [
@@ -220,6 +232,18 @@
     "source": "新闻报道"
   },
   {
+    "date": "2022-10-22",
+    "event_type": "经济制裁",
+    "actors": [
+      "国际反洗钱金融行动特别工作组(FATF)",
+      "缅甸"
+    ],
+    "location": "全国",
+    "severity": 3,
+    "description": "国际反洗钱金融行动特别工作组(FATF)宣布将缅甸列入恐怖主义融资黑名单",
+    "source": "全球新闻"
+  },
+  {
     "date": "2022-11-01",
     "event_type": "外交",
     "actors": [
@@ -232,6 +256,31 @@
     "source": "官方"
   },
   {
+    "date": "2022-11-17",
+    "event_type": "政治",
+    "actors": [
+      "缅甸军政府",
+      "肖恩·特纳尔",
+      "薇姬·鲍曼"
+    ],
+    "location": "全国",
+    "severity": 2,
+    "description": "缅甸军政府释放被关押的昂山素季经济顾问肖恩·特纳尔和前英国大使薇姬·鲍曼等人",
+    "source": "全球新闻"
+  },
+  {
+    "date": "2022-12-21",
+    "event_type": "外交",
+    "actors": [
+      "联合国安理会",
+      "缅甸"
+    ],
+    "location": "全国",
+    "severity": 1,
+    "description": "联合国安理会通过2669号决议,呼吁结束暴力、 释放昂山素季等前政府官员",
+    "source": "官方"
+  },
+  {
     "date": "2023-01-15",
     "event_type": "军事冲突",
     "actors": [
@@ -241,6 +290,17 @@
     "location": "马圭省",
     "severity": 4,
     "description": "马圭省冲突加剧，军方空袭村庄",
+    "source": "新闻报道"
+  },
+  {
+    "date": "2023-02-01",
+    "event_type": "政治",
+    "actors": [
+      "缅甸军政府"
+    ],
+    "location": "全国",
+    "severity": 4,
+    "description": "缅甸军政府打破宪法条文的一般性约束,将紧急状态再延长6个月",
     "source": "新闻报道"
   },
   {
