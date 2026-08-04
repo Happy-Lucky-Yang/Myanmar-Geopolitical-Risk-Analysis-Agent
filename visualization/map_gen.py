@@ -60,7 +60,8 @@ class RiskMapGenerator:
             else:
                 continue
 
-            heat_data.append([lat, lon, risk_score * 10])
+            # 强度统一归一化到 0~1（兼容 0~100 分制输入）
+            heat_data.append([lat, lon, self._normalize_score(risk_score)])
 
         # 添加热力图层
         if heat_data:
@@ -77,18 +78,19 @@ class RiskMapGenerator:
             province = item.get("province", "")
             risk_score = item.get("risk_score", 0.5)
             risk_level = item.get("risk_level", "未知")
+            score_norm = self._normalize_score(risk_score)
 
             if province in MYANMAR_PROVINCES:
                 lat, lon = MYANMAR_PROVINCES[province]
-                color = self._risk_color(risk_score)
+                color = self._risk_color(score_norm)
 
-                # 详细弹窗内容
-                trend_dir = "↑" if risk_score > 60 else "↓" if risk_score < 40 else "→"
+                # 详细弹窗内容（半径 6~16 像素，避免巨圆遮盖全图）
+                trend_dir = "↑" if score_norm > 0.6 else "↓" if score_norm < 0.4 else "→"
                 popup_html = (
                     f"<div style='min-width:150px'>"
                     f"<b style='font-size:14px'>{province}</b><br>"
                     f"<hr style='border:1px solid #ddd;margin:4px 0'>"
-                    f"风险分: <b>{risk_score:.1f}</b><br>"
+                    f"风险分: <b>{score_norm * 100:.1f}</b><br>"
                     f"风险等级: <b>{risk_level}</b><br>"
                     f"趋势: {trend_dir}<br>"
                     f"<span style='font-size:11px;color:#666'>"
@@ -98,12 +100,12 @@ class RiskMapGenerator:
 
                 folium.CircleMarker(
                     location=[lat, lon],
-                    radius=8 + risk_score * 12,
+                    radius=6 + score_norm * 10,
                     color=color,
                     fill=True,
                     fill_opacity=0.7,
                     popup=folium.Popup(popup_html, max_width=250),
-                    tooltip=f"{province}: {risk_score:.1f}"
+                    tooltip=f"{province}: {score_norm * 100:.1f}"
                 ).add_to(m)
 
         # 添加数据来源说明
@@ -138,8 +140,22 @@ class RiskMapGenerator:
 
         return m._repr_html_()
 
+    def _normalize_score(self, score: float) -> float:
+        """
+        风险分归一化到 0~1（兼容 0~100 分制与 0~1 比例两种输入）
+
+        app.py 传入的是 0~100 分制；若上游改为比例值也能正确渲染，
+        避免半径/颜色计算因量纲错误生成遮盖全图的巨圆。
+        """
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            return 0.5
+        norm = score / 100.0 if score > 1.0 else score
+        return max(0.0, min(1.0, norm))
+
     def _risk_color(self, score: float) -> str:
-        """根据风险分返回颜色"""
+        """根据归一化风险分(0~1)返回颜色"""
         if score >= 0.7:
             return "red"
         elif score >= 0.4:
