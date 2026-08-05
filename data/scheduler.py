@@ -32,6 +32,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 logger = logging.getLogger("scheduler")
 logger.setLevel(logging.INFO)
+# 禁止向根 logger 传播（crawler.py 的 basicConfig 已在根上挂了 handler，
+# 否则每条 Scheduler 日志会被控制台打印两次）
+logger.propagate = False
 
 # 文件处理器
 fh = logging.FileHandler(os.path.join(LOG_DIR, "scheduler.log"), encoding="utf-8")

@@ -50,6 +50,10 @@ class GDELTCrawler:
         self._metrics_cache = None
         self._metrics_cache_time = 0
         self._metrics_ttl = self._cfg.get("metrics_cache_seconds", 900)
+        # crawl() 刚拉取的原始文章（供 get_risk_metrics 复用，避免同一轮任务双查询）
+        self._last_raw_articles = None
+        self._last_raw_time = 0
+        self._last_raw_days = None
 
     # ============================================================
     # URL 去重
@@ -202,6 +206,12 @@ class GDELTCrawler:
             f"原始 {len(raw_articles)} 条, 新增 {len(news_list)} 条（去重后）"
         )
 
+        # 缓存原始文章：供同一轮任务的 get_risk_metrics 复用，避免重复调 API
+        with self._operation_lock:
+            self._last_raw_articles = raw_articles
+            self._last_raw_time = time.time()
+            self._last_raw_days = days
+
         # 保存去重 URL
         self._save_urls_seen()
 
@@ -266,6 +276,17 @@ class GDELTCrawler:
                     and (now - self._metrics_cache_time) < self._metrics_ttl):
                 logger.debug("[GDELT Crawler] 使用缓存指标")
                 return self._metrics_cache
+
+            # 复用 crawl() 刚拉取的原始文章（同一轮任务内，避免双查询）
+            if (self._last_raw_articles is not None
+                    and self._last_raw_days == timespan_days
+                    and (now - self._last_raw_time) < self._metrics_ttl):
+                logger.info("[GDELT Crawler] 复用本轮 crawl 原始文章计算指标")
+                result = compute_gdelt_risk_metrics(self._last_raw_articles)
+                result["_timespan"] = timespan_days
+                self._metrics_cache = result
+                self._metrics_cache_time = now
+                return result
 
         if not self._enabled:
             logger.info("[GDELT Crawler] 未启用，返回默认指标")
