@@ -53,3 +53,7 @@ node_modules/
 *.tmp
 *_temp.*
 docs/_proposal_temp.txt
+# 临时验证脚本
+*_tmp_*.py
+# 浏览器验证截图残留
+dashboard_source_health_card.png
