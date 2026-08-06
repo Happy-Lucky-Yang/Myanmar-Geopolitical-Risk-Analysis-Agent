@@ -271,6 +271,7 @@ Content-Type: `text/html`
 | GET | `/api/alert` | 当前预警与阈值线 |
 | POST | `/api/alert/acknowledge` | 确认预警 |
 | GET/POST | `/api/scheduler` | 调度状态或手动触发任务 |
+| GET | `/api/sources/health` | 数据源健康状态（成功率/降级监控），响应示例见下 |
 | GET | `/api/kg/query` | 查询知识图谱 |
 | POST | `/api/kg/seed` | 写入知识图谱种子数据 |
 | GET | `/api/network` | 关系网络分析 |
@@ -278,6 +279,42 @@ Content-Type: `text/html`
 
 `/api/analyze` 的 `data.warnings` 会列出 LLM、GDELT、夜光、经济、Neo4j、
 预警或诊断模块的降级原因。可选模块失败不会把成功的规则分析改成 HTTP 500。
+
+### `/api/sources/health` 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "缅甸缅华网": {
+      "status": "healthy",
+      "success_rate": 1.0,
+      "recent_attempts": 5,
+      "recent_success": 5,
+      "last_count": 6,
+      "last_success": "2026-08-05T11:27:10",
+      "last_error": null,
+      "records": [
+        {"time": "2026-08-05T11:27:10", "ok": true, "count": 6, "error": null}
+      ]
+    },
+    "The Irrawaddy": {
+      "status": "dead",
+      "success_rate": 0.0,
+      "recent_attempts": 3,
+      "recent_success": 0,
+      "last_count": 0,
+      "last_success": null,
+      "last_error": "Irrawaddy 列表页请求失败: https://www.irrawaddy.com/news/burma",
+      "records": []
+    }
+  }
+}
+```
+
+`status` 取值：`healthy`（成功率≥70%且最近一次成功）/ `degraded`（时好时坏）/
+`dead`（最近 3 次全部失败）。每源滚动保留最近 20 次记录，持久化到
+`DATA_ROOT/processed/source_health.json`，重启不丢失。
 
 ---
 

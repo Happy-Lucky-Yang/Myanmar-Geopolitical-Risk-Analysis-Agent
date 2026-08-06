@@ -3,12 +3,12 @@
 ## 项目简介
 本项目构建了一个轻量级、可复现的**缅甸地缘环境智能计算系统**，对标 `process.html` 五层技术路线（数据采集 → 清洗结构化 → 智能计算 → 态势分析 → 输出可视化），实现从多源数据采集到风险量化、地缘位势评估、态势研判与可视化的完整闭环。项目由华东师范大学本科生创新团队开发，作为"区域国别地缘环境智能计算研究"大创项目的技术实现。
 
-> **数据说明**：系统已接入 **6 类数据源**：缅甸缅华网（中文）、GDELT 全球事件数据库（DOC 2.0 API，中英双语）、Myanmar Now + The Irrawaddy（英文媒体）、Frontier Myanmar + DVB（RSS 订阅）、**World Bank 夜间灯光代理指标（电力覆盖率/传输损耗）**、**World Bank 宏观经济统计（GDP/通胀/贸易/难民推断）**。夜光与经济指标通过 World Bank Open Data API 免费获取，标注为"估算/官方"，遵循数据可信度标记规范。
+> **数据说明**：系统接入 7 类数据源：缅甸缅华网（中文，稳定）、GDELT 全球事件数据库（**CSV 原始文件直连为主通道，不限流；DOC 2.0 API 备用**，中英双语）、**Google News 双语聚合源（经代理，一条 URL 聚合数十家国际媒体）**、The Irrawaddy + Frontier Myanmar（英文，受站点级反爬限制）、**World Bank 夜光代理指标（电力覆盖率/传输损耗）**、**World Bank 宏观经济统计（GDP/通胀/贸易/难民推断）**。Myanmar Now 已停运、DVB 无可用 RSS，均已停用。各源每轮采集结果由**数据源健康监控**自动记录（见 `/api/sources/health`）。夜光与经济指标标注为"估算/官方"，遵循数据可信度标记规范。
 
 ## 团队分工
 | 角色 | 姓名 | 主要任务 |
 |------|------|----------|
-| 组长/地缘理论 | 舒媛媛 | 地缘理论框架、指导沟通、进度督促、地科院资源对接 |
+| 组长/地缘理论 | 舒媛媛 | 地缘理论框架、指导沟通、进度督促、地科院资源对接、语料标注 |
 | 数据采集/分析/可视化 | 杨雯瑾 | 数据采集、清洗、加权打分、趋势分析、知识图谱、可视化 |
 | NLP/系统整合 | 高一翔 | NER、情感分析、大模型 API、系统整合、性能优化、文档 |
 | 遥感数据处理 | 刘彦均 | 遥感数据获取解译、GeoJSON 边界、夜光指标、参与可视化 |
@@ -18,7 +18,7 @@
 
 | 层级 | 模块 | 实现情况 |
 |------|------|----------|
-| **一 数据采集** | 遥感/新闻/经济/历史文献 | ✅ 新闻(4源) + 夜光(WB代理) + 经济(WB) + 历史事件(48条) |
+| **一 数据采集** | 遥感/新闻/经济/历史文献 | ✅ 新闻(多源含健康监控) + 夜光(WB代理) + 经济(WB) + 历史事件(53条) |
 | **二 清洗结构化** | 质量检查/多模态对齐/NER/知识图谱 | ✅ 清洗去重 + 多模态时空对齐 + LAC + spaCy 双语 NER + Neo4j 图谱(可选) |
 | **三 智能计算** | LLM/轻量算法/地缘位势/链式推理 | ✅ LLM 封装 + NetworkX + **地缘位势(1/d²)** + **空间自相关(Moran's I)** + 链式推理 |
 | **四 态势分析** | 描述/探索/诊断/预测 | ✅ 描述性 + 异常探测 + **诊断归因** + 趋势预测 |
@@ -29,7 +29,7 @@
 Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── config.yaml                   # 配置（权重/数据源/夜光/经济/调度）
 ├── requirements.txt              # Python 依赖
-├── app.py                        # Flask 主入口（4 页面 + 16 业务 API + 健康检查）
+├── app.py                        # Flask 主入口（4 页面 + 17 业务 API + 健康检查）
 ├── analyzer/                     # 核心分析模块
 │   ├── data_loader.py            # 数据读取与清洗
 │   ├── ner.py                    # 命名实体识别（LAC）
@@ -50,12 +50,14 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   ├── crawler.py                # 缅华网爬虫（中文）
 │   ├── myanmar_now_crawler.py    # 英文新闻爬虫
 │   ├── rss_crawler.py            # RSS 新闻源爬虫
-│   ├── gdelt_client.py           # GDELT DOC 2.0 客户端
+│   ├── gdelt_client.py           # GDELT DOC 2.0 客户端（限速器/重试/备用通道）
+│   ├── gdelt_files.py            # 🆕 GDELT 原始 CSV 直连通道（不限流，主通道）
 │   ├── gdelt_crawler.py          # GDELT 适配器
 │   ├── nightlight_crawler.py     # 夜间灯光遥感（WB 代理指标）
 │   ├── economic_crawler.py       # 宏观经济统计（WB API）
-│   ├── historical_events.py      # 历史事件数据集（2020-2025，48 条）
+│   ├── historical_events.py      # 历史事件数据集（2020-2025，53 条）
 │   ├── kg_seeder.py              # 知识图谱种子填充（34 节点 + 35 关系）
+│   ├── source_health.py          # 数据源健康追踪（成功率/降级监控，持久化）
 │   ├── scheduler.py              # 统一定时调度器（后台线程）
 │   └── raw/                      # 原始数据 + 缓存
 ├── visualization/
@@ -63,7 +65,7 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   └── chart_gen.py              # ECharts 图表数据（预测/阈值线/事件标注）
 ├── templates/                    # Flask 模板（4 个页面）
 │   ├── chat.html                 # 对话分析（含诊断归因 + 链式推理）
-│   ├── dashboard.html            # 🆕 综合态势仪表盘
+│   ├── dashboard.html            # 🆕 综合态势仪表盘（含数据源健康卡片）
 │   ├── map.html                  # 风险地图
 │   └── trend.html                # 趋势预测（含预警指示灯）
 ├── static/
@@ -118,6 +120,8 @@ python app.py                # 3. 启动验证
 
 > 拉取代码后若发现"LLM 分析无输出/降级"，先检查自己本地是否存在 `.env`——这是新成员最常见的"假 bug"。
 
+> **境外数据源代理**：GDELT / Google News / 外媒 RSS 需经本地代理访问。启动 Clash 后在 `config.yaml` 顶层 `proxy` 填入地址（如 `http://127.0.0.1:7890`，也可用 `.env` 的 `PROXY` 覆盖）；留空则直连，境外源会如实记录为失败而不影响国内源。
+
 ### 4. 数据存储位置（可选外置）
 爬取的新闻、缓存、去重记录、风险历史等**运行时产物**默认写入项目内 `./data`。若希望避免第三方新闻内容、日志随仓库分发，可在 `.env` 中设置 `DATA_ROOT` 指向项目外的私密目录：
 ```
@@ -158,11 +162,11 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | 页面 | 路由 | 说明 |
 |------|------|------|
 | 对话分析 | `/` | 粘贴新闻文本 → 实体/情感/风险/大模型/**诊断归因**/GDELT，可选**链式推理** |
-| 综合态势 | `/dashboard` | 🆕 预警面板 + 地缘位势 + 空间自相关 + 关系网络 + 诊断归因 + 多源融合图 + 历史时间线 |
+| 综合态势 | `/dashboard` | 🆕 预警面板 + **数据源健康** + 地缘位势 + 空间自相关 + 关系网络 + 诊断归因 + 多源融合图 + 历史时间线 |
 | 风险地图 | `/map` | Folium 缅甸省级风险热力图（暗色主题 + 详细弹窗 + 多源标注） |
 | 趋势预测 | `/trend` | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
 
-## API 接口一览（16 个业务端点 + 健康检查）
+## API 接口一览（17 个业务端点 + 健康检查）
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -170,6 +174,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | POST | `/api/chain` | 链式推理（`chain_depth` 1-4） |
 | GET | `/api/gdelt` | GDELT 事件数据（`?days=7`） |
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
+| GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
 | GET | `/api/map` | Folium 地图 HTML |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
 | GET | `/api/geo_potential` | 🆕 地缘位势评估（距离加权 + Moran's I + 热点） |
@@ -205,7 +210,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 ## 当前进度
 
 ### ✅ 已完成
-- **6 类数据源**：缅华网 + GDELT + Myanmar Now/Irrawaddy + RSS + 夜光(WB) + 经济(WB)
+- **7 类数据源**：缅华网 + GDELT（CSV 直连主通道 + DOC API 备用） + Google News 双语聚合（代理） + Irrawaddy/Frontier（受限时自动降级） + 夜光(WB) + 经济(WB)，均接入数据源健康监控
 - 双语 NER（LAC + spaCy）+ 双语情感（SnowNLP/VADER/GDELT tone）
 - 风险评分 5 维指标**全部接入**（动态权重归一化）
 - 趋势分析（移动平均/回归/异常/7 天预测）
@@ -213,8 +218,8 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - **诊断性归因分析**（贡献度分解 + 驱动机制解析）
 - 链式推理、关系网络分析、多模态时空对齐
 - 动态预警（四级阈值）、自动化报告（HTML/DOCX）
-- 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（48 条）
-- **4 个前端页面 + 16 个业务 API + 健康检查**，暗色监控主题、XSS 防护
+- 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（53 条）
+- **4 个前端页面 + 17 个业务 API + 健康检查**，暗色监控主题、XSS 防护
 - 自动定时调度器、全流程集成脚本、爬虫单元测试
 - 完整文档（数据库设计 / 算法细节 / 研究报告框架）
 
@@ -224,11 +229,11 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 ### ⚠️ 部分完成 / 依赖外部条件
 - 大模型 API（框架完整含重试/降级，需接入可用端点）；链式推理依赖 LLM 端点
 - Neo4j 知识图谱（代码 + 种子脚本完整，`config.yaml` 中 `enabled: false`，需部署 Neo4j 实例激活）
+- 国际新闻源（Irrawaddy/Frontier）受反爬与网络环境限制，需代理接入后恢复；GDELT 受 IP 配额限制，限流防护已内置
 - 诊断变化归因（需积累 ≥4 天风险历史后展示，否则优雅降级提示）
 - 夜光/经济为 **World Bank 代理指标**（非 NASA VIIRS 原始栅格，属轻量替代方案）
 
 ### ❌ 后续工作建议
-- **GDELT 重用量场景切换原始数据文件接入**：当前通过 DOC 2.0 API 查询（受每 IP 每 5 秒 1 请求限流，已用全局限速器 + 指数退避 + 关键词 OR 合并缓解）；若后续需要全量事件流分析，可改为直接下载 GDELT 每 15 分钟发布的原始 CSV 文件（`data.gdeltproject.org/gdeltv2/`，不限流，学术界标准做法）
 - **接入 NASA VIIRS 原始遥感栅格**（rasterio 提取各省夜光均值，替代 WB 电力代理）
 - **地图省级风险真实化**：将 NER 提取地名精确关联到省份（当前为边境省份简化乘数）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
