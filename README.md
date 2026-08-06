@@ -75,6 +75,7 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── tests/                        # 单元测试
 ├── docs/                         # 文档
 │   ├── api_examples.md           # API 请求/响应示例
+│   ├── upgrade_plan.md           # 🆕 系统升级计划（遥感/双边/KDE 等，含数据获取清单）
 │   ├── database_design.md        # 数据库设计说明书
 │   ├── algorithm_details.md      # 算法实现细节（含数学公式）
 │   └── research_report_outline.md# 综合研究报告框架
@@ -233,8 +234,9 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 诊断变化归因（需积累 ≥4 天风险历史后展示，否则优雅降级提示）
 - 夜光/经济为 **World Bank 代理指标**（非 NASA VIIRS 原始栅格，属轻量替代方案）
 
-### ❌ 后续工作建议
-- **接入 NASA VIIRS 原始遥感栅格**（rasterio 提取各省夜光均值，替代 WB 电力代理）
+### ❌ 后续工作建议（详见 [docs/upgrade_plan.md](docs/upgrade_plan.md)）
+- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE 图层（可立即开工） + 缅甸省级边界 GeoJSON（前置，GADM/OCHA 获取清单见附录 A）
+- **双边关系评估模块（已设计暂缓）**：GDELT 国家对合作/冲突指数 + 贸易依存 + 政策监测，六行为体关系雷达，先作独立面板不动五维权重
 - **地图省级风险真实化**：将 NER 提取地名精确关联到省份（当前为边境省份简化乘数）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
 - 扩充历史事件至 100+ 条并补充智库/文献来源标注
