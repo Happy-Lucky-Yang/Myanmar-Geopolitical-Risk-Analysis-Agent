@@ -449,6 +449,23 @@ def geo_potential():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/sources/health", methods=["GET"])
+def sources_health():
+    """
+    数据源健康状态接口
+
+    返回: 各数据源最近爬取的成功率/状态(healthy/degraded/dead)/最近明细
+    """
+    try:
+        from data.source_health import get_source_health_tracker
+        return jsonify({
+            "success": True,
+            "data": get_source_health_tracker().get_health()
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/diagnostic", methods=["GET"])
 def diagnostic_analysis():
     """

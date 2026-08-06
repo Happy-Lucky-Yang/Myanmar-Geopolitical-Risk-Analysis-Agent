@@ -12,11 +12,57 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function loadAll() {
     loadAlert();
+    loadSourceHealth();
     loadGeoPotential();
     loadNetwork();
     loadDiagnostic();
     loadMultimodal();
     loadHistory();
+}
+
+/* ================= 数据源健康 ================= */
+async function loadSourceHealth() {
+    var el = document.getElementById('source-health-body');
+    renderLoading(el);
+    try {
+        var json = await fetchJSON('/api/sources/health');
+        hideLoading(el);
+        if (!json.success) { el.innerHTML = errBox(json.error); return; }
+        var data = json.data || {};
+        var names = Object.keys(data);
+        if (names.length === 0) {
+            el.innerHTML = '<div class="muted-note">暂无采集记录，健康状态将在首轮爬取后呈现。</div>';
+            return;
+        }
+
+        var statusMeta = {
+            healthy: { label: '健康', color: 'var(--risk-low)' },
+            degraded: { label: '降级', color: 'var(--risk-medium)' },
+            dead: { label: '失联', color: 'var(--risk-high)' }
+        };
+
+        var html = '<div class="sh-grid">';
+        names.forEach(function (name) {
+            var s = data[name];
+            var meta = statusMeta[s.status] || statusMeta.degraded;
+            html += '<div class="sh-item">'
+                + '<div class="sh-head"><span class="dot" style="background:' + meta.color + '"></span>'
+                + '<span class="sh-name">' + escapeHtml(name) + '</span>'
+                + '<span class="sh-status" style="color:' + meta.color + '">' + meta.label + '</span></div>'
+                + '<div class="sh-meta">成功率 ' + escapeHtml(formatNumber(s.success_rate * 100, 0)) + '% ('
+                + escapeHtml(String(s.recent_success)) + '/' + escapeHtml(String(s.recent_attempts)) + ')'
+                + ' · 上轮 ' + escapeHtml(String(s.last_count)) + ' 条</div>';
+            if (s.last_error) {
+                html += '<div class="sh-err">' + escapeHtml(s.last_error) + '</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+    } catch (e) {
+        hideLoading(el);
+        el.innerHTML = errBox(e.message);
+    }
 }
 
 /* ================= 预警面板 ================= */

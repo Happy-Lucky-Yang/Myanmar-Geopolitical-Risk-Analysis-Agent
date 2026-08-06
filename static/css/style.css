@@ -1107,3 +1107,46 @@ textarea::placeholder {
 }
 .chain-toggle input { cursor: pointer; }
 
+/* ============ 数据源健康卡片 ============ */
+.sh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 10px;
+}
+.sh-item {
+    background: var(--bg-tertiary, #16181d);
+    border: 1px solid var(--border, #2a2d35);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.sh-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.sh-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sh-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.sh-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.sh-err {
+    font-size: 0.72rem;
+    color: var(--risk-high);
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
