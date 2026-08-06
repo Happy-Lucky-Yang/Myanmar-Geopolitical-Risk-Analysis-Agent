@@ -17,6 +17,12 @@ llm:
   timeout_seconds: 30
   cache_enabled: true
 
+# ---------- HTTP 代理（境外数据源专用） ----------
+# 启动 Clash 后代理地址通常为 http://127.0.0.1:7890；留空 = 直连（境外源大概率失败）。
+# 生效范围：GDELT / RSS 境外源 / 英文媒体；缅华网等国内源始终直连。
+# 也可用 .env 中的 PROXY 环境变量覆盖。
+proxy: "http://127.0.0.1:7890"
+
 # ---------- 爬虫配置 ----------
 crawler:
   # 定时抓取间隔（小时）
@@ -47,7 +53,7 @@ crawler:
       language: "en"
     - name: "Myanmar Now"
       url: "https://www.myanmar-now.org/en/news"
-      enabled: true    # 通过 myanmar_now_crawler.py 爬取
+      enabled: false   # 实测 404：该媒体已停运（2026-07 探测确认），待代理接入后用聚合源替代
       language: "en"
 
 # ---------- GDELT 全球事件数据库 ----------
@@ -64,6 +70,9 @@ gdelt:
   min_interval: 5.5                     # 全局限速：任意两次请求最小间隔（秒，留 0.5s 余量）
   jitter: 2.0                           # 限速/重试叠加的随机抖动上限（秒，避免贴边被拒）
   metrics_cache_seconds: 900            # 指标缓存 TTL（15分钟，与 GDELT 数据更新频率对齐）
+  csv_enabled: true                     # CSV 直连通道（不限流，主通道；DOC API 降为备用）
+  csv_max_files: 672                    # 每轮最多下载的 15 分钟文件数（≈7 天窗口，单文件仅 ~50KB）
+  csv_target_events: 200                # 收集到足够缅甸事件后提前停止（缅甸事件稀疏，需多日窗口）
   use_multi_query: true               # 使用多关键词查询（按语言合并为 OR 组合请求，覆盖面广且省配额）
   # 多关键词查询列表（use_multi_query=true 时使用，支持中英文混合）
   query_keywords:
@@ -78,6 +87,16 @@ gdelt:
 
 # ---------- RSS/Atom 新闻源 ----------
 rss_feeds:
+  google_news_en:
+    name: "Google News 聚合(英文)"
+    rss_url: "https://news.google.com/rss/search?q=Myanmar+conflict+OR+ceasefire+OR+sanctions+OR+refugee&hl=en-US&gl=US&ceid=US:en"
+    enabled: true    # 需代理；一条 URL 聚合数十家国际媒体
+    language: "en"
+  google_news_zh:
+    name: "Google News 聚合(中文)"
+    rss_url: "https://news.google.com/rss/search?q=%E7%BC%85%E7%94%B8&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    enabled: true    # 需代理
+    language: "zh"
   frontier_myanmar:
     name: "Frontier Myanmar"
     rss_url: "https://www.frontiermyanmar.net/en/feed"
@@ -85,13 +104,13 @@ rss_feeds:
     language: "en"
   dvb:
     name: "Democratic Voice of Burma"
-    rss_url: "https://www.dvb.no.org/feed"
-    enabled: true
+    rss_url: "https://www.dvb.no/feed"
+    enabled: false   # 实测域名 dvb.no.org 不存在且 dvb.no 无可用 RSS，暂时停用
     language: "en"
   diplomat_myanmar:
     name: "The Diplomat (Myanmar)"
     rss_url: "https://thediplomat.com/feed/"
-    enabled: false   # 有付费墙，先关闭
+    enabled: false   # 付费墙 + 连接超时（2026-07 实测）
     language: "en"
 
 # ---------- 夜间灯光遥感 ----------
