@@ -36,6 +36,9 @@ class EnglishNewsCrawler:
         self._max_retries = self._cfg.get("max_retries", 3)
         self._backoff = self._cfg.get("backoff", 2)
         self._max_pages = self._cfg.get("max_pages", 2)
+        # 代理（境外英文媒体需代理访问；未配置时直连）
+        from utils.config import get_proxy
+        self._proxies = get_proxy()
 
         # 数据目录（统一路径中枢，支持 DATA_ROOT 外置）
         from utils.config import get_data_paths
@@ -63,7 +66,8 @@ class EnglishNewsCrawler:
             try:
                 resp = requests.get(
                     url, headers=self._get_headers(),
-                    timeout=self._timeout, allow_redirects=True
+                    timeout=self._timeout, allow_redirects=True,
+                    proxies=self._proxies or None
                 )
                 if resp.status_code == 200:
                     return resp
@@ -124,6 +128,8 @@ class EnglishNewsCrawler:
 
             resp = self._request(url)
             if resp is None:
+                if page == 1:
+                    raise RuntimeError(f"Myanmar Now 列表页请求失败: {url}")
                 break
 
             soup = BeautifulSoup(resp.text, "lxml")
@@ -221,6 +227,9 @@ class EnglishNewsCrawler:
 
             resp = self._request(url)
             if resp is None:
+                if page == 1:
+                    # 首页请求失败（多为反爬拦截）：抛异常供健康监控记录
+                    raise RuntimeError(f"Irrawaddy 列表页请求失败: {url}")
                 break
 
             soup = BeautifulSoup(resp.text, "lxml")
@@ -283,23 +292,31 @@ class EnglishNewsCrawler:
         :return: 新闻条目列表
         """
         if sources is None:
-            sources = ["myanmar_now", "irrawaddy"]
+            # Myanmar Now 已停运（2026-07 实测 404），默认不再爬取；
+            # _crawl_myanmar_now 方法保留，站点恢复后可重新加入列表
+            sources = ["irrawaddy"]
 
         all_news = []
+        from data.source_health import get_source_health_tracker
+        health = get_source_health_tracker()
 
         if "myanmar_now" in sources:
             try:
                 news = self._crawl_myanmar_now()
                 all_news.extend(news)
+                health.record("Myanmar Now", True, len(news))
             except Exception as e:
                 logger.error(f"[EN-Crawler] Myanmar Now 爬取失败: {e}")
+                health.record("Myanmar Now", False, error=e)
 
         if "irrawaddy" in sources:
             try:
                 news = self._crawl_irrawaddy()
                 all_news.extend(news)
+                health.record("The Irrawaddy", True, len(news))
             except Exception as e:
                 logger.error(f"[EN-Crawler] Irrawaddy 爬取失败: {e}")
+                health.record("The Irrawaddy", False, error=e)
 
         self._save_urls_seen()
         logger.info(f"[EN-Crawler] 总计获取 {len(all_news)} 条英文新闻")

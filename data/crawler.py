@@ -189,6 +189,9 @@ class NewsCrawler:
             logger.info(f"[缅华网] 解析列表页第 {page} 页: {page_url}")
             resp = self.retry_request(page_url)
             if resp is None:
+                if page == 1:
+                    # 首页请求失败：抛异常供健康监控记录（区别于"无新文章"）
+                    raise RuntimeError(f"缅华网首页列表请求失败: {page_url}")
                 break
 
             soup = BeautifulSoup(resp.text, "lxml")
@@ -589,8 +592,16 @@ class NewsCrawler:
                 news_list = self._crawl_source(name, url)
                 all_news.extend(news_list)
                 logger.info(f"[Crawler] {name}: 获取 {len(news_list)} 条新文章")
+                # 数据源健康上报
+                from data.source_health import get_source_health_tracker
+                get_source_health_tracker().record(name, True, len(news_list))
             except Exception as e:
                 logger.error(f"[Crawler] {name} 爬取异常: {e}", exc_info=True)
+                try:
+                    from data.source_health import get_source_health_tracker
+                    get_source_health_tracker().record(name, False, error=e)
+                except Exception:
+                    pass
 
             # 来源间间隔
             time.sleep(random.uniform(2.0, 4.0))

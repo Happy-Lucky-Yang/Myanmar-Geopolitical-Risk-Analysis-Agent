@@ -33,10 +33,11 @@ DEFAULT_RSS_FEEDS = {
     },
     "dvb": {
         "name": "Democratic Voice of Burma",
-        "rss_url": "https://www.dvb.no.org/feed",
-        "website": "https://www.dvb.no.org",
+        "rss_url": "https://www.dvb.no/feed",
+        "website": "https://www.dvb.no",
         "language": "en",
-        "fallback_url": "https://www.dvb.no.org/news",
+        "fallback_url": "https://www.dvb.no/news",
+        "enabled": False,  # 实测无可用 RSS（/feed 返回 HTML），暂停用
     },
     "diplomat_myanmar": {
         "name": "The Diplomat (Myanmar)",
@@ -44,6 +45,7 @@ DEFAULT_RSS_FEEDS = {
         "website": "https://thediplomat.com",
         "language": "en",
         "fallback_url": None,  # 无备用（付费墙限制）
+        "enabled": False,  # 付费墙 + 连接超时，暂停用
     },
 }
 
@@ -57,6 +59,9 @@ class RSSNewsCrawler:
         self._max_retries = self._cfg.get("max_retries", 2)
         self._backoff = self._cfg.get("backoff", 2)
         self._max_per_source = self._cfg.get("max_per_source", 30)
+        # 代理（境外 RSS 源需代理访问；未配置时直连）
+        from utils.config import get_proxy
+        self._proxies = get_proxy()
 
         # 数据目录（统一路径中枢，支持 DATA_ROOT 外置）
         from utils.config import get_data_paths
@@ -67,11 +72,14 @@ class RSSNewsCrawler:
         self._urls_seen_file = os.path.join(self._raw_dir, "rss_urls_seen.txt")
         self._urls_seen = self._load_urls_seen()
 
-        # 合并配置中的 RSS feeds
+        # 合并配置中的 RSS feeds（字段级合并，保留默认条目的 website/fallback_url）
         self._feeds = dict(DEFAULT_RSS_FEEDS)
         if "rss_feeds" in self._cfg:
             for key, val in self._cfg["rss_feeds"].items():
-                self._feeds[key] = val
+                if key in self._feeds and isinstance(val, dict):
+                    self._feeds[key] = {**self._feeds[key], **val}
+                else:
+                    self._feeds[key] = val
 
     # ============================================================
     # HTTP 请求
@@ -85,7 +93,8 @@ class RSSNewsCrawler:
         }
         for attempt in range(self._max_retries):
             try:
-                resp = requests.get(url, headers=headers, timeout=self._timeout)
+                resp = requests.get(url, headers=headers, timeout=self._timeout,
+                                    proxies=self._proxies or None)
                 if resp.status_code == 200:
                     return resp
                 elif resp.status_code in (429, 503):
@@ -215,7 +224,8 @@ class RSSNewsCrawler:
             if fallback:
                 logger.info(f"[RSS] RSS 失败，尝试 fallback: {fallback}")
                 return self._crawl_fallback_page(fallback, source_key)
-            return []
+            # 请求失败且无 fallback：抛异常供健康监控记录（区别于"无新文章"）
+            raise RuntimeError(f"RSS 请求失败且无备用地址: {rss_url}")
 
         articles = self._parse_feed(resp.text, source_key)
         logger.info(f"[RSS] {feed_config['name']}: 获取 {len(articles)} 条")
@@ -225,7 +235,8 @@ class RSSNewsCrawler:
         """RSS 失败时直接爬取网页列表页"""
         resp = self._request(url)
         if resp is None:
-            return []
+            # 列表页请求失败：抛异常供健康监控记录（区别于"无新文章"）
+            raise RuntimeError(f"fallback 列表页请求失败: {url}")
 
         feed_config = self._feeds.get(source_key, {})
         soup = BeautifulSoup(resp.text, "lxml")
@@ -284,6 +295,9 @@ class RSSNewsCrawler:
             sources = list(self._feeds.keys())
 
         all_news = []
+        from data.source_health import get_source_health_tracker
+        health = get_source_health_tracker()
+
         for key in sources:
             if key not in self._feeds:
                 continue
@@ -293,11 +307,14 @@ class RSSNewsCrawler:
                 logger.info(f"[RSS] 跳过已禁用源: {key}")
                 continue
 
+            feed_name = feed_cfg.get("name", key)
             try:
                 news = self._crawl_single_feed(key)
                 all_news.extend(news)
+                health.record(feed_name, True, len(news))
             except Exception as e:
                 logger.error(f"[RSS] {key} 爬取失败: {e}")
+                health.record(feed_name, False, error=e)
 
             time.sleep(1)  # 源间延迟
 
@@ -349,5 +366,12 @@ def get_rss_crawler(config: Dict = None) -> RSSNewsCrawler:
     if _rss_crawler_instance is None:
         with _rss_crawler_lock:
             if _rss_crawler_instance is None:
+                if config is None:
+                    # 默认从 config.yaml 读取 rss_feeds 配置（否则配置不生效）
+                    try:
+                        from utils.config import load_config
+                        config = {"rss_feeds": load_config().get("rss_feeds", {})}
+                    except Exception:
+                        config = {}
                 _rss_crawler_instance = RSSNewsCrawler(config)
     return _rss_crawler_instance
