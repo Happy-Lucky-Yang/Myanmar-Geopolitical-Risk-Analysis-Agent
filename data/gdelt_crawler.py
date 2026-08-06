@@ -215,6 +215,17 @@ class GDELTCrawler:
         # 保存去重 URL
         self._save_urls_seen()
 
+        # 数据源健康上报（0 条视为异常：限流或网络问题）
+        try:
+            from data.source_health import get_source_health_tracker
+            if raw_articles:
+                get_source_health_tracker().record("GDELT", True, len(news_list))
+            else:
+                get_source_health_tracker().record(
+                    "GDELT", False, 0, error="返回 0 条（限流或网络异常）")
+        except Exception:
+            pass
+
         return news_list
 
     def save_news(self, news_list: List[Dict], filename: str = None) -> Optional[str]:
@@ -277,8 +288,9 @@ class GDELTCrawler:
                 logger.debug("[GDELT Crawler] 使用缓存指标")
                 return self._metrics_cache
 
-            # 复用 crawl() 刚拉取的原始文章（同一轮任务内，避免双查询）
-            if (self._last_raw_articles is not None
+            # 复用 crawl() 刚拉取的原始文章（同一轮任务内，避免双查询；
+            # 空列表不复用，否则会把"API 失败"固化为零指标）
+            if (self._last_raw_articles
                     and self._last_raw_days == timespan_days
                     and (now - self._last_raw_time) < self._metrics_ttl):
                 logger.info("[GDELT Crawler] 复用本轮 crawl 原始文章计算指标")
@@ -291,6 +303,39 @@ class GDELTCrawler:
         if not self._enabled:
             logger.info("[GDELT Crawler] 未启用，返回默认指标")
             return compute_gdelt_risk_metrics([])
+
+        # 优先 CSV 直连通道（不限流）；失败/无数据时回退 DOC API
+        if self._cfg.get("csv_enabled", True):
+            try:
+                from data.gdelt_files import (
+                    fetch_myanmar_events, compute_metrics_from_events
+                )
+                events = fetch_myanmar_events(
+                    max_files=self._cfg.get("csv_max_files", 32),
+                    target_events=self._cfg.get("csv_target_events", 300),
+                    base_url=self._cfg.get("csv_base_url"),
+                )
+                if events:
+                    result = compute_metrics_from_events(events)
+                    result["_timespan"] = timespan_days
+                    with self._operation_lock:
+                        self._metrics_cache = result
+                        self._metrics_cache_time = time.time()
+                    logger.info(
+                        f"[GDELT Crawler] CSV 通道指标: "
+                        f"{result['article_count']} 事件, "
+                        f"冲突 {result['conflict_count']} 条"
+                    )
+                    try:
+                        from data.source_health import get_source_health_tracker
+                        get_source_health_tracker().record(
+                            "GDELT", True, len(events))
+                    except Exception:
+                        pass
+                    return result
+                logger.warning("[GDELT Crawler] CSV 通道无缅甸事件，回退 DOC API")
+            except Exception as e:
+                logger.warning(f"[GDELT Crawler] CSV 通道失败: {e}，回退 DOC API")
 
         # 使用多关键词查询（与 crawl() 一致）
         use_multi = self._cfg.get("use_multi_query", True)
