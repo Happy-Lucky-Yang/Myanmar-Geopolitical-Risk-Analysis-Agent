@@ -133,7 +133,7 @@ class NightlightCrawler:
             for code, name in indicators:
                 try:
                     data = wb.data.DataFrame(code, MYANMAR_COUNTRY_CODE,
-                                             mrn=5, skipBlanks=True)
+                                             mrv=5, skipBlanks=True)
                     if data is not None and not data.empty:
                         # 取最近的值
                         row = data.loc[MYANMAR_COUNTRY_CODE]
@@ -152,6 +152,12 @@ class NightlightCrawler:
 
             if not latest_values:
                 logger.info("[Nightlight] World Bank 无可用夜光代理数据")
+                try:
+                    from data.source_health import get_source_health_tracker
+                    get_source_health_tracker().record(
+                        "World Bank 夜光代理", False, error="无可用数据")
+                except Exception:
+                    pass
                 return None
 
             # 计算 nightlight_change
@@ -190,6 +196,12 @@ class NightlightCrawler:
 
             logger.info(f"[Nightlight] WB数据: nl_change={nl_change:.4f}, "
                         f"指标={list(latest_values.keys())}")
+            try:
+                from data.source_health import get_source_health_tracker
+                get_source_health_tracker().record(
+                    "World Bank 夜光代理", True, len(latest_values))
+            except Exception:
+                pass
             return result
 
         except ImportError:
@@ -197,6 +209,12 @@ class NightlightCrawler:
             return None
         except Exception as e:
             logger.error(f"[Nightlight] World Bank 获取失败: {e}", exc_info=True)
+            try:
+                from data.source_health import get_source_health_tracker
+                get_source_health_tracker().record(
+                    "World Bank 夜光代理", False, error=e)
+            except Exception:
+                pass
             return None
 
     def _build_monthly_series(self, wb_data: Dict) -> List[Dict]:

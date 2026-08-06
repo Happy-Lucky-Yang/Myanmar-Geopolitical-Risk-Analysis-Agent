@@ -225,3 +225,20 @@ def get_neo4j_config() -> dict:
     """获取 Neo4j 配置"""
     cfg = load_config()
     return cfg.get("neo4j", {})
+
+
+def get_proxy() -> dict:
+    """
+    读取 HTTP 代理配置（用于访问境外数据源：GDELT / RSS 外媒 / Google News）
+
+    优先级：PROXY 环境变量 > config.yaml 顶层 proxy；为空时返回 {}（直连）。
+    国内源（缅华网等）不受影响，始终直连。
+
+    :return: requests 可用的 proxies 字典，如 {"http": ..., "https": ...}
+    """
+    url = os.environ.get("PROXY", "").strip()
+    if not url:
+        url = str(load_config().get("proxy", "") or "").strip()
+    if not url:
+        return {}
+    return {"http": url, "https": url}

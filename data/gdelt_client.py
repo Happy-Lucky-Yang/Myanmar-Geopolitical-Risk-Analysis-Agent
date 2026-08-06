@@ -101,6 +101,9 @@ class GDELTClient:
         # 全局限速参数：最小请求间隔（留 0.5s 余量）+ 随机抖动上限
         self._min_interval = cfg.get("min_interval", 5.5)
         self._jitter = cfg.get("jitter", 2.0)
+        # 代理（可换出口 IP，缓解共享配额限流；未配置时直连）
+        from utils.config import get_proxy
+        self._proxies = get_proxy()
         # 默认关键词（缅甸地缘政治）
         self._default_query = cfg.get(
             "query",
@@ -145,6 +148,7 @@ class GDELTClient:
                         "User-Agent": "MyanmarRiskSystem/1.0 (Academic Research)",
                         "Accept": "application/json",
                     },
+                    proxies=self._proxies or None,
                 )
 
                 if resp.status_code == 200:

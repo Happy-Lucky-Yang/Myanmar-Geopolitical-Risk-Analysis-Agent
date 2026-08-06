@@ -168,7 +168,7 @@ class EconomicCrawler:
             for name, code in self._indicators.items():
                 try:
                     data = wb.data.DataFrame(code, MYANMAR_COUNTRY_CODE,
-                                             mrn=5, skipBlanks=True)
+                                             mrv=5, skipBlanks=True)
                     if data is not None and not data.empty:
                         row = data.loc[MYANMAR_COUNTRY_CODE]
                         for col in reversed(data.columns):
@@ -188,6 +188,12 @@ class EconomicCrawler:
 
             if not wb_data:
                 logger.info("[Economic] World Bank 无可用数据")
+                try:
+                    from data.source_health import get_source_health_tracker
+                    get_source_health_tracker().record(
+                        "World Bank 经济指标", False, error="无可用数据")
+                except Exception:
+                    pass
                 return None
 
             # 计算归一化指标
@@ -206,6 +212,12 @@ class EconomicCrawler:
 
             logger.info(f"[Economic] WB数据: GDP增长={result.get('gdp_growth', 'N/A')}, "
                         f"通胀={result.get('inflation', 'N/A')}, 难民变化={refugee_change:.3f}")
+            try:
+                from data.source_health import get_source_health_tracker
+                get_source_health_tracker().record(
+                    "World Bank 经济指标", True, len(wb_data))
+            except Exception:
+                pass
             return result
 
         except ImportError:
@@ -213,6 +225,12 @@ class EconomicCrawler:
             return None
         except Exception as e:
             logger.error(f"[Economic] World Bank 获取失败: {e}", exc_info=True)
+            try:
+                from data.source_health import get_source_health_tracker
+                get_source_health_tracker().record(
+                    "World Bank 经济指标", False, error=e)
+            except Exception:
+                pass
             return None
 
     def _compute_normalized(self, wb_data: Dict) -> Dict:
