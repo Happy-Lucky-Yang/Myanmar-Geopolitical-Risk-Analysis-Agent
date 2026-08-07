@@ -29,7 +29,7 @@
 Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── config.yaml                   # 配置（权重/数据源/夜光/经济/调度）
 ├── requirements.txt              # Python 依赖
-├── app.py                        # Flask 主入口（4 页面 + 17 业务 API + 健康检查）
+├── app.py                        # Flask 主入口（4 页面 + 18 业务 API + 健康检查）
 ├── analyzer/                     # 核心分析模块
 │   ├── data_loader.py            # 数据读取与清洗
 │   ├── ner.py                    # 命名实体识别（LAC）
@@ -45,6 +45,7 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   ├── chain_reasoner.py         # 链式推理（4 步：识别→影响→趋势→建议）
 │   ├── multimodal_aligner.py     # 多模态时空对齐（夜光×冲突×情感）
 │   ├── alert_monitor.py          # 动态预警（红/橙/黄/绿四级）
+│   ├── event_density.py          # 🆕 事件核密度估计 KDE（加权密度面 + 国界掩膜）
 │   └── report_generator.py       # 自动化报告（Jinja2 HTML + python-docx）
 ├── data/                         # 数据采集与存储
 │   ├── crawler.py                # 缅华网爬虫（中文）
@@ -166,10 +167,10 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 |------|------|------|
 | 对话分析 | `/` | 粘贴新闻文本 → 实体/情感/风险/大模型/**诊断归因**/GDELT，可选**链式推理** |
 | 综合态势 | `/dashboard` | 🆕 预警面板 + **数据源健康** + 地缘位势 + 空间自相关 + 关系网络 + 诊断归因 + 多源融合图 + 历史时间线 |
-| 风险地图 | `/map` | Folium 缅甸省级风险热力图（暗色主题 + 详细弹窗 + 多源标注） |
+| 风险地图 | `/map` | 双模式：省级风险热力图 / 🆕 事件密度 KDE（GADM 真实边界 + 加权核密度面） |
 | 趋势预测 | `/trend` | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
 
-## API 接口一览（17 个业务端点 + 健康检查）
+## API 接口一览（18 个业务端点 + 健康检查）
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -179,6 +180,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
 | GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
 | GET | `/api/map` | Folium 地图 HTML |
+| GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`） |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
 | GET | `/api/geo_potential` | 🆕 地缘位势评估（距离加权 + Moran's I + 热点） |
 | GET | `/api/diagnostic` | 🆕 诊断性归因（`?days=14` 变化归因） |
@@ -222,7 +224,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 链式推理、关系网络分析、多模态时空对齐
 - 动态预警（四级阈值）、自动化报告（HTML/DOCX）
 - 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（53 条）
-- **4 个前端页面 + 17 个业务 API + 健康检查**，暗色监控主题、XSS 防护
+- **4 个前端页面 + 18 个业务 API + 健康检查**，暗色监控主题、XSS 防护
 - 自动定时调度器、全流程集成脚本、爬虫单元测试
 - 完整文档（数据库设计 / 算法细节 / 研究报告框架）
 
@@ -237,7 +239,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 夜光/经济为 **World Bank 代理指标**（非 NASA VIIRS 原始栅格，属轻量替代方案）
 
 ### ❌ 后续工作建议（详见 [docs/upgrade_plan.md](docs/upgrade_plan.md)）
-- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE 图层（可立即开工） + 缅甸省级边界 GeoJSON（**已到位 GADM 4.1 四级，见 `data/static/gadm/`**）
+- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE 图层（**已实施**，`/api/map/events`） + 缅甸省级边界 GeoJSON（**已到位 GADM 4.1 四级，见 `data/static/gadm/`**；MIMU 权威版备份存于外置 DATA_ROOT 不入 git）
 - **双边关系评估模块（已设计暂缓）**：GDELT 国家对合作/冲突指数 + 贸易依存 + 政策监测，六行为体关系雷达，先作独立面板不动五维权重
 - **地图省级风险真实化**：将 NER 提取地名精确关联到省份（当前为边境省份简化乘数）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
