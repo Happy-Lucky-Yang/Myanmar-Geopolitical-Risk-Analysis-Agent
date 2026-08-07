@@ -140,6 +140,117 @@ class RiskMapGenerator:
 
         return m._repr_html_()
 
+    def generate_event_density_map(self, density: Dict, days: int = 7) -> str:
+        """
+        生成事件密度（KDE）地图：真实国界/省界 + 事件密度热力面
+
+        :param density: analyzer.event_density 的 compute() 返回值
+        :param days: 统计窗口（展示用）
+        :return: HTML 字符串
+        """
+        from data.admin_boundaries import load_boundaries
+
+        m = folium.Map(
+            location=MYANMAR_CENTER,
+            zoom_start=6,
+            tiles="CartoDB dark_matter"
+        )
+
+        # 国界（GADM L0）
+        folium.GeoJson(
+            load_boundaries(0),
+            name="国界",
+            style_function=lambda f: {
+                "color": "#9aa0a8", "weight": 1.4,
+                "fill": False,
+            },
+        ).add_to(m)
+
+        # 省界（GADM L1，虚线细描）
+        folium.GeoJson(
+            load_boundaries(1),
+            name="邦/省界",
+            style_function=lambda f: {
+                "color": "#4a4f58", "weight": 0.8,
+                "dashArray": "4", "fill": False,
+            },
+            tooltip=folium.GeoJsonTooltip(
+                fields=["NAME_1"], labels=False,
+                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+            ),
+        ).add_to(m)
+
+        # KDE 密度热力层
+        grid = density.get("grid", [])
+        if grid:
+            HeatMap(
+                grid,
+                name="事件密度 (KDE)",
+                radius=22,
+                blur=18,
+                max_zoom=11,
+                gradient={0.2: "#1e90ff", 0.5: "#ffa502",
+                          0.8: "#ff6348", 1.0: "#ff4757"}
+            ).add_to(m)
+
+        # 密度峰值标注
+        if density.get("peak_lat") is not None:
+            folium.CircleMarker(
+                location=[density["peak_lat"], density["peak_lon"]],
+                radius=6,
+                color="#ff4757",
+                fill=True,
+                fill_opacity=0.9,
+                tooltip=(
+                    f"密度峰值: ({density['peak_lat']:.2f}, "
+                    f"{density['peak_lon']:.2f})"
+                )
+            ).add_to(m)
+
+        folium.LayerControl(collapsed=False).add_to(m)
+
+        # 说明栏
+        info_html = (
+            '<div style="position:fixed;bottom:10px;left:60px;z-index:999;'
+            'background:rgba(0,0,0,0.7);padding:6px 12px;border-radius:4px;'
+            'color:#ccc;font-size:11px;">'
+            f'事件密度(KDE): GDELT 近{days}天 '
+            f'{density.get("event_count", 0)} 条事件 / '
+            f'有效定位 {density.get("located_count", 0)} 条 · '
+            '权重=事件严重度 · 边界: GADM 4.1'
+            '</div>'
+        )
+        m.get_root().html.add_child(folium.Element(info_html))
+
+        return m._repr_html_()
+
+    def generate_notice_map(self, message: str) -> str:
+        """生成带提示信息的默认地图（数据不足等降级场景）"""
+        m = folium.Map(
+            location=MYANMAR_CENTER,
+            zoom_start=6,
+            tiles="CartoDB dark_matter"
+        )
+        try:
+            from data.admin_boundaries import load_boundaries
+            folium.GeoJson(
+                load_boundaries(0),
+                style_function=lambda f: {
+                    "color": "#9aa0a8", "weight": 1.4, "fill": False,
+                },
+            ).add_to(m)
+        except Exception:
+            pass
+        notice_html = (
+            '<div style="position:fixed;top:60px;left:50%;transform:'
+            'translateX(-50%);z-index:999;background:rgba(30,33,40,0.95);'
+            'border:1px solid #ffa502;padding:10px 18px;border-radius:6px;'
+            'color:#e0e0e0;font-size:13px;max-width:80%;">'
+            f'⚠️ {message}</div>'
+        )
+        m.get_root().html.add_child(folium.Element(notice_html))
+        return m._repr_html_()
+
     def _normalize_score(self, score: float) -> float:
         """
         风险分归一化到 0~1（兼容 0~100 分制与 0~1 比例两种输入）

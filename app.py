@@ -641,6 +641,61 @@ def risk_map():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/map/events", methods=["GET"])
+def event_density_map():
+    """
+    事件密度（KDE）地图接口
+
+    基于 GDELT 事件经纬度的加权核密度估计，叠加 GADM 真实边界。
+    数据优先复用 CSV 通道的事件缓存（12h 内），无缓存时同步拉取。
+
+    查询参数:
+        - days: 统计窗口（默认 7，按事件日期过滤）
+
+    响应: HTML 字符串（可直接在浏览器中渲染）
+    """
+    try:
+        days = request.args.get("days", 7, type=int)
+
+        from data.gdelt_crawler import get_gdelt_crawler
+        crawler = get_gdelt_crawler()
+        events = crawler.get_event_cache(max_age_hours=12)
+
+        if not events:
+            # 首次/缓存过期：同步拉取（CSV 直连不限流，耗时数分钟）
+            from utils.config import get_gdelt_config
+            from data.gdelt_files import fetch_myanmar_events
+            cfg = get_gdelt_config()
+            if cfg.get("csv_enabled", True):
+                events = fetch_myanmar_events(
+                    max_files=cfg.get("csv_max_files", 32),
+                    target_events=cfg.get("csv_target_events", 300),
+                    base_url=cfg.get("csv_base_url"),
+                )
+                if events:
+                    crawler.save_event_cache(events)
+
+        map_gen = get_map_generator()
+        if not events:
+            html = map_gen.generate_notice_map(
+                "GDELT 事件数据暂不可用，无法生成事件密度地图"
+            )
+            return Response(html, mimetype="text/html")
+
+        from analyzer.event_density import get_event_density_analyzer
+        density = get_event_density_analyzer().compute(events, days=days)
+
+        if density.get("degraded"):
+            html = map_gen.generate_notice_map(density["degraded"])
+        else:
+            html = map_gen.generate_event_density_map(density, days=days)
+
+        return Response(html, mimetype="text/html")
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/trend", methods=["GET"])
 def trend():
     """

@@ -18,10 +18,16 @@
     </nav>
 
     <main class="container">
-        <h2>缅甸省级风险热力地图</h2>
-        <p class="subtitle">颜色深浅反映各省份综合风险评分，点击标记查看详情</p>
+        <h2>缅甸风险地图</h2>
+        <p class="subtitle">省级综合风险热力图 / 事件密度核密度分析（KDE），点击标记查看详情</p>
 
         <div class="controls">
+            <label>地图类型
+                <select id="map-mode">
+                    <option value="risk" selected>省级风险热力图</option>
+                    <option value="events">事件密度 (KDE)</option>
+                </select>
+            </label>
             <label>查看最近
                 <select id="days-select">
                     <option value="7">7天</option>
@@ -34,7 +40,7 @@
         </div>
 
         <div class="info-banner">
-            ⚠️ 当前无历史数据时，各省风险分为基于地理特征的简化模拟值，不代表实际风险评估
+            ⚠️ 省级风险图无历史数据时为基于地理特征的简化模拟值；事件密度图基于 GDELT 事件定位的加权核密度估计（权重=事件严重度，GADM 4.1 边界裁剪），首次生成需数分钟
         </div>
 
         <div id="map-container">
@@ -45,7 +51,7 @@
         </div>
 
         <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted)">
-            数据来源: 系统历史风险评分 + GDELT 事件数据 | 地图引擎: Folium (Leaflet)
+            数据来源: 系统历史风险评分 + GDELT 事件数据 + GADM 4.1 行政边界 | 地图引擎: Folium (Leaflet)
         </div>
     </main>
 
@@ -53,11 +59,16 @@
     <script>
         async function loadMap() {
             var days = document.getElementById('days-select').value;
+            var mode = document.getElementById('map-mode').value;
             var container = document.getElementById('map-container');
             renderLoading(container);
 
+            var url = mode === 'events'
+                ? '/api/map/events?days=' + encodeURIComponent(days)
+                : '/api/map?days=' + encodeURIComponent(days);
+
             try {
-                var resp = await fetch('/api/map?days=' + encodeURIComponent(days));
+                var resp = await fetch(url);
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 var html = await resp.text();
 
