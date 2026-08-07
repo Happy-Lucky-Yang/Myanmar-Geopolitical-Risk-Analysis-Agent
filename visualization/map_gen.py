@@ -213,9 +213,9 @@ def _source_note_html(text: str) -> str:
 
 
 def _kde_legend_html() -> str:
-    """事件密度色标图例"""
+    """事件密度色标图例（左下角，避免与风险色阶重叠）"""
     return (
-        '<div style="position:fixed;bottom:10px;right:10px;z-index:999;'
+        '<div style="position:fixed;bottom:10px;left:10px;z-index:999;'
         'background:rgba(0,0,0,0.75);padding:8px 12px;border-radius:6px;'
         'color:#ccc;font-size:11px;width:200px;">'
         '<div style="margin-bottom:4px;font-weight:600">事件密度 (KDE)</div>'

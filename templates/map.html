@@ -34,18 +34,18 @@
             </div>
 
             <div class="sidebar-section">
-                <div class="lp-title">🗂️ 图层面板</div>
-                <div class="lp-group">省级风险风格（二选一）</div>
-                <label class="lp-item"><input type="radio" name="risk-style" value="hybrid" checked> 圆点+光晕</label>
+                <div class="lp-title">图层控制</div>
+                <div class="lp-group">风险渲染方式</div>
+                <label class="lp-item"><input type="radio" name="risk-style" value="hybrid" checked> 圆点 + 光晕</label>
                 <label class="lp-item"><input type="radio" name="risk-style" value="choropleth"> 分级填色</label>
-                <label class="lp-item"><input type="radio" name="risk-style" value="none"> 关闭</label>
+                <label class="lp-item"><input type="radio" name="risk-style" value="none"> 不渲染</label>
 
-                <div class="lp-group">叠加图层</div>
-                <label class="lp-item"><input type="checkbox" id="lyr-kde"> 事件密度 (KDE)</label>
-                <div class="lp-item lp-slider">密度透明度
+                <div class="lp-group">叠加层</div>
+                <label class="lp-item"><input type="checkbox" id="lyr-kde"> 事件密度 KDE</label>
+                <div class="lp-item lp-slider">透明度
                     <input type="range" id="kde-opacity" min="20" max="100" value="60">
                 </div>
-                <label class="lp-item"><input type="checkbox" id="lyr-borders" checked> 省界（悬停高亮）</label>
+                <label class="lp-item"><input type="checkbox" id="lyr-borders" checked> 省级行政界</label>
                 <label class="lp-item"><input type="checkbox" id="lyr-country" checked> 国界</label>
             </div>
         </aside>
