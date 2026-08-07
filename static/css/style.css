@@ -130,6 +130,30 @@ body {
     flex: 1;
 }
 
+/* ---------- 地图页面全屏 flex 布局（地图填满剩余视口） ---------- */
+.map-page {
+    display: flex;
+    flex-direction: column;
+    margin: 0 auto;
+    padding: 0.5rem 1.5rem;
+    overflow: hidden;
+}
+.map-page h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+.map-page .controls {
+    margin-bottom: 0.4rem;
+}
+.map-page .map-wrap {
+    flex: 1;
+    min-height: 0;
+}
+.map-page #map-container {
+    height: 100%;
+    min-height: 0;
+}
+
 h2 {
     color: var(--text-heading);
     font-size: 1.4rem;
