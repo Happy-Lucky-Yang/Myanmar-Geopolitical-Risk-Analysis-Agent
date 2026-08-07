@@ -29,7 +29,7 @@
 Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── config.yaml                   # 配置（权重/数据源/夜光/经济/调度）
 ├── requirements.txt              # Python 依赖
-├── app.py                        # Flask 主入口（4 页面 + 18 业务 API + 健康检查）
+├── app.py                        # Flask 主入口（4 页面 + 19 业务 API + 健康检查）
 ├── analyzer/                     # 核心分析模块
 │   ├── data_loader.py            # 数据读取与清洗
 │   ├── ner.py                    # 命名实体识别（LAC）
@@ -168,10 +168,10 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 |------|------|------|
 | 对话分析 | `/` | 粘贴新闻文本 → 实体/情感/风险/大模型/**诊断归因**/GDELT，可选**链式推理** |
 | 综合态势 | `/dashboard` | 🆕 预警面板 + **数据源健康** + 地缘位势 + 空间自相关 + 关系网络 + 诊断归因 + 多源融合图 + 历史时间线 |
-| 风险地图 | `/map` | 三模式对比：省级风险**分级填色** / 🆕 **圆点+省界混合**（悬停高亮） / 事件密度 KDE；HTML 缓存加速切换 |
+| 风险地图 | `/map` | 🆕 单地图多图层叠加：自定义图层面板控制分级填色/圆点光晕（互斥）+ 事件密度 KDE + 省界/国界自由组合，支持透明度调节与风险×事件叠加对比 |
 | 趋势预测 | `/trend` | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
 
-## API 接口一览（18 个业务端点 + 健康检查）
+## API 接口一览（19 个业务端点 + 健康检查）
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -181,6 +181,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
 | GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
 | GET | `/api/map` | 省级风险地图 HTML（`?mode=choropleth\|hybrid`） |
+| GET | `/api/map/unified` | 🆕 统一地图 HTML（五图层叠加，供前端图层面板控制） |
 | GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`，累积库支持 7~90 天窗口） |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
 | GET | `/api/geo_potential` | 🆕 地缘位势评估（距离加权 + Moran's I + 热点） |
@@ -225,7 +226,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 链式推理、关系网络分析、多模态时空对齐
 - 动态预警（四级阈值）、自动化报告（HTML/DOCX）
 - 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（53 条）
-- **4 个前端页面 + 18 个业务 API + 健康检查**，暗色监控主题、XSS 防护
+- **4 个前端页面 + 19 个业务 API + 健康检查**，暗色监控主题、XSS 防护
 - 自动定时调度器、全流程集成脚本、爬虫单元测试
 - 完整文档（数据库设计 / 算法细节 / 研究报告框架）
 
