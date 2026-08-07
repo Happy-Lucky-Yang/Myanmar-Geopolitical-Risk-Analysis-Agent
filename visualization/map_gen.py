@@ -604,7 +604,7 @@ class RiskMapGenerator:
         choro_layer = folium.GeoJson(
             gj_fill, name="分级填色", style_function=fill_fn, show=False)
 
-        # ---- 2) 事件密度栅格层（可叠加）----
+        # ---- 2) 事件密度栅格层（可叠加；默认不上图，由面板开启）----
         kde_layer = None
         if (density and not density.get("degraded")
                 and density.get("z_matrix") is not None):
@@ -614,7 +614,7 @@ class RiskMapGenerator:
                 image=data_uri,
                 bounds=density["bbox"],
                 name="事件密度 (KDE)",
-                opacity=0.85,
+                opacity=0.60,
                 interactive=False,
             )
 
@@ -726,19 +726,10 @@ class RiskMapGenerator:
             "<style>.leaflet-overlay-pane canvas"
             "{pointer-events:none;}</style>"))
 
-        # 图例与说明
+        # 图例（保留可视化辅助；底部文字说明已移除，保持页面干净）
         m.get_root().html.add_child(folium.Element(_legend_html()))
         if kde_layer is not None:
             m.get_root().html.add_child(folium.Element(_kde_legend_html()))
-        kde_note = ""
-        if density and not density.get("degraded"):
-            kde_note = (
-                f" · KDE近{days}天 {density.get('event_count', 0)}条/"
-                f"互证{density.get('verified_count', 0)}条")
-        m.get_root().html.add_child(folium.Element(_source_note_html(
-            "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1"
-            + kde_note + " · 右上图层面板可叠加对比"
-        )))
 
         # 图层注册表：供前端自定义面板控制。
         # 注意：① script 段的子元素已处在外层 <script> 块内，
@@ -747,8 +738,13 @@ class RiskMapGenerator:
         # 确保地图与图层变量均已定义；③ _repr_html_ 包进 iframe(srcdoc)，
         # 需同时注册到父窗口供外层面板读取（同源可访问）。
         kde_js = kde_layer.get_name() if kde_layer is not None else "null"
+        # KDE 默认不上图（避免初始重叠遮挡），由面板勾选开启
+        kde_default_off = (
+            f"try{{{m.get_name()}.removeLayer({kde_js});}}catch(e){{}}"
+            if kde_layer is not None else "")
         reg_script = (
             "setTimeout(function(){"
+            + kde_default_off +
             "function _reg(t){"
             f"t._mmMap = {m.get_name()};"
             "t._mmLayers = {"

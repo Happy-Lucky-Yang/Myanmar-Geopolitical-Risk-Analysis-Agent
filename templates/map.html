@@ -19,7 +19,7 @@
 
     <main class="container">
         <h2>缅甸风险地图</h2>
-        <p class="subtitle">单地图多图层叠加：分级填色 / 圆点+光晕 / 事件密度 KDE，右上角图层面板自由组合对比</p>
+        <p class="subtitle">单地图多图层，右上角面板自由叠加对比</p>
 
         <div class="controls">
             <label>查看最近
@@ -35,7 +35,7 @@
         </div>
 
         <div class="info-banner">
-            ⚠️ 风险风格（填色/圆点）二选一；事件密度 KDE 可与任意风险风格叠加对比；无历史数据时风险层为简化模拟值，首次生成 KDE 需数分钟
+            ⚠️ 风险风格二选一；事件密度层默认关闭，可在图层面板开启叠加对比
         </div>
 
         <div class="map-wrap">
@@ -54,17 +54,13 @@
                 <label class="lp-item"><input type="radio" name="risk-style" value="choropleth"> 分级填色</label>
                 <label class="lp-item"><input type="radio" name="risk-style" value="none"> 关闭</label>
                 <div class="lp-group">叠加图层</div>
-                <label class="lp-item"><input type="checkbox" id="lyr-kde" checked> 事件密度 (KDE)</label>
+                <label class="lp-item"><input type="checkbox" id="lyr-kde"> 事件密度 (KDE)</label>
                 <div class="lp-item lp-slider">密度透明度
-                    <input type="range" id="kde-opacity" min="20" max="100" value="85">
+                    <input type="range" id="kde-opacity" min="20" max="100" value="60">
                 </div>
                 <label class="lp-item"><input type="checkbox" id="lyr-borders" checked> 省界（悬停高亮）</label>
                 <label class="lp-item"><input type="checkbox" id="lyr-country" checked> 国界</label>
             </div>
-        </div>
-
-        <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted)">
-            数据来源: 系统历史风险评分 + GDELT 事件数据 + GADM 4.1 行政边界 | 地图引擎: Folium (Leaflet)
         </div>
     </main>
 
