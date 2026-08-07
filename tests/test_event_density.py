@@ -7,8 +7,8 @@ import pytest
 from analyzer.event_density import EventDensityAnalyzer, LAT_RANGE, LON_RANGE
 
 
-def _mk_event(lat, lon, root="19", quad="4", date=None):
-    """构造合成 GDELT 事件（默认高烈度冲突）"""
+def _mk_event(lat, lon, root="19", quad="4", date=None, num_sources=2):
+    """构造合成 GDELT 事件（默认高烈度冲突、双信源互证）"""
     if date is None:
         date = datetime.now().strftime("%Y%m%d")
     return {
@@ -16,6 +16,7 @@ def _mk_event(lat, lon, root="19", quad="4", date=None):
         "event_code": root + "2",
         "root_code": root,
         "quad_class": quad,
+        "num_sources": num_sources,
         "avg_tone": -5.0,
         "location": "Test, Myanmar",
         "lat": lat,
@@ -99,3 +100,60 @@ def test_empty_events_degrades(analyzer):
     result = analyzer.compute([], days=7)
     assert result["degraded"] is not None
     assert result["event_count"] == 0
+
+
+def test_z_matrix_and_bbox_for_raster(analyzer):
+    """栅格渲染输入：z 矩阵形状正确、境外为 0、bbox 完整"""
+    result = analyzer.compute(_cluster_events(), days=7)
+
+    z = result["z_matrix"]
+    assert z.shape == (60, 48)  # fixture 网格尺寸
+    assert 0.99 <= z.max() <= 1.0
+    assert result["bbox"] == [[9.4, 91.8], [28.6, 101.3]]
+
+
+def test_verified_events_counted(analyzer):
+    """互证事件（num_sources>=2）被计数"""
+    events = _cluster_events()  # 默认 num_sources=2
+    result = analyzer.compute(events, days=7)
+    assert result["verified_count"] == result["located_count"]
+
+
+def test_single_source_multi_article_verified(analyzer):
+    """缅甸常见形态：单信源但多篇报道（num_articles>=2）也计为互证"""
+    events = []
+    for i in range(10):
+        ev = _mk_event(16.8 + (i % 3) * 0.05, 96.15 + (i % 2) * 0.06,
+                       num_sources=1)
+        ev["num_articles"] = 5
+        events.append(ev)
+    result = analyzer.compute(events, days=7)
+    assert result["verified_count"] == result["located_count"]
+
+
+def test_min_sources_filter():
+    """信源门槛：单信源事件在 min_sources=2 时被排除"""
+    strict = EventDensityAnalyzer(
+        {"grid_rows": 30, "grid_cols": 24, "min_events": 2,
+         "min_sources": 2})
+    # 4 条单信源 + 4 条双信源（坐标带二维抖动，避免共线奇异）
+    events = [_mk_event(16.8 + i * 0.05, 96.2 + (i % 2) * 0.06,
+                        num_sources=1)
+              for i in range(4)]
+    events += [_mk_event(21.4 + i * 0.05, 97.9 + (i % 2) * 0.06,
+                         num_sources=3)
+               for i in range(4)]
+    result = strict.compute(events, days=7)
+    assert result["event_count"] == 8
+    assert result["located_count"] == 4  # 仅双/多信源参与
+    assert result["verified_count"] == 4
+
+
+def test_render_density_png(analyzer):
+    """matplotlib 栅格 PNG 渲染输出合法 data URI"""
+    from visualization.map_gen import render_density_png
+
+    result = analyzer.compute(_cluster_events(), days=7)
+    uri = render_density_png(result["z_matrix"], result["bbox"])
+    assert uri.startswith("data:image/png;base64,")
+    assert len(uri) > 1000  # 非空图像

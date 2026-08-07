@@ -11,9 +11,11 @@ visualization.map_gen - Folium 地图生成（暗色主题）
 """
 import copy
 import math
+import base64
 import threading
 import logging
 import folium
+import numpy as np
 from folium.plugins import HeatMap
 from typing import Dict, List, Optional
 
@@ -210,6 +212,61 @@ def _source_note_html(text: str) -> str:
     )
 
 
+def _kde_legend_html() -> str:
+    """事件密度色标图例"""
+    return (
+        '<div style="position:fixed;bottom:10px;right:10px;z-index:999;'
+        'background:rgba(0,0,0,0.75);padding:8px 12px;border-radius:6px;'
+        'color:#ccc;font-size:11px;width:200px;">'
+        '<div style="margin-bottom:4px;font-weight:600">事件密度 (KDE)</div>'
+        '<div style="height:10px;border-radius:3px;background:'
+        'linear-gradient(to right,#1e90ff,#ffa502,#ff6348,#ff4757)"></div>'
+        '<div style="display:flex;margin-top:3px">'
+        '<span style="flex:1">低</span>'
+        '<span style="flex:1;text-align:center">中</span>'
+        '<span style="flex:1;text-align:right">高</span>'
+        '</div></div>'
+    )
+
+
+def render_density_png(z, bbox) -> str:
+    """
+    将密度矩阵渲染为 PNG（base64 data URI），供 folium ImageOverlay 叠加
+
+    栅格渲染替代点式热力：任意缩放均平滑连续，无圆点伪影。
+    低密度区（≤0.02）设为全透明，不遮盖底图。
+
+    :param z: 归一化密度矩阵 (rows×cols，境外为 0)
+    :param bbox: [[lat_min, lon_min], [lat_max, lon_max]]
+    :return: data:image/png;base64,... 字符串
+    """
+    import io as _io
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+
+    rows, cols = z.shape
+    cmap = LinearSegmentedColormap.from_list(
+        "kde", ["#1e90ff", "#ffa502", "#ff6348", "#ff4757"])
+    cmap.set_bad(alpha=0)  # 掩膜区域透明
+    zm = np.ma.masked_where(z <= 0.02, z)
+
+    fig = plt.figure(figsize=(cols / 25.0, rows / 25.0), dpi=100)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_axis_off()
+    ax.imshow(
+        zm, origin="lower", cmap=cmap,
+        extent=[bbox[0][1], bbox[1][1], bbox[0][0], bbox[1][0]],
+        interpolation="bilinear",
+    )
+    buf = _io.BytesIO()
+    fig.savefig(buf, format="png", transparent=True)
+    plt.close(fig)
+    return "data:image/png;base64," + base64.b64encode(
+        buf.getvalue()).decode("ascii")
+
+
 class RiskMapGenerator:
     """风险地图生成器（分级填色 + 事件密度）"""
 
@@ -374,15 +431,23 @@ class RiskMapGenerator:
             ),
         ).add_to(m)
 
-        # KDE 密度热力层
-        grid = density.get("grid", [])
-        if grid:
-            HeatMap(
-                grid,
+        # KDE 密度栅格层（matplotlib PNG 叠加，缩放无圆点伪影）
+        z = density.get("z_matrix")
+        if z is not None and density.get("bbox"):
+            data_uri = render_density_png(z, density["bbox"])
+            folium.raster_layers.ImageOverlay(
+                image=data_uri,
+                bounds=density["bbox"],
                 name="事件密度 (KDE)",
-                radius=22,
-                blur=18,
-                max_zoom=11,
+                opacity=0.85,
+                interactive=False,
+            ).add_to(m)
+        elif density.get("grid"):
+            # 兜底：旧点式热力（无 z_matrix 时）
+            HeatMap(
+                density["grid"],
+                name="事件密度 (KDE)",
+                radius=22, blur=18, max_zoom=11,
                 gradient={0.2: "#1e90ff", 0.5: "#ffa502",
                           0.8: "#ff6348", 1.0: "#ff4757"}
             ).add_to(m)
@@ -402,11 +467,13 @@ class RiskMapGenerator:
             ).add_to(m)
 
         folium.LayerControl(collapsed=False).add_to(m)
+        m.get_root().html.add_child(folium.Element(_kde_legend_html()))
         m.get_root().html.add_child(folium.Element(_source_note_html(
             f"事件密度(KDE): GDELT 近{days}天 "
             f"{density.get('event_count', 0)} 条事件 / "
-            f"有效定位 {density.get('located_count', 0)} 条 · "
-            "权重=事件严重度 · 边界: GADM 4.1"
+            f"参与计算 {density.get('located_count', 0)} 条 / "
+            f"多信源互证 {density.get('verified_count', 0)} 条 · "
+            "边界: GADM 4.1"
         )))
         return m._repr_html_()
 

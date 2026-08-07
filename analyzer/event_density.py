@@ -37,6 +37,11 @@ class EventDensityAnalyzer:
         self._grid_rows = int(config.get("grid_rows", 120))
         self._grid_cols = int(config.get("grid_cols", 95))
         self._min_events = int(config.get("min_events", 5))
+        # 多信源互证：只统计 ≥min_sources 家信源报道的事件；
+        # 互证事件（≥2 家信源 或 ≥2 篇报道）权重乘以 verified_boost。
+        # 缅甸事件实测多为单信源但多篇报道，故互证信号以报道数补充。
+        self._min_sources = int(config.get("min_sources", 1))
+        self._verified_boost = float(config.get("verified_boost", 1.25))
         self._mask_paths = None  # 惰性加载国界掩膜
 
     # ============================================================
@@ -81,9 +86,12 @@ class EventDensityAnalyzer:
         :param days: 仅统计最近 N 天事件（按 SQLDATE 过滤），None=全部
         :return: {
             "degraded": 降级原因或 None,
-            "grid": [[lat, lon, weight(0~1)], ...] 供密度图层渲染,
+            "grid": [[lat, lon, weight(0~1)], ...] 兼容输出,
+            "z_matrix": 归一化密度矩阵(rows×cols，境外为 0，供栅格渲染),
+            "bbox": [[lat_min, lon_min], [lat_max, lon_max]],
             "event_count": 统计窗口内事件总数,
-            "located_count": 其中含有效坐标数,
+            "located_count": 其中参与密度计算数（有效坐标且达信源门槛）,
+            "verified_count": 互证事件数（≥2 信源或 ≥2 篇报道）,
             "peak_lat"/"peak_lon": 密度峰值位置,
             "window_days": 过滤窗口
         }
@@ -100,12 +108,22 @@ class EventDensityAnalyzer:
         ]
 
         lats, lons, weights = [], [], []
+        verified = 0
         for ev in window_events:
             if ev.get("lat") is None or ev.get("lon") is None:
                 continue
+            # 信源门槛过滤（默认 1 即不过滤）
+            if ev.get("num_sources", 1) < self._min_sources:
+                continue
             lats.append(float(ev["lat"]))
             lons.append(float(ev["lon"]))
-            weights.append(max(0.05, event_severity_weight(ev)))
+            w = max(0.05, event_severity_weight(ev))
+            # 互证判定：≥2 家信源 或 ≥2 篇报道（缅甸事件多为单信源多篇）
+            if (ev.get("num_sources", 1) >= 2
+                    or ev.get("num_articles", 1) >= 2):
+                w *= self._verified_boost
+                verified += 1
+            weights.append(w)
 
         total = len(window_events)
         located = len(lats)
@@ -167,8 +185,12 @@ class EventDensityAnalyzer:
         return {
             "degraded": None,
             "grid": grid,
+            "z_matrix": zz,
+            "bbox": [[LAT_RANGE[0], LON_RANGE[0]],
+                     [LAT_RANGE[1], LON_RANGE[1]]],
             "event_count": total,
             "located_count": located,
+            "verified_count": verified,
             "peak_lat": peak_lat,
             "peak_lon": peak_lon,
             "window_days": days,
