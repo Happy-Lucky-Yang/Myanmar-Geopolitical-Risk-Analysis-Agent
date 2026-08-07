@@ -52,7 +52,8 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   ├── myanmar_now_crawler.py    # 英文新闻爬虫
 │   ├── rss_crawler.py            # RSS 新闻源爬虫
 │   ├── gdelt_client.py           # GDELT DOC 2.0 客户端（限速器/重试/备用通道）
-│   ├── gdelt_files.py            # 🆕 GDELT 原始 CSV 直连通道（不限流，主通道）
+│   ├── gdelt_files.py            # 🆕 GDELT 原始 CSV 直连通道（不限流，主通道，增量水位线）
+│   ├── event_store.py            # 🆕 GDELT 事件累积库（去重追加/窗口查询/180天修剪）
 │   ├── gdelt_crawler.py          # GDELT 适配器
 │   ├── nightlight_crawler.py     # 夜间灯光遥感（WB 代理指标）
 │   ├── economic_crawler.py       # 宏观经济统计（WB API）
@@ -180,7 +181,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
 | GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
 | GET | `/api/map` | Folium 地图 HTML |
-| GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`） |
+| GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`，累积库支持 7~90 天窗口） |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
 | GET | `/api/geo_potential` | 🆕 地缘位势评估（距离加权 + Moran's I + 热点） |
 | GET | `/api/diagnostic` | 🆕 诊断性归因（`?days=14` 变化归因） |
@@ -239,7 +240,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 夜光/经济为 **World Bank 代理指标**（非 NASA VIIRS 原始栅格，属轻量替代方案）
 
 ### ❌ 后续工作建议（详见 [docs/upgrade_plan.md](docs/upgrade_plan.md)）
-- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE 图层（**已实施**，`/api/map/events`） + 缅甸省级边界 GeoJSON（**已到位 GADM 4.1 四级，见 `data/static/gadm/`**；MIMU 权威版备份存于外置 DATA_ROOT 不入 git）
+- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE（**已实施**：事件累积库增量积累 + 多信源互证加权 + 栅格渲染，`/api/map/events`） + 缅甸省级边界 GeoJSON（**已到位 GADM 4.1 四级**；MIMU 权威版备份存于外置 DATA_ROOT 不入 git）
 - **双边关系评估模块（已设计暂缓）**：GDELT 国家对合作/冲突指数 + 贸易依存 + 政策监测，六行为体关系雷达，先作独立面板不动五维权重
 - **地图省级风险真实化**：将 NER 提取地名精确关联到省份（当前为边境省份简化乘数）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
