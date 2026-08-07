@@ -18,6 +18,7 @@ API 接口：
 import sys
 import os
 import logging
+import threading
 
 # 确保项目根目录在 sys.path 中，以便各模块相互导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -619,22 +620,21 @@ def risk_map():
     查询参数:
         - days: 查询最近多少天的数据（默认 7）
 
-    响应: HTML 字符串（可直接在浏览器中渲染）
+    响应: HTML 字符串（带 5 分钟 HTML 缓存，模式切换秒开）
     """
     try:
         days = request.args.get("days", 7, type=int)
 
-        loader = get_data_loader()
-        history = loader.load_risk_history(days=days)
+        def _build():
+            loader = get_data_loader()
+            history = loader.load_risk_history(days=days)
+            map_gen = get_map_generator()
+            if history:
+                return map_gen.generate_heatmap(
+                    _build_province_risk_data(history))
+            return map_gen.generate_default_map()
 
-        map_gen = get_map_generator()
-
-        if history:
-            risk_data = _build_province_risk_data(history)
-            html = map_gen.generate_heatmap(risk_data)
-        else:
-            html = map_gen.generate_default_map()
-
+        html = _cached_map_html(f"risk:{days}", 300, _build)
         return Response(html, mimetype="text/html")
 
     except Exception as e:
@@ -652,7 +652,7 @@ def event_density_map():
     查询参数:
         - days: 统计窗口（默认 7，按事件日期过滤）
 
-    响应: HTML 字符串（可直接在浏览器中渲染）
+    响应: HTML 字符串（带 10 分钟 HTML 缓存，模式切换秒开）
     """
     try:
         days = request.args.get("days", 7, type=int)
@@ -685,11 +685,12 @@ def event_density_map():
         from analyzer.event_density import get_event_density_analyzer
         density = get_event_density_analyzer().compute(events, days=days)
 
-        if density.get("degraded"):
-            html = map_gen.generate_notice_map(density["degraded"])
-        else:
-            html = map_gen.generate_event_density_map(density, days=days)
+        def _build():
+            if density.get("degraded"):
+                return map_gen.generate_notice_map(density["degraded"])
+            return map_gen.generate_event_density_map(density, days=days)
 
+        html = _cached_map_html(f"events:{days}", 600, _build)
         return Response(html, mimetype="text/html")
 
     except Exception as e:
@@ -893,6 +894,36 @@ def generate_report():
 # ============================================================
 # 辅助函数
 # ============================================================
+
+# 地图 HTML 缓存（生成一张 folium 地图需数秒，缓存后模式切换秒开）
+_MAP_HTML_CACHE = {}
+_map_cache_lock = threading.Lock()
+
+
+def _cached_map_html(key: str, ttl: int, builder) -> str:
+    """
+    带 TTL 的地图 HTML 缓存
+
+    :param key: 缓存键（如 "risk:7" / "events:7"）
+    :param ttl: 有效期（秒）
+    :param builder: 未命中时调用的生成函数
+    :return: HTML 字符串
+    """
+    import time as _time
+    now = _time.time()
+    with _map_cache_lock:
+        hit = _MAP_HTML_CACHE.get(key)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+    html = builder()  # 生成在锁外，避免阻塞其他请求
+    with _map_cache_lock:
+        _MAP_HTML_CACHE[key] = (now, html)
+        # 限制缓存条目数（不同 days 参数组合有限，简单清理即可）
+        if len(_MAP_HTML_CACHE) > 20:
+            oldest = min(_MAP_HTML_CACHE, key=lambda k: _MAP_HTML_CACHE[k][0])
+            _MAP_HTML_CACHE.pop(oldest, None)
+    return html
+
 
 def _build_province_risk_data(history: list) -> list:
     """

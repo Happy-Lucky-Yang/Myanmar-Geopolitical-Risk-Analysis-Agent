@@ -36,11 +36,11 @@
                 </select>
                 数据
             </label>
-            <button class="btn btn-primary" onclick="loadMap()">刷新地图</button>
+            <button type="button" class="btn btn-primary" onclick="loadMap()">刷新地图</button>
         </div>
 
         <div class="info-banner">
-            ⚠️ 省级风险图无历史数据时为基于地理特征的简化模拟值；事件密度图基于 GDELT 事件定位的加权核密度估计（权重=事件严重度，GADM 4.1 边界裁剪），首次生成需数分钟
+            ⚠️ 省级风险图为真实省界分级填色（6 档色阶，点击省份查看详情），无历史数据时为简化模拟值；事件密度图基于 GDELT 事件定位的加权核密度估计（GADM 4.1 边界裁剪），首次生成需数分钟
         </div>
 
         <div id="map-container">
