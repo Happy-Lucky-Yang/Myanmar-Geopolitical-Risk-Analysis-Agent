@@ -39,6 +39,8 @@ class GDELTCrawler:
         from utils.config import get_data_paths
         self._raw_dir = get_data_paths()["raw"]
         os.makedirs(self._raw_dir, exist_ok=True)
+        self._processed_dir = get_data_paths()["processed"]
+        os.makedirs(self._processed_dir, exist_ok=True)
 
         # 增量去重
         self._urls_seen_file = os.path.join(self._raw_dir, "gdelt_urls_seen.txt")
@@ -266,6 +268,50 @@ class GDELTCrawler:
         return filepath
 
     # ============================================================
+    # 事件缓存（KDE 事件密度分析复用，避免重复下载 CSV）
+    # ============================================================
+
+    def _event_cache_path(self) -> str:
+        return os.path.join(self._processed_dir, "gdelt_events_cache.json")
+
+    def save_event_cache(self, events: List[Dict]):
+        """保存含坐标的事件缓存（原子写入，失败仅告警）"""
+        try:
+            payload = {
+                "fetched_at": datetime.now().isoformat(timespec="seconds"),
+                "event_count": len(events),
+                "events": events,
+            }
+            tmp = self._event_cache_path() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+            os.replace(tmp, self._event_cache_path())
+        except Exception as e:
+            logger.warning(f"[GDELT Crawler] 事件缓存保存失败: {e}")
+
+    def get_event_cache(self, max_age_hours: float = 12.0) -> Optional[List[Dict]]:
+        """
+        读取未过期的事件缓存
+
+        :param max_age_hours: 缓存有效期（与调度间隔对齐，默认 12h）
+        :return: 事件列表，无缓存或过期返回 None
+        """
+        path = self._event_cache_path()
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            fetched = datetime.fromisoformat(payload.get("fetched_at", ""))
+            age_h = (datetime.now() - fetched).total_seconds() / 3600.0
+            if age_h > max_age_hours:
+                return None
+            return payload.get("events") or None
+        except Exception as e:
+            logger.warning(f"[GDELT Crawler] 事件缓存读取失败: {e}")
+            return None
+
+    # ============================================================
     # 风险指标计算（供 app.py 调用）
     # ============================================================
 
@@ -316,6 +362,8 @@ class GDELTCrawler:
                     base_url=self._cfg.get("csv_base_url"),
                 )
                 if events:
+                    # 持久化含坐标的事件缓存，供 KDE 事件密度分析复用
+                    self.save_event_cache(events)
                     result = compute_metrics_from_events(events)
                     result["_timespan"] = timespan_days
                     with self._operation_lock:

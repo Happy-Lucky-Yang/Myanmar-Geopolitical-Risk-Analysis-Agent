@@ -36,11 +36,17 @@ COL_QUADCLASS = 29
 COL_AVGTONE = 34
 COL_ACTIONGEO_FULLNAME = 52
 COL_ACTIONGEO_COUNTRY = 53
+COL_ACTIONGEO_LAT = 56
+COL_ACTIONGEO_LON = 57
 COL_SOURCEURL = 60
 _MIN_COLS = 61
 
+# 缅甸扩展包围盒（坐标合法性校验，剔除 GDELT 地理编码噪声）
+_BBOX_LAT = (8.0, 30.0)
+_BBOX_LON = (90.0, 103.0)
+
 # CAMEO 根事件码 → (分类, 严重度 0~1)，参照 GDELT 官方编码手册
-_ROOT_INFO = {
+ROOT_INFO = {
     "01": ("diplomacy", 0.05), "02": ("diplomacy", 0.08),
     "03": ("diplomacy", 0.08), "04": ("diplomacy", 0.10),
     "05": ("diplomacy", 0.12), "06": ("diplomacy", 0.15),
@@ -108,6 +114,16 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
             tone = float(row[COL_AVGTONE]) if row[COL_AVGTONE] else 0.0
         except ValueError:
             tone = 0.0
+        # 经纬度（可能为空或地理编码错误，越界置 None 供下游过滤）
+        lat = lon = None
+        try:
+            _lat = float(row[COL_ACTIONGEO_LAT])
+            _lon = float(row[COL_ACTIONGEO_LON])
+            if (_BBOX_LAT[0] <= _lat <= _BBOX_LAT[1]
+                    and _BBOX_LON[0] <= _lon <= _BBOX_LON[1]):
+                lat, lon = _lat, _lon
+        except (ValueError, IndexError):
+            pass
         events.append({
             "date": row[COL_SQLDATE],
             "event_code": row[COL_EVENTCODE],
@@ -115,9 +131,38 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
             "quad_class": row[COL_QUADCLASS],
             "avg_tone": tone,
             "location": row[COL_ACTIONGEO_FULLNAME],
+            "lat": lat,
+            "lon": lon,
             "source_url": row[COL_SOURCEURL],
         })
     return events
+
+
+def event_severity_weight(ev: Dict) -> float:
+    """
+    事件严重度权重（0~1），指标聚合与 KDE 密度估计共用，保证口径一致
+
+    规则：QuadClass 4（实质性冲突）或冲突类根码 → ≥0.7；
+    QuadClass 3（口头冲突/动荡）→ ≥0.4；其余按根码映射。
+    """
+    root = ev.get("root_code", "")[:2]
+    category, severity = ROOT_INFO.get(root, ("diplomacy", 0.1))
+    if ev.get("quad_class") == "4" or category == "conflict":
+        return max(severity, 0.7)
+    if ev.get("quad_class") == "3":
+        return max(severity, 0.4)
+    return severity
+
+
+def event_category(ev: Dict) -> str:
+    """事件分类（conflict/unrest/diplomacy），与严重度规则联动"""
+    root = ev.get("root_code", "")[:2]
+    category, _ = ROOT_INFO.get(root, ("diplomacy", 0.1))
+    if ev.get("quad_class") == "4" or category == "conflict":
+        return "conflict"
+    if ev.get("quad_class") == "3":
+        return "unrest"
+    return category
 
 
 def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
@@ -194,18 +239,11 @@ def compute_metrics_from_events(events: List[Dict]) -> Dict:
     location_counts = {}
 
     for ev in events:
-        root = ev.get("root_code", "")[:2]
-        category, severity = _ROOT_INFO.get(root, ("diplomacy", 0.1))
+        severity = event_severity_weight(ev)
+        category = event_category(ev)
 
-        # QuadClass 4（实质性冲突）或高烈度根码均计为冲突
-        is_conflict = ev.get("quad_class") == "4" or category == "conflict"
-        if is_conflict:
+        if category == "conflict":
             conflict_count += 1
-            category = "conflict"
-            severity = max(severity, 0.7)
-        elif ev.get("quad_class") == "3":
-            category = "unrest"
-            severity = max(severity, 0.4)
 
         severities.append(severity)
         event_counts[category] = event_counts.get(category, 0) + 1
