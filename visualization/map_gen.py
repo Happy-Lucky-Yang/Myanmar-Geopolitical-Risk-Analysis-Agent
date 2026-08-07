@@ -333,6 +333,7 @@ class RiskMapGenerator:
             tooltip=GeoJsonTooltip(
                 fields=["name_cn", "score_text"], labels=False,
                 style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                      "pointer-events:none;"
             ),
         )
         GeoJsonPopup(
@@ -384,6 +385,37 @@ class RiskMapGenerator:
 
         by_prov = {item.get("province", ""): item for item in risk_data}
         centroids = province_centroids()  # 真实几何质心，替代手写坐标
+        # 预计算各省质心坐标（光晕/圆点共用）
+        prov_points = {
+            item.get("province", ""): (
+                centroids.get(item.get("province", ""))
+                or MYANMAR_PROVINCES.get(item.get("province", "")))
+            for item in risk_data
+        }
+
+        # 荧光光晕层（热力图风格渐变荧光，垫于边界与圆点之下）
+        heat_data = []
+        for item in risk_data:
+            pt = prov_points.get(item.get("province", ""))
+            if pt:
+                heat_data.append([
+                    pt[0], pt[1],
+                    self._normalize_score(item.get("risk_score", 50))])
+        if heat_data:
+            HeatMap(
+                heat_data,
+                name="风险光晕",
+                radius=25,
+                blur=22,
+                max_zoom=10,
+                gradient={0.2: "#2ed573", 0.5: "#ffd32a",
+                          0.8: "#ff6348", 1.0: "#ff4757"},
+            ).add_to(m)
+            # 光晕 canvas 默认拦截指针事件，会遮蔽省界悬停高亮，禁用之
+            m.get_root().header.add_child(folium.Element(
+                "<style>.leaflet-overlay-pane canvas"
+                "{pointer-events:none;}</style>"))
+
         gj = copy.deepcopy(_simplified_boundaries(1))
 
         # 注入展示属性（供 tooltip/popup/高亮取色）
@@ -403,9 +435,11 @@ class RiskMapGenerator:
                 feat["properties"]["_risk_color"] = "#3a3f47"
 
         def style_fn(f):
+            # 近透明填充：视觉上不可见，但让多边形内部参与鼠标命中，
+            # 否则 fill:false 时仅 1px 边线可触发悬停高亮（闪烁根因）
             return {
                 "color": "#7a828c", "weight": 1.1,
-                "fill": False,
+                "fill": True, "fillColor": "#000000", "fillOpacity": 0.01,
             }
 
         def highlight_fn(f):
@@ -424,7 +458,9 @@ class RiskMapGenerator:
             highlight_function=highlight_fn,
             tooltip=GeoJsonTooltip(
                 fields=["name_cn", "score_text"], labels=False,
+                # pointer-events:none 防止 tooltip 截获鼠标导致高亮闪烁
                 style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                      "pointer-events:none;"
             ),
         )
         GeoJsonPopup(
@@ -441,7 +477,7 @@ class RiskMapGenerator:
             risk_level = item.get("risk_level", "未知")
             score_norm = self._normalize_score(item.get("risk_score", 50))
 
-            latlon = centroids.get(province) or MYANMAR_PROVINCES.get(province)
+            latlon = prov_points.get(province)
             if not latlon:
                 continue
             color = risk_color_continuous(score_norm)
@@ -465,6 +501,8 @@ class RiskMapGenerator:
                 fill_opacity=0.75,
                 popup=folium.Popup(popup_html, max_width=250),
                 tooltip=f"{province}: {score_norm * 100:.1f}",
+                # 禁止事件冒泡，避免干扰省界悬停高亮的稳定性
+                bubbling_mouse_events=False,
             ).add_to(m)
 
         # 国界描边
@@ -505,6 +543,7 @@ class RiskMapGenerator:
                 tooltip=folium.GeoJsonTooltip(
                     fields=["NAME_1"], labels=False,
                     style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                          "pointer-events:none;"
                 ),
             ).add_to(m)
         except Exception as e:
@@ -552,6 +591,7 @@ class RiskMapGenerator:
             tooltip=folium.GeoJsonTooltip(
                 fields=["NAME_1"], labels=False,
                 style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                      "pointer-events:none;"
             ),
         ).add_to(m)
 
