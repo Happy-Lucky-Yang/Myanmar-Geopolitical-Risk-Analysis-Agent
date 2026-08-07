@@ -57,3 +57,9 @@ docs/_proposal_temp.txt
 *_tmp_*.py
 # 浏览器验证截图残留
 dashboard_source_health_card.png
+# GIS 原始数据（体积大/二进制，不入 git；行政边界用 data/static/gadm/ 的 GeoJSON）
+*.shp
+*.gdb/
+*.gpkg
+mmr_adm*
+*.emf
