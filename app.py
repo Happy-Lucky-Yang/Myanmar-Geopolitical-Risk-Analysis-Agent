@@ -645,6 +645,67 @@ def risk_map():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/map/unified", methods=["GET"])
+def unified_map():
+    """
+    统一地图接口（自定义图层面板版）
+
+    单张地图内含全部可叠加图层（分级填色/圆点光晕/事件密度 KDE/
+    省界/国界），由前端图层面板控制开关、互斥与透明度，
+    支持风险与事件密度的叠加对比分析。
+
+    查询参数:
+        - days: 统计窗口（默认 7）
+
+    响应: HTML 字符串（带 5 分钟 HTML 缓存）
+    """
+    try:
+        days = request.args.get("days", 7, type=int)
+
+        def _build():
+            map_gen = get_map_generator()
+
+            # 省级风险数据
+            loader = get_data_loader()
+            history = loader.load_risk_history(days=days)
+            risk_data = (_build_province_risk_data(history)
+                         if history else [])
+
+            # KDE 密度（来自事件累积库，库空时尝试首次填充）
+            density = None
+            try:
+                from data.event_store import get_event_store
+                store = get_event_store()
+                events = store.load(days=days)
+                if not events:
+                    try:
+                        get_gdelt_crawler().get_risk_metrics(
+                            timespan_days=days)
+                    except Exception as e:
+                        logger.warning(f"[Map] 事件库首次填充失败: {e}")
+                    events = store.load(days=days)
+                if events:
+                    from analyzer.event_density import (
+                        get_event_density_analyzer)
+                    cand = get_event_density_analyzer().compute(
+                        events, days=days)
+                    if not cand.get("degraded"):
+                        density = cand
+            except Exception as e:
+                logger.warning(f"[Map] KDE 密度准备失败: {e}")
+
+            if not risk_data and density is None:
+                return map_gen.generate_default_map()
+            return map_gen.generate_unified_map(
+                risk_data, density, days=days)
+
+        html = _cached_map_html(f"unified:{days}", 300, _build)
+        return Response(html, mimetype="text/html")
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/map/events", methods=["GET"])
 def event_density_map():
     """

@@ -523,6 +523,252 @@ class RiskMapGenerator:
         return m._repr_html_()
 
     # ============================================================
+    # 1c. 统一地图（自定义图层面板版：五图层可开关叠加）
+    # ============================================================
+
+    def generate_unified_map(self, risk_data: List[Dict],
+                             density: Dict = None, days: int = 7) -> str:
+        """
+        生成统一地图：单张地图内含全部可叠加图层，由前端自定义
+        图层面板控制开关/互斥/透明度（替代多地图切换）。
+
+        图层（自下而上）：
+            choropleth 省级风险分级填色（与圆点互斥，默认关）
+            kde        事件密度栅格（可叠加，默认开）
+            borders    省界交互层（悬停高亮/tooltip/弹窗）
+            hybrid     风险圆点+荧光光晕（与填色互斥，默认开）
+            country    国界描边
+
+        通过注入脚本将图层对象注册到 window._mmLayers，
+        供前端面板控制；不使用 folium 原生 LayerControl。
+
+        :param risk_data: 省级风险数据（可为空）
+        :param density: KDE compute() 结果（可为 None 或降级态）
+        :param days: 窗口天数（展示用）
+        :return: HTML 字符串
+        """
+        from data.admin_boundaries import PROVINCE_EN2CN, province_centroids
+        from folium.features import GeoJsonPopup, GeoJsonTooltip
+
+        m = folium.Map(
+            location=MYANMAR_CENTER, zoom_start=6,
+            tiles="CartoDB dark_matter"
+        )
+
+        by_prov = {item.get("province", ""): item for item in risk_data}
+        centroids = province_centroids()
+        prov_points = {
+            item.get("province", ""): (
+                centroids.get(item.get("province", ""))
+                or MYANMAR_PROVINCES.get(item.get("province", "")))
+            for item in risk_data
+        }
+
+        def _inject_props(gj):
+            for feat in gj["features"]:
+                name_en = feat["properties"].get("NAME_1", "")
+                name_cn = PROVINCE_EN2CN.get(name_en, name_en)
+                item = by_prov.get(name_cn)
+                feat["properties"]["name_cn"] = name_cn
+                if item:
+                    norm = self._normalize_score(item.get("risk_score", 50))
+                    feat["properties"]["score_text"] = (
+                        f"{risk_level_name(norm)} · {norm * 100:.1f} 分")
+                    feat["properties"]["_risk_color"] = (
+                        risk_color_continuous(norm))
+                else:
+                    feat["properties"]["score_text"] = "暂无数据"
+                    feat["properties"]["_risk_color"] = "#3a3f47"
+
+        # ---- 1) 分级填色层（默认关，与圆点互斥）----
+        gj_fill = copy.deepcopy(_simplified_boundaries(1))
+        _inject_props(gj_fill)
+
+        def fill_fn(f):
+            name_cn = f["properties"].get("name_cn", "")
+            item = by_prov.get(name_cn)
+            if item:
+                norm = self._normalize_score(item.get("risk_score", 50))
+                return {
+                    "color": "#2a2d35", "weight": 0.8,
+                    "fillColor": risk_color_continuous(norm),
+                    "fillOpacity": 0.62,
+                }
+            return {
+                "color": "#2a2d35", "weight": 0.8,
+                "fillColor": "#3a3f47", "fillOpacity": 0.25,
+            }
+
+        # show=False：默认不上图（与圆点互斥，由面板切换时才加载，
+        # 避免面板绑定前短暂出现填色+圆点同屏）
+        choro_layer = folium.GeoJson(
+            gj_fill, name="分级填色", style_function=fill_fn, show=False)
+
+        # ---- 2) 事件密度栅格层（可叠加）----
+        kde_layer = None
+        if (density and not density.get("degraded")
+                and density.get("z_matrix") is not None):
+            data_uri = render_density_png(
+                density["z_matrix"], density["bbox"])
+            kde_layer = folium.raster_layers.ImageOverlay(
+                image=data_uri,
+                bounds=density["bbox"],
+                name="事件密度 (KDE)",
+                opacity=0.85,
+                interactive=False,
+            )
+
+        # ---- 3) 混合层：荧光光晕 + 风险圆点（默认开，与填色互斥）----
+        hybrid_group = folium.FeatureGroup(name="风险圆点+光晕")
+        heat_data = []
+        for item in risk_data:
+            pt = prov_points.get(item.get("province", ""))
+            if pt:
+                heat_data.append([
+                    pt[0], pt[1],
+                    self._normalize_score(item.get("risk_score", 50))])
+        if heat_data:
+            HeatMap(
+                heat_data,
+                radius=25, blur=22, max_zoom=10,
+                gradient={0.2: "#2ed573", 0.5: "#ffd32a",
+                          0.8: "#ff6348", 1.0: "#ff4757"},
+            ).add_to(hybrid_group)
+
+        for item in risk_data:
+            province = item.get("province", "")
+            risk_level = item.get("risk_level", "未知")
+            score_norm = self._normalize_score(item.get("risk_score", 50))
+            latlon = prov_points.get(province)
+            if not latlon:
+                continue
+            color = risk_color_continuous(score_norm)
+            trend_dir = ("↑" if score_norm > 0.6
+                         else "↓" if score_norm < 0.4 else "→")
+            popup_html = (
+                f"<div style='min-width:150px'>"
+                f"<b style='font-size:14px'>{province}</b><br>"
+                f"<hr style='border:1px solid #ddd;margin:4px 0'>"
+                f"风险分: <b>{score_norm * 100:.1f}</b><br>"
+                f"风险等级: <b>{risk_level}</b><br>"
+                f"趋势: {trend_dir}<br>"
+                f"<span style='font-size:11px;color:#666'>"
+                f"经纬度: ({latlon[0]:.2f}, {latlon[1]:.2f})"
+                f"</span></div>"
+            )
+            folium.CircleMarker(
+                location=list(latlon),
+                radius=6 + score_norm * 10,
+                color=color,
+                fill=True,
+                fill_opacity=0.75,
+                popup=folium.Popup(popup_html, max_width=250),
+                tooltip=f"{province}: {score_norm * 100:.1f}",
+                bubbling_mouse_events=False,
+            ).add_to(hybrid_group)
+
+        # ---- 4) 省界交互层（悬停高亮 + tooltip + 弹窗）----
+        gj_line = copy.deepcopy(_simplified_boundaries(1))
+        _inject_props(gj_line)
+
+        def line_fn(f):
+            return {
+                "color": "#7a828c", "weight": 1.1,
+                "fill": True, "fillColor": "#000000",
+                "fillOpacity": 0.01,
+            }
+
+        def line_highlight_fn(f):
+            return {
+                "weight": 2.6, "color": "#ffffff",
+                "fill": True,
+                "fillColor": f["properties"].get("_risk_color", "#3a3f47"),
+                "fillOpacity": 0.30,
+            }
+
+        borders_layer = folium.GeoJson(
+            gj_line,
+            name="省界",
+            style_function=line_fn,
+            highlight_function=line_highlight_fn,
+            tooltip=GeoJsonTooltip(
+                fields=["name_cn", "score_text"], labels=False,
+                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                      "pointer-events:none;"
+            ),
+        )
+        GeoJsonPopup(
+            fields=["name_cn", "score_text"],
+            labels=True,
+            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+                  "font-size:13px;",
+        ).add_to(borders_layer)
+
+        # ---- 5) 国界描边 ----
+        country_layer = folium.GeoJson(
+            _simplified_boundaries(0),
+            name="国界",
+            style_function=lambda f: {
+                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+            },
+        )
+
+        # 叠加顺序（自下而上）：填色 → KDE → 省界交互 → 圆点光晕 → 国界
+        choro_layer.add_to(m)
+        if kde_layer is not None:
+            kde_layer.add_to(m)
+        borders_layer.add_to(m)
+        hybrid_group.add_to(m)
+        country_layer.add_to(m)
+
+        # 光晕 canvas 不拦截指针事件（保护省界悬停高亮）
+        m.get_root().header.add_child(folium.Element(
+            "<style>.leaflet-overlay-pane canvas"
+            "{pointer-events:none;}</style>"))
+
+        # 图例与说明
+        m.get_root().html.add_child(folium.Element(_legend_html()))
+        if kde_layer is not None:
+            m.get_root().html.add_child(folium.Element(_kde_legend_html()))
+        kde_note = ""
+        if density and not density.get("degraded"):
+            kde_note = (
+                f" · KDE近{days}天 {density.get('event_count', 0)}条/"
+                f"互证{density.get('verified_count', 0)}条")
+        m.get_root().html.add_child(folium.Element(_source_note_html(
+            "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1"
+            + kde_note + " · 右上图层面板可叠加对比"
+        )))
+
+        # 图层注册表：供前端自定义面板控制。
+        # 注意：① script 段的子元素已处在外层 <script> 块内，
+        # 绝不能再包 <script> 标签（嵌套会提前闭合外层块）；
+        # ② setTimeout(0) 延迟到当前脚本块执行完毕后再注册，
+        # 确保地图与图层变量均已定义；③ _repr_html_ 包进 iframe(srcdoc)，
+        # 需同时注册到父窗口供外层面板读取（同源可访问）。
+        kde_js = kde_layer.get_name() if kde_layer is not None else "null"
+        reg_script = (
+            "setTimeout(function(){"
+            "function _reg(t){"
+            f"t._mmMap = {m.get_name()};"
+            "t._mmLayers = {"
+            f"choropleth: {choro_layer.get_name()},"
+            f"hybrid: {hybrid_group.get_name()},"
+            f"kde: {kde_js},"
+            f"borders: {borders_layer.get_name()},"
+            f"country: {country_layer.get_name()}"
+            "};}"
+            "_reg(window);"
+            "if(window.parent && window.parent !== window){"
+            "try{_reg(window.parent);}catch(e){}"
+            "}"
+            "}, 0);"
+        )
+        m.get_root().script.add_child(folium.Element(reg_script))
+
+        return m._repr_html_()
+
+    # ============================================================
     # 2. 默认地图（无数据时：灰色省界 + 提示）
     # ============================================================
 
