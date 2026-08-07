@@ -19,16 +19,9 @@
 
     <main class="container">
         <h2>缅甸风险地图</h2>
-        <p class="subtitle">三种风格对比：分级填色 / 圆点+省界混合 / 事件密度 KDE，悬停或点击查看详情</p>
+        <p class="subtitle">单地图多图层叠加：分级填色 / 圆点+光晕 / 事件密度 KDE，右上角图层面板自由组合对比</p>
 
         <div class="controls">
-            <label>地图类型
-                <select id="map-mode">
-                    <option value="risk" selected>省级风险分级填色</option>
-                    <option value="hybrid">省级风险（圆点+省界）</option>
-                    <option value="events">事件密度 (KDE)</option>
-                </select>
-            </label>
             <label>查看最近
                 <select id="days-select">
                     <option value="7">7天</option>
@@ -42,13 +35,31 @@
         </div>
 
         <div class="info-banner">
-            ⚠️ 省级风险图为真实省界分级填色（6 档色阶，点击省份查看详情），无历史数据时为简化模拟值；事件密度图基于 GDELT 事件定位的加权核密度估计（GADM 4.1 边界裁剪），首次生成需数分钟
+            ⚠️ 风险风格（填色/圆点）二选一；事件密度 KDE 可与任意风险风格叠加对比；无历史数据时风险层为简化模拟值，首次生成 KDE 需数分钟
         </div>
 
-        <div id="map-container">
-            <div class="loading-spinner">
-                <div class="spinner"></div>
-                <p class="loading-text">加载地图中...</p>
+        <div class="map-wrap">
+            <div id="map-container">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p class="loading-text">加载地图中...</p>
+                </div>
+            </div>
+
+            <!-- 自定义图层面板 -->
+            <div id="layer-panel" class="layer-panel" style="display:none">
+                <div class="lp-title">🗂️ 图层面板</div>
+                <div class="lp-group">省级风险风格（二选一）</div>
+                <label class="lp-item"><input type="radio" name="risk-style" value="hybrid" checked> 圆点+光晕</label>
+                <label class="lp-item"><input type="radio" name="risk-style" value="choropleth"> 分级填色</label>
+                <label class="lp-item"><input type="radio" name="risk-style" value="none"> 关闭</label>
+                <div class="lp-group">叠加图层</div>
+                <label class="lp-item"><input type="checkbox" id="lyr-kde" checked> 事件密度 (KDE)</label>
+                <div class="lp-item lp-slider">密度透明度
+                    <input type="range" id="kde-opacity" min="20" max="100" value="85">
+                </div>
+                <label class="lp-item"><input type="checkbox" id="lyr-borders" checked> 省界（悬停高亮）</label>
+                <label class="lp-item"><input type="checkbox" id="lyr-country" checked> 国界</label>
             </div>
         </div>
 
@@ -61,17 +72,11 @@
     <script>
         async function loadMap() {
             var days = document.getElementById('days-select').value;
-            var mode = document.getElementById('map-mode').value;
             var container = document.getElementById('map-container');
             renderLoading(container);
 
-            var url = mode === 'events'
-                ? '/api/map/events?days=' + encodeURIComponent(days)
-                : '/api/map?days=' + encodeURIComponent(days)
-                  + '&mode=' + encodeURIComponent(mode === 'hybrid' ? 'hybrid' : 'choropleth');
-
             try {
-                var resp = await fetch(url);
+                var resp = await fetch('/api/map/unified?days=' + encodeURIComponent(days));
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 var html = await resp.text();
 
@@ -80,6 +85,7 @@
                     throw new Error('地图数据为空');
                 }
                 container.innerHTML = html;
+                bindLayerPanel();
             } catch (e) {
                 container.innerHTML = '<div class="error-card">'
                     + '<div class="error-icon">🗺️</div>'
@@ -87,6 +93,70 @@
                     + '<button class="btn btn-secondary" style="margin-top:1rem" onclick="loadMap()">重试</button>'
                     + '</div>';
             }
+        }
+
+        /* 图层面板绑定：依赖地图内注入的 window._mmMap / window._mmLayers。
+           地图包在 iframe(srcdoc) 内异步加载，轮询等待注册就绪后再绑定 */
+        function bindLayerPanel() {
+            var tries = 0;
+            var timer = setInterval(function () {
+                tries++;
+                if (window._mmLayers && window._mmMap) {
+                    clearInterval(timer);
+                    doPanelBind();
+                } else if (tries > 50) {  // 10 秒超时：隐藏面板
+                    clearInterval(timer);
+                    document.getElementById('layer-panel').style.display = 'none';
+                }
+            }, 200);
+        }
+
+        function doPanelBind() {
+            var panel = document.getElementById('layer-panel');
+            var layers = window._mmLayers;
+            var map = window._mmMap;
+            if (!layers || !map) { panel.style.display = 'none'; return; }
+            panel.style.display = 'block';
+
+            function setOn(layer, on) {
+                if (!layer) return;
+                if (on) { layer.addTo(map); } else { map.removeLayer(layer); }
+            }
+
+            // 风险风格互斥组
+            function applyStyle(v) {
+                setOn(layers.hybrid, v === 'hybrid');
+                setOn(layers.choropleth, v === 'choropleth');
+            }
+            document.querySelectorAll('input[name="risk-style"]').forEach(function (r) {
+                r.onchange = function () { applyStyle(this.value); };
+            });
+            var checked = document.querySelector('input[name="risk-style"]:checked');
+            applyStyle(checked ? checked.value : 'hybrid');
+
+            // 事件密度层（累积库未就绪时禁用）
+            var kdeBox = document.getElementById('lyr-kde');
+            var kdeSlider = document.getElementById('kde-opacity');
+            if (!layers.kde) {
+                kdeBox.checked = false;
+                kdeBox.disabled = true;
+                kdeBox.title = '事件累积库暂无数据';
+                kdeSlider.disabled = true;
+            }
+            kdeBox.onchange = function () { setOn(layers.kde, this.checked); };
+            kdeSlider.oninput = function () {
+                if (layers.kde && typeof layers.kde.setOpacity === 'function') {
+                    layers.kde.setOpacity(this.value / 100);
+                }
+            };
+
+            // 省界/国界开关
+            document.getElementById('lyr-borders').onchange = function () {
+                setOn(layers.borders, this.checked);
+            };
+            document.getElementById('lyr-country').onchange = function () {
+                setOn(layers.country, this.checked);
+            };
         }
 
         // 页面加载时自动加载
