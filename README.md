@@ -58,7 +58,9 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   ├── historical_events.py      # 历史事件数据集（2020-2025，53 条）
 │   ├── kg_seeder.py              # 知识图谱种子填充（34 节点 + 35 关系）
 │   ├── source_health.py          # 数据源健康追踪（成功率/降级监控，持久化）
+│   ├── admin_boundaries.py       # 🆕 行政边界加载（GADM 4.1，中英映射/质心/多边形）
 │   ├── scheduler.py              # 统一定时调度器（后台线程）
+│   ├── static/gadm/              # 🆕 GADM 4.1 缅甸四级行政边界（学术许可，论文需注源）
 │   └── raw/                      # 原始数据 + 缓存
 ├── visualization/
 │   ├── map_gen.py                # Folium 热力地图（暗色主题 + 详细弹窗）
@@ -235,7 +237,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 夜光/经济为 **World Bank 代理指标**（非 NASA VIIRS 原始栅格，属轻量替代方案）
 
 ### ❌ 后续工作建议（详见 [docs/upgrade_plan.md](docs/upgrade_plan.md)）
-- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE 图层（可立即开工） + 缅甸省级边界 GeoJSON（前置，GADM/OCHA 获取清单见附录 A）
+- **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE 图层（可立即开工） + 缅甸省级边界 GeoJSON（**已到位 GADM 4.1 四级，见 `data/static/gadm/`**）
 - **双边关系评估模块（已设计暂缓）**：GDELT 国家对合作/冲突指数 + 贸易依存 + 政策监测，六行为体关系雷达，先作独立面板不动五维权重
 - **地图省级风险真实化**：将 NER 提取地名精确关联到省份（当前为边境省份简化乘数）
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
