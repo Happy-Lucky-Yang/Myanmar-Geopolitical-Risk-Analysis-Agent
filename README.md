@@ -168,7 +168,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 |------|------|------|
 | 对话分析 | `/` | 粘贴新闻文本 → 实体/情感/风险/大模型/**诊断归因**/GDELT，可选**链式推理** |
 | 综合态势 | `/dashboard` | 🆕 预警面板 + **数据源健康** + 地缘位势 + 空间自相关 + 关系网络 + 诊断归因 + 多源融合图 + 历史时间线 |
-| 风险地图 | `/map` | 双模式：省级风险**分级填色**（GADM 真实省界 + 6 档连续色阶 + 渐变图例） / 🆕 事件密度 KDE（加权核密度面）；HTML 缓存加速模式切换 |
+| 风险地图 | `/map` | 三模式对比：省级风险**分级填色** / 🆕 **圆点+省界混合**（悬停高亮） / 事件密度 KDE；HTML 缓存加速切换 |
 | 趋势预测 | `/trend` | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
 
 ## API 接口一览（18 个业务端点 + 健康检查）
@@ -180,7 +180,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | GET | `/api/gdelt` | GDELT 事件数据（`?days=7`） |
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
 | GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
-| GET | `/api/map` | Folium 地图 HTML |
+| GET | `/api/map` | 省级风险地图 HTML（`?mode=choropleth\|hybrid`） |
 | GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`，累积库支持 7~90 天窗口） |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
 | GET | `/api/geo_potential` | 🆕 地缘位势评估（距离加权 + Moran's I + 热点） |

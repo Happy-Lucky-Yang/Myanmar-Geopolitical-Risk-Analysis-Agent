@@ -162,13 +162,14 @@ Base URL: `http://localhost:5000`
 
 **GET** `/api/map?days=7`
 
-返回缅甸省级风险分级填色地图 HTML（folium 生成，GADM 省界 + 6 档色阶），可直接嵌入 iframe。
+返回缅甸省级风险地图 HTML（folium 生成，GADM 省界 + 6 档色阶），可直接嵌入 iframe。
 
 ### 参数
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | days | int  | 7      | 查询最近多少天的数据 |
+| mode | string | "choropleth" | `choropleth` 分级填色 / `hybrid` 风险圆点+省界描边（悬停高亮） |
 
 ### 响应
 
