@@ -71,8 +71,9 @@ gdelt:
   jitter: 2.0                           # 限速/重试叠加的随机抖动上限（秒，避免贴边被拒）
   metrics_cache_seconds: 900            # 指标缓存 TTL（15分钟，与 GDELT 数据更新频率对齐）
   csv_enabled: true                     # CSV 直连通道（不限流，主通道；DOC API 降为备用）
-  csv_max_files: 672                    # 每轮最多下载的 15 分钟文件数（≈7 天窗口，单文件仅 ~50KB）
-  csv_target_events: 200                # 收集到足够缅甸事件后提前停止（缅甸事件稀疏，需多日窗口）
+  csv_max_files: 672                    # 全量首拉最多下载的 15 分钟文件数（≈7 天窗口，单文件仅 ~50KB）
+  csv_incremental_max_files: 96         # 增量拉取单次最多文件数（≈24 小时，水位线丢失时的上限保护）
+  csv_target_events: 200                # 全量首拉收集到足够缅甸事件后提前停止（缅甸事件稀疏，需多日窗口）
   use_multi_query: true               # 使用多关键词查询（按语言合并为 OR 组合请求，覆盖面广且省配额）
   # 多关键词查询列表（use_multi_query=true 时使用，支持中英文混合）
   query_keywords:
@@ -90,6 +91,8 @@ kde:
   grid_rows: 120                      # 密度网格行数（纬度方向）
   grid_cols: 95                       # 密度网格列数（经度方向）
   min_events: 5                       # 有效定位事件少于该数时降级提示
+  min_sources: 1                      # 信源门槛：仅统计≥N家信源报道的事件（1=不过滤）
+  verified_boost: 1.25                # 互证事件（≥2家信源或≥2篇报道）的权重加成
 
 # ---------- RSS/Atom 新闻源 ----------
 rss_feeds:

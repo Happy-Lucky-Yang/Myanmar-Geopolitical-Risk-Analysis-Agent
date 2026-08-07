@@ -647,7 +647,8 @@ def event_density_map():
     事件密度（KDE）地图接口
 
     基于 GDELT 事件经纬度的加权核密度估计，叠加 GADM 真实边界。
-    数据优先复用 CSV 通道的事件缓存（12h 内），无缓存时同步拉取。
+    数据来自事件累积库（逐轮增量积累，支持 7/14/30/90 天窗口）；
+    库为空时自动触发一次 CSV 全量拉取填充。
 
     查询参数:
         - days: 统计窗口（默认 7，按事件日期过滤）
@@ -657,28 +658,22 @@ def event_density_map():
     try:
         days = request.args.get("days", 7, type=int)
 
-        from data.gdelt_crawler import get_gdelt_crawler
-        crawler = get_gdelt_crawler()
-        events = crawler.get_event_cache(max_age_hours=12)
+        from data.event_store import get_event_store
+        store = get_event_store()
+        events = store.load(days=days)
 
         if not events:
-            # 首次/缓存过期：同步拉取（CSV 直连不限流，耗时数分钟）
-            from utils.config import get_gdelt_config
-            from data.gdelt_files import fetch_myanmar_events
-            cfg = get_gdelt_config()
-            if cfg.get("csv_enabled", True):
-                events = fetch_myanmar_events(
-                    max_files=cfg.get("csv_max_files", 32),
-                    target_events=cfg.get("csv_target_events", 300),
-                    base_url=cfg.get("csv_base_url"),
-                )
-                if events:
-                    crawler.save_event_cache(events)
+            # 累积库为空（首次运行）：触发 CSV 管线同步填充
+            try:
+                get_gdelt_crawler().get_risk_metrics(timespan_days=days)
+            except Exception as e:
+                logger.warning(f"[Map] 事件库首次填充失败: {e}")
+            events = store.load(days=days)
 
         map_gen = get_map_generator()
         if not events:
             html = map_gen.generate_notice_map(
-                "GDELT 事件数据暂不可用，无法生成事件密度地图"
+                "GDELT 事件累积库暂无数据，无法生成事件密度地图"
             )
             return Response(html, mimetype="text/html")
 
