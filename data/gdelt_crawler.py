@@ -268,48 +268,97 @@ class GDELTCrawler:
         return filepath
 
     # ============================================================
-    # 事件缓存（KDE 事件密度分析复用，避免重复下载 CSV）
+    # CSV 管线：增量水位线 + 事件累积库
     # ============================================================
 
-    def _event_cache_path(self) -> str:
-        return os.path.join(self._processed_dir, "gdelt_events_cache.json")
+    def _watermark_path(self) -> str:
+        return os.path.join(self._processed_dir, "gdelt_csv_state.json")
 
-    def save_event_cache(self, events: List[Dict]):
-        """保存含坐标的事件缓存（原子写入，失败仅告警）"""
-        try:
-            payload = {
-                "fetched_at": datetime.now().isoformat(timespec="seconds"),
-                "event_count": len(events),
-                "events": events,
-            }
-            tmp = self._event_cache_path() + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False)
-            os.replace(tmp, self._event_cache_path())
-        except Exception as e:
-            logger.warning(f"[GDELT Crawler] 事件缓存保存失败: {e}")
-
-    def get_event_cache(self, max_age_hours: float = 12.0) -> Optional[List[Dict]]:
-        """
-        读取未过期的事件缓存
-
-        :param max_age_hours: 缓存有效期（与调度间隔对齐，默认 12h）
-        :return: 事件列表，无缓存或过期返回 None
-        """
-        path = self._event_cache_path()
+    def _load_watermark(self) -> Optional[datetime]:
+        """读取 CSV 增量水位线（上次成功处理到的批次时间戳）"""
+        path = self._watermark_path()
         if not os.path.exists(path):
             return None
         try:
             with open(path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-            fetched = datetime.fromisoformat(payload.get("fetched_at", ""))
-            age_h = (datetime.now() - fetched).total_seconds() / 3600.0
-            if age_h > max_age_hours:
-                return None
-            return payload.get("events") or None
+                ts = json.load(f).get("last_batch_ts", "")
+            return datetime.strptime(ts, "%Y%m%d%H%M%S")
         except Exception as e:
-            logger.warning(f"[GDELT Crawler] 事件缓存读取失败: {e}")
+            logger.warning(f"[GDELT Crawler] 水位线读取失败: {e}")
             return None
+
+    def _save_watermark(self, ts: datetime):
+        """保存 CSV 增量水位线（原子写入）"""
+        try:
+            payload = {
+                "last_batch_ts": ts.strftime("%Y%m%d%H%M%S"),
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+            }
+            tmp = self._watermark_path() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+            os.replace(tmp, self._watermark_path())
+        except Exception as e:
+            logger.warning(f"[GDELT Crawler] 水位线保存失败: {e}")
+
+    def _csv_pipeline(self, timespan_days: int) -> Optional[Dict]:
+        """
+        CSV 直连管线：增量拉取 → 累积库去重入库 → 窗口指标聚合
+
+        首轮无水位线时全量拉取（多日窗口积累样本），
+        之后每轮仅拉新增批次；指标始终基于累积库的完整窗口计算。
+
+        :return: 指标字典，窗口内无事件时返回 None
+        """
+        from data.gdelt_files import fetch_myanmar_events
+        from data.gdelt_files import compute_metrics_from_events
+        from data.event_store import get_event_store
+
+        store = get_event_store()
+        since_ts = self._load_watermark()
+
+        if since_ts is None:
+            # 全量首拉（多日窗口积累样本）
+            events, newest_ts = fetch_myanmar_events(
+                max_files=self._cfg.get("csv_max_files", 672),
+                target_events=self._cfg.get("csv_target_events", 300),
+                base_url=self._cfg.get("csv_base_url"),
+            )
+        else:
+            # 增量：仅拉水位线之后的新批次
+            events, newest_ts = fetch_myanmar_events(
+                max_files=self._cfg.get("csv_incremental_max_files", 96),
+                base_url=self._cfg.get("csv_base_url"),
+                since_ts=since_ts,
+            )
+
+        if events:
+            store.append(events)
+        if newest_ts is not None:
+            self._save_watermark(newest_ts)
+
+        window_events = store.load(days=timespan_days)
+        if not window_events:
+            return None
+
+        result = compute_metrics_from_events(window_events)
+        result["_timespan"] = timespan_days
+        with self._operation_lock:
+            self._metrics_cache = result
+            self._metrics_cache_time = time.time()
+        logger.info(
+            f"[GDELT Crawler] CSV 管线指标: 窗口 {timespan_days} 天 "
+            f"{result['article_count']} 事件（本轮增量 +{len(events)}，"
+            f"库内累计 {store.stats()['total']}），"
+            f"冲突 {result['conflict_count']} 条"
+        )
+        try:
+            from data.source_health import get_source_health_tracker
+            get_source_health_tracker().record(
+                "GDELT", True, len(window_events))
+        except Exception:
+            pass
+        return result
 
     # ============================================================
     # 风险指标计算（供 app.py 调用）
@@ -353,33 +402,8 @@ class GDELTCrawler:
         # 优先 CSV 直连通道（不限流）；失败/无数据时回退 DOC API
         if self._cfg.get("csv_enabled", True):
             try:
-                from data.gdelt_files import (
-                    fetch_myanmar_events, compute_metrics_from_events
-                )
-                events = fetch_myanmar_events(
-                    max_files=self._cfg.get("csv_max_files", 32),
-                    target_events=self._cfg.get("csv_target_events", 300),
-                    base_url=self._cfg.get("csv_base_url"),
-                )
-                if events:
-                    # 持久化含坐标的事件缓存，供 KDE 事件密度分析复用
-                    self.save_event_cache(events)
-                    result = compute_metrics_from_events(events)
-                    result["_timespan"] = timespan_days
-                    with self._operation_lock:
-                        self._metrics_cache = result
-                        self._metrics_cache_time = time.time()
-                    logger.info(
-                        f"[GDELT Crawler] CSV 通道指标: "
-                        f"{result['article_count']} 事件, "
-                        f"冲突 {result['conflict_count']} 条"
-                    )
-                    try:
-                        from data.source_health import get_source_health_tracker
-                        get_source_health_tracker().record(
-                            "GDELT", True, len(events))
-                    except Exception:
-                        pass
+                result = self._csv_pipeline(timespan_days)
+                if result is not None:
                     return result
                 logger.warning("[GDELT Crawler] CSV 通道无缅甸事件，回退 DOC API")
             except Exception as e:

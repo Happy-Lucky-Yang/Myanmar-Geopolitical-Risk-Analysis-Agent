@@ -10,10 +10,13 @@ GDELT 每 15 分钟发布的原始事件文件（data.gdeltproject.org/gdeltv2/�
 最后聚合成与 compute_gdelt_risk_metrics 同构的风险指标。
 
 事件文件为制表符分隔 CSV（61 列），关键列（0 基索引）：
-    1  SQLDATE(YYYYMMDD)        26 EventCode(CAMEO)
-    28 EventRootCode             29 QuadClass(1~4)
-    34 AvgTone                   52 ActionGeo_FullName
-    53 ActionGeo_CountryCode     60 SOURCEURL
+    0  GlobalEventID            1  SQLDATE(YYYYMMDD)
+    26 EventCode(CAMEO)         28 EventRootCode
+    29 QuadClass(1~4)           32 NumSources(报道信源数)
+    33 NumArticles              34 AvgTone
+    52 ActionGeo_FullName       53 ActionGeo_CountryCode
+    56 ActionGeo_Lat            57 ActionGeo_Long
+    60 SOURCEURL
 """
 import io
 import csv
@@ -29,10 +32,13 @@ GDELT_FILES_BASE = "http://data.gdeltproject.org/gdeltv2/"
 MYANMAR_FIPS = "BM"
 
 # events export CSV 列索引（0 基）
+COL_EVENTID = 0
 COL_SQLDATE = 1
 COL_EVENTCODE = 26
 COL_EVENTROOTCODE = 28
 COL_QUADCLASS = 29
+COL_NUMSOURCES = 32
+COL_NUMARTICLES = 33
 COL_AVGTONE = 34
 COL_ACTIONGEO_FULLNAME = 52
 COL_ACTIONGEO_COUNTRY = 53
@@ -125,10 +131,13 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
         except (ValueError, IndexError):
             pass
         events.append({
+            "event_id": row[COL_EVENTID],
             "date": row[COL_SQLDATE],
             "event_code": row[COL_EVENTCODE],
             "root_code": row[COL_EVENTROOTCODE],
             "quad_class": row[COL_QUADCLASS],
+            "num_sources": _to_int(row[COL_NUMSOURCES]),
+            "num_articles": _to_int(row[COL_NUMARTICLES]),
             "avg_tone": tone,
             "location": row[COL_ACTIONGEO_FULLNAME],
             "lat": lat,
@@ -136,6 +145,23 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
             "source_url": row[COL_SOURCEURL],
         })
     return events
+
+
+def _to_int(text: str, default: int = 1) -> int:
+    """容错整数解析（CSV 空值/脏数据回退默认）"""
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return default
+
+
+def _batch_ts_from_url(url: str) -> Optional[datetime]:
+    """从批次文件 URL 解析发布时间戳（YYYYMMDDHHMMSS）"""
+    try:
+        name = url.rsplit("/", 1)[-1]
+        return datetime.strptime(name.split(".")[0], "%Y%m%d%H%M%S")
+    except (ValueError, IndexError):
+        return None
 
 
 def event_severity_weight(ev: Dict) -> float:
@@ -167,30 +193,42 @@ def event_category(ev: Dict) -> str:
 
 def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
                          timeout: int = 120, base_url: str = None,
-                         country: str = MYANMAR_FIPS) -> List[Dict]:
+                         country: str = MYANMAR_FIPS,
+                         since_ts: datetime = None) -> tuple:
     """
-    下载最近的 15 分钟事件文件并过滤缅甸事件
+    下载 15 分钟事件文件并过滤缅甸事件（支持增量水位线）
 
-    单文件仅 ~50KB，672 个文件（≈7 天窗口）总带宽约 35MB；
-    缅甸事件稀疏（日均数十条），需多日窗口才能积累足够样本。
+    单文件仅 ~50KB；缅甸事件稀疏（日均数十条），
+    全量首拉需多日窗口才能积累足够样本，之后增量拉取仅需新增批次。
 
     :param max_files: 最多下载的文件数（带宽上限保护）
-    :param target_events: 收集到足够事件后提前停止（新事件优先）
+    :param target_events: 收集到足够事件后提前停止（仅全量模式生效）
     :param timeout: 单文件下载超时（秒）
     :param base_url: 文件服务器基址
     :param country: FIPS 国家码（默认 BM=缅甸）
-    :return: 缅甸事件字典列表（新→旧顺序）
+    :param since_ts: 增量水位线——仅拉取该时刻之后的批次（不含）；
+                     None 为全量模式
+    :return: (事件列表, 成功处理到的最新批次时间戳或 None)
     """
     events = []
+    newest_ts = None  # 成功处理（200/404）的最新批次，供水位线推进
     urls = enumerate_batch_urls(count=max_files, base_url=base_url)
 
     for i, url in enumerate(urls):
-        if len(events) >= target_events:
+        batch_ts = _batch_ts_from_url(url)
+        # 增量模式：到达水位线即停（更早批次已入库）
+        if since_ts is not None and batch_ts is not None and batch_ts <= since_ts:
+            logger.info(f"[GDELT-CSV] 已达增量水位线 {since_ts:%Y%m%d%H%M}，停止")
+            break
+        # 全量模式：目标事件数提前停止
+        if since_ts is None and len(events) >= target_events:
             logger.info(f"[GDELT-CSV] 已达目标事件数 {target_events}，提前停止")
             break
         try:
             resp = requests.get(url, timeout=(15, timeout))
             if resp.status_code == 404:
+                if batch_ts and (newest_ts is None or batch_ts > newest_ts):
+                    newest_ts = batch_ts
                 continue  # 该批次尚未发布，继续向前
             resp.raise_for_status()
 
@@ -200,15 +238,18 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
 
             batch = _parse_csv_rows(text, country)
             events.extend(batch)
+            if batch_ts and (newest_ts is None or batch_ts > newest_ts):
+                newest_ts = batch_ts
             logger.info(
                 f"[GDELT-CSV] 文件 {i+1}/{len(urls)}: "
                 f"缅甸事件 +{len(batch)}（累计 {len(events)}）"
             )
         except Exception as e:
             logger.warning(f"[GDELT-CSV] 文件下载/解析失败 {url}: {e}")
+            # 失败批次不推进水位线，下轮重试
             continue
 
-    return events
+    return events, newest_ts
 
 
 def compute_metrics_from_events(events: List[Dict]) -> Dict:
