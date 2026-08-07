@@ -502,8 +502,8 @@ textarea::placeholder {
 
 #map-container {
     width: 100%;
-    height: 70vh;
-    min-height: 400px;
+    height: 82vh;
+    min-height: 500px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius);
     overflow: hidden;
@@ -952,8 +952,8 @@ textarea::placeholder {
     }
 
     #map-container {
-        height: 50vh;
-        min-height: 300px;
+        height: 65vh;
+        min-height: 350px;
     }
 }
 
