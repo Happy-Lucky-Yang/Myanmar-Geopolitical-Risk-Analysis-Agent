@@ -1,13 +1,25 @@
 """
-visualization.map_gen - 地图生成模块
-使用 folium 生成缅甸省级风险热力地图，返回 HTML 字符串
+visualization.map_gen - Folium 地图生成（暗色主题）
+
+两类地图：
+1. 省级风险分级填色图（choropleth）：GADM L1 真实省界按风险分染色，
+   连续色阶 6 档，悬停/点击查看详情
+2. 事件密度（KDE）地图：真实国界/省界 + 加权核密度热力面
+
+性能设计：GADM 边界经 Douglas-Peucker 简化并缓存，
+渲染用 HTML 体积约为原始 GeoJSON 的 1/5，显著加快前端加载。
 """
+import copy
+import math
 import threading
-from typing import List, Dict, Optional
+import logging
 import folium
 from folium.plugins import HeatMap
+from typing import Dict, List, Optional
 
-# 缅甸主要省份及其大致经纬度
+logger = logging.getLogger(__name__)
+
+# 缅甸主要省份及其大致经纬度（历史兼容，app.py 引用）
 MYANMAR_PROVINCES = {
     "仰光省": (16.87, 96.20),
     "曼德勒省": (21.97, 96.08),
@@ -29,116 +41,302 @@ MYANMAR_PROVINCES = {
 # 缅甸中心点（用于初始化地图）
 MYANMAR_CENTER = (19.76, 96.07)
 
+# ============================================================
+# 风险色阶：连续渐变（6 档语义分级，颜色本身连续插值）
+# ============================================================
+_RISK_STOPS = [
+    (0.00, (46, 213, 115)),    # 低风险 绿
+    (0.20, (163, 222, 63)),    # 中低 黄绿
+    (0.40, (255, 211, 42)),    # 中等 黄
+    (0.55, (255, 165, 2)),     # 中高 橙
+    (0.70, (255, 99, 72)),     # 高 橙红
+    (0.85, (255, 71, 87)),     # 高风险 红
+    (1.00, (164, 18, 60)),     # 极高 暗红
+]
+
+# 图例分级（展示用）
+_LEGEND_LEVELS = [
+    ("低风险", 0.0), ("中低", 0.25), ("中等", 0.45),
+    ("中高", 0.6), ("高", 0.75), ("极高", 0.95),
+]
+
+# 简化后边界缓存 {level: geojson_dict}
+_SIMPLIFIED_CACHE: Dict[int, dict] = {}
+_SIMPLIFY_EPSILON = 0.008  # 约 0.9km，国界渲染足够
+
+
+def risk_color_continuous(score_norm: float) -> str:
+    """归一化风险分(0~1) → 连续插值色（hex）"""
+    s = max(0.0, min(1.0, float(score_norm)))
+    for i in range(len(_RISK_STOPS) - 1):
+        p0, c0 = _RISK_STOPS[i]
+        p1, c1 = _RISK_STOPS[i + 1]
+        if s <= p1:
+            t = (s - p0) / (p1 - p0) if p1 > p0 else 0.0
+            rgb = [int(c0[k] + (c1[k] - c0[k]) * t) for k in range(3)]
+            return "#{:02x}{:02x}{:02x}".format(*rgb)
+    return "#{:02x}{:02x}{:02x}".format(*_RISK_STOPS[-1][1])
+
+
+def risk_level_name(score_norm: float) -> str:
+    """归一化风险分 → 6 档文字等级"""
+    if score_norm >= 0.85:
+        return "极高风险"
+    if score_norm >= 0.70:
+        return "高风险"
+    if score_norm >= 0.55:
+        return "中高风险"
+    if score_norm >= 0.40:
+        return "中等风险"
+    if score_norm >= 0.20:
+        return "中低风险"
+    return "低风险"
+
+
+# ============================================================
+# 边界简化（Douglas-Peucker，迭代实现避免深递归）
+# ============================================================
+
+def _dp_simplify(points: List, epsilon: float) -> List:
+    """对单个环做 Douglas-Peucker 简化（保留首尾点）"""
+    n = len(points)
+    if n < 5:
+        return points
+    keep = [False] * n
+    keep[0] = keep[-1] = True
+    stack = [(0, n - 1)]
+    eps2 = epsilon * epsilon
+    while stack:
+        s, e = stack.pop()
+        if e <= s + 1:
+            continue
+        ax, ay = points[s]
+        bx, by = points[e]
+        dx, dy = bx - ax, by - ay
+        seg2 = dx * dx + dy * dy
+        max_d, idx = -1.0, -1
+        for i in range(s + 1, e):
+            px, py = points[i]
+            if seg2 == 0:
+                d2 = (px - ax) ** 2 + (py - ay) ** 2
+            else:
+                t = ((px - ax) * dx + (py - ay) * dy) / seg2
+                t = max(0.0, min(1.0, t))
+                d2 = (px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2
+            if d2 > max_d:
+                max_d, idx = d2, i
+        if max_d > eps2:
+            keep[idx] = True
+            stack.append((s, idx))
+            stack.append((idx, e))
+    return [p for p, k in zip(points, keep) if k]
+
+
+def _simplify_geojson(gj: dict, epsilon: float) -> dict:
+    """简化 FeatureCollection 内所有多边形环，坐标保留 4 位小数"""
+    out_features = []
+    for feat in gj.get("features", []):
+        geom = feat.get("geometry") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates")
+        new_coords = None
+        if gtype == "Polygon" and coords:
+            rings = [_dp_simplify(r, epsilon) for r in coords]
+            rings = [r for r in rings if len(r) >= 4]
+            if rings:
+                new_coords = [[[round(x, 4) for x in pt] for pt in r]
+                              for r in rings]
+        elif gtype == "MultiPolygon" and coords:
+            polys = []
+            for poly in coords:
+                rings = [_dp_simplify(r, epsilon) for r in poly]
+                rings = [r for r in rings if len(r) >= 4]
+                if rings:
+                    polys.append([[[round(x, 4) for x in pt] for pt in r]
+                                  for r in rings])
+            if polys:
+                new_coords = polys
+        if new_coords is None:
+            continue
+        out_features.append({
+            "type": "Feature",
+            "properties": feat.get("properties", {}),
+            "geometry": {"type": gtype, "coordinates": new_coords},
+        })
+    return {"type": "FeatureCollection", "features": out_features}
+
+
+def _simplified_boundaries(level: int) -> dict:
+    """加载并缓存简化后的 GADM 边界（渲染专用，勿用于空间统计）"""
+    if level not in _SIMPLIFIED_CACHE:
+        from data.admin_boundaries import load_boundaries
+        raw = load_boundaries(level)
+        _SIMPLIFIED_CACHE[level] = _simplify_geojson(raw, _SIMPLIFY_EPSILON)
+        logger.info(
+            f"[MapGen] 边界简化 L{level}: "
+            f"{len(_SIMPLIFIED_CACHE[level]['features'])} features"
+        )
+    return _SIMPLIFIED_CACHE[level]
+
+
+def _legend_html() -> str:
+    """风险色阶图例（固定渐变条 + 6 档标签）"""
+    stops = ", ".join(
+        f"rgb({c[0]},{c[1]},{c[2]}) {int(p * 100)}%"
+        for p, c in _RISK_STOPS
+    )
+    labels = "".join(
+        f'<span style="flex:1;text-align:center">{name}</span>'
+        for name, _ in _LEGEND_LEVELS
+    )
+    return (
+        '<div style="position:fixed;bottom:10px;right:10px;z-index:999;'
+        'background:rgba(0,0,0,0.75);padding:8px 12px;border-radius:6px;'
+        'color:#ccc;font-size:11px;width:240px;">'
+        '<div style="margin-bottom:4px;font-weight:600">风险等级色阶 (0-100)</div>'
+        f'<div style="height:10px;border-radius:3px;'
+        f'background:linear-gradient(to right,{stops})"></div>'
+        f'<div style="display:flex;margin-top:3px">{labels}</div>'
+        '</div>'
+    )
+
+
+def _source_note_html(text: str) -> str:
+    """左下角数据来源说明栏"""
+    return (
+        '<div style="position:fixed;bottom:10px;left:60px;z-index:999;'
+        'background:rgba(0,0,0,0.7);padding:6px 12px;border-radius:4px;'
+        'color:#ccc;font-size:11px;">' + text + '</div>'
+    )
+
 
 class RiskMapGenerator:
-    """风险热力地图生成器"""
+    """风险地图生成器（分级填色 + 事件密度）"""
+
+    # ============================================================
+    # 1. 省级风险分级填色图（choropleth）
+    # ============================================================
 
     def generate_heatmap(self, risk_data: List[Dict]) -> str:
         """
-        生成缅甸风险热力地图
+        生成省级风险分级填色地图：GADM L1 省界按风险分连续染色
 
-        :param risk_data: 风险数据列表，每条包含省份和风险分
+        :param risk_data: [{province, risk_score, risk_level}, ...]
         :return: HTML 字符串
         """
-        # 创建基础地图
+        from data.admin_boundaries import PROVINCE_EN2CN
+        from folium.features import GeoJsonPopup, GeoJsonTooltip
+
         m = folium.Map(
-            location=MYANMAR_CENTER,
-            zoom_start=6,
+            location=MYANMAR_CENTER, zoom_start=6,
             tiles="CartoDB dark_matter"
         )
 
-        # 准备热力数据
-        heat_data = []
-        for item in risk_data:
-            province = item.get("province", "")
-            risk_score = item.get("risk_score", 0.5)
+        by_prov = {item.get("province", ""): item for item in risk_data}
+        gj = copy.deepcopy(_simplified_boundaries(1))
 
-            if "lat" in item and "lon" in item:
-                lat, lon = item["lat"], item["lon"]
-            elif province in MYANMAR_PROVINCES:
-                lat, lon = MYANMAR_PROVINCES[province]
-            else:
-                continue
-
-            # 强度统一归一化到 0~1（兼容 0~100 分制输入）
-            heat_data.append([lat, lon, self._normalize_score(risk_score)])
-
-        # 添加热力图层
-        if heat_data:
-            HeatMap(
-                heat_data,
-                radius=30,
-                blur=20,
-                max_zoom=10,
-                gradient={0.2: "green", 0.5: "yellow", 0.8: "orange", 1.0: "red"}
-            ).add_to(m)
-
-        # 为每个省份添加详细标记
-        for item in risk_data:
-            province = item.get("province", "")
-            risk_score = item.get("risk_score", 0.5)
-            risk_level = item.get("risk_level", "未知")
-            score_norm = self._normalize_score(risk_score)
-
-            if province in MYANMAR_PROVINCES:
-                lat, lon = MYANMAR_PROVINCES[province]
-                color = self._risk_color(score_norm)
-
-                # 详细弹窗内容（半径 6~16 像素，避免巨圆遮盖全图）
-                trend_dir = "↑" if score_norm > 0.6 else "↓" if score_norm < 0.4 else "→"
-                popup_html = (
-                    f"<div style='min-width:150px'>"
-                    f"<b style='font-size:14px'>{province}</b><br>"
-                    f"<hr style='border:1px solid #ddd;margin:4px 0'>"
-                    f"风险分: <b>{score_norm * 100:.1f}</b><br>"
-                    f"风险等级: <b>{risk_level}</b><br>"
-                    f"趋势: {trend_dir}<br>"
-                    f"<span style='font-size:11px;color:#666'>"
-                    f"经纬度: ({lat:.2f}, {lon:.2f})"
-                    f"</span></div>"
+        # 注入展示属性（中文名/分值文本），供 tooltip 与 popup 使用
+        for feat in gj["features"]:
+            name_en = feat["properties"].get("NAME_1", "")
+            name_cn = PROVINCE_EN2CN.get(name_en, name_en)
+            item = by_prov.get(name_cn)
+            feat["properties"]["name_cn"] = name_cn
+            if item:
+                norm = self._normalize_score(item.get("risk_score", 50))
+                feat["properties"]["score_text"] = (
+                    f"{risk_level_name(norm)} · {norm * 100:.1f} 分"
                 )
+            else:
+                feat["properties"]["score_text"] = "暂无数据"
 
-                folium.CircleMarker(
-                    location=[lat, lon],
-                    radius=6 + score_norm * 10,
-                    color=color,
-                    fill=True,
-                    fill_opacity=0.7,
-                    popup=folium.Popup(popup_html, max_width=250),
-                    tooltip=f"{province}: {score_norm * 100:.1f}"
-                ).add_to(m)
+        def style_fn(f):
+            name_cn = f["properties"].get("name_cn", "")
+            item = by_prov.get(name_cn)
+            if item:
+                norm = self._normalize_score(item.get("risk_score", 50))
+                return {
+                    "color": "#2a2d35",
+                    "weight": 0.8,
+                    "fillColor": risk_color_continuous(norm),
+                    "fillOpacity": 0.62,
+                }
+            return {
+                "color": "#2a2d35", "weight": 0.8,
+                "fillColor": "#3a3f47", "fillOpacity": 0.25,
+            }
 
-        # 添加数据来源说明
-        title_html = (
-            '<div style="position:fixed;bottom:10px;left:60px;z-index:999;'
-            'background:rgba(0,0,0,0.7);padding:6px 12px;border-radius:4px;'
-            'color:#ccc;font-size:11px;">'
-            '数据源: 新闻文本 + GDELT + VIIRS遥感 + World Bank'
-            '</div>'
+        def highlight_fn(f):
+            return {"weight": 2, "color": "#ffffff", "fillOpacity": 0.75}
+
+        layer = folium.GeoJson(
+            gj,
+            name="省级风险",
+            style_function=style_fn,
+            highlight_function=highlight_fn,
+            tooltip=GeoJsonTooltip(
+                fields=["name_cn", "score_text"], labels=False,
+                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+            ),
         )
-        m.get_root().html.add_child(folium.Element(title_html))
+        GeoJsonPopup(
+            fields=["name_cn", "score_text"],
+            labels=True,
+            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+                  "font-size:13px;",
+        ).add_to(layer)
+        layer.add_to(m)
 
+        # 国界描边（L0，覆盖在省界之上更清晰）
+        folium.GeoJson(
+            _simplified_boundaries(0),
+            name="国界",
+            style_function=lambda f: {
+                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+            },
+        ).add_to(m)
+
+        folium.LayerControl(collapsed=False).add_to(m)
+        m.get_root().html.add_child(folium.Element(_legend_html()))
+        m.get_root().html.add_child(folium.Element(_source_note_html(
+            "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1 · "
+            "点击省份查看详情"
+        )))
         return m._repr_html_()
+
+    # ============================================================
+    # 2. 默认地图（无数据时：灰色省界 + 提示）
+    # ============================================================
 
     def generate_default_map(self) -> str:
-        """
-        生成默认地图（无数据时展示缅甸行政区划）
-        """
+        """生成默认地图（无历史数据时展示灰色行政区划）"""
         m = folium.Map(
-            location=MYANMAR_CENTER,
-            zoom_start=6,
+            location=MYANMAR_CENTER, zoom_start=6,
             tiles="CartoDB dark_matter"
         )
-
-        # 标注所有省份
-        for province, (lat, lon) in MYANMAR_PROVINCES.items():
-            folium.Marker(
-                location=[lat, lon],
-                popup=province,
-                icon=folium.Icon(color="blue", icon="info-sign")
+        try:
+            folium.GeoJson(
+                _simplified_boundaries(1),
+                name="邦/省界",
+                style_function=lambda f: {
+                    "color": "#4a4f58", "weight": 0.8,
+                    "fillColor": "#3a3f47", "fillOpacity": 0.25,
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["NAME_1"], labels=False,
+                    style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                ),
             ).add_to(m)
+        except Exception as e:
+            logger.warning(f"[MapGen] 边界加载失败，使用无边界默认地图: {e}")
 
+        m.get_root().html.add_child(folium.Element(_source_note_html(
+            "暂无历史风险数据，展示行政区划底图（GADM 4.1）"
+        )))
         return m._repr_html_()
+
+    # ============================================================
+    # 3. 事件密度（KDE）地图
+    # ============================================================
 
     def generate_event_density_map(self, density: Dict, days: int = 7) -> str:
         """
@@ -148,27 +346,23 @@ class RiskMapGenerator:
         :param days: 统计窗口（展示用）
         :return: HTML 字符串
         """
-        from data.admin_boundaries import load_boundaries
-
         m = folium.Map(
-            location=MYANMAR_CENTER,
-            zoom_start=6,
+            location=MYANMAR_CENTER, zoom_start=6,
             tiles="CartoDB dark_matter"
         )
 
-        # 国界（GADM L0）
+        # 国界（简化版，加速渲染）
         folium.GeoJson(
-            load_boundaries(0),
+            _simplified_boundaries(0),
             name="国界",
             style_function=lambda f: {
-                "color": "#9aa0a8", "weight": 1.4,
-                "fill": False,
+                "color": "#9aa0a8", "weight": 1.4, "fill": False,
             },
         ).add_to(m)
 
-        # 省界（GADM L1，虚线细描）
+        # 省界（简化版，悬停显示名称）
         folium.GeoJson(
-            load_boundaries(1),
+            _simplified_boundaries(1),
             name="邦/省界",
             style_function=lambda f: {
                 "color": "#4a4f58", "weight": 0.8,
@@ -208,33 +402,27 @@ class RiskMapGenerator:
             ).add_to(m)
 
         folium.LayerControl(collapsed=False).add_to(m)
-
-        # 说明栏
-        info_html = (
-            '<div style="position:fixed;bottom:10px;left:60px;z-index:999;'
-            'background:rgba(0,0,0,0.7);padding:6px 12px;border-radius:4px;'
-            'color:#ccc;font-size:11px;">'
-            f'事件密度(KDE): GDELT 近{days}天 '
-            f'{density.get("event_count", 0)} 条事件 / '
-            f'有效定位 {density.get("located_count", 0)} 条 · '
-            '权重=事件严重度 · 边界: GADM 4.1'
-            '</div>'
-        )
-        m.get_root().html.add_child(folium.Element(info_html))
-
+        m.get_root().html.add_child(folium.Element(_source_note_html(
+            f"事件密度(KDE): GDELT 近{days}天 "
+            f"{density.get('event_count', 0)} 条事件 / "
+            f"有效定位 {density.get('located_count', 0)} 条 · "
+            "权重=事件严重度 · 边界: GADM 4.1"
+        )))
         return m._repr_html_()
+
+    # ============================================================
+    # 4. 提示地图（降级场景）
+    # ============================================================
 
     def generate_notice_map(self, message: str) -> str:
         """生成带提示信息的默认地图（数据不足等降级场景）"""
         m = folium.Map(
-            location=MYANMAR_CENTER,
-            zoom_start=6,
+            location=MYANMAR_CENTER, zoom_start=6,
             tiles="CartoDB dark_matter"
         )
         try:
-            from data.admin_boundaries import load_boundaries
             folium.GeoJson(
-                load_boundaries(0),
+                _simplified_boundaries(0),
                 style_function=lambda f: {
                     "color": "#9aa0a8", "weight": 1.4, "fill": False,
                 },
@@ -251,12 +439,16 @@ class RiskMapGenerator:
         m.get_root().html.add_child(folium.Element(notice_html))
         return m._repr_html_()
 
+    # ============================================================
+    # 工具方法
+    # ============================================================
+
     def _normalize_score(self, score: float) -> float:
         """
         风险分归一化到 0~1（兼容 0~100 分制与 0~1 比例两种输入）
 
         app.py 传入的是 0~100 分制；若上游改为比例值也能正确渲染，
-        避免半径/颜色计算因量纲错误生成遮盖全图的巨圆。
+        避免颜色/半径计算因量纲错误失真。
         """
         try:
             score = float(score)
@@ -266,7 +458,7 @@ class RiskMapGenerator:
         return max(0.0, min(1.0, norm))
 
     def _risk_color(self, score: float) -> str:
-        """根据归一化风险分(0~1)返回颜色"""
+        """3 档离散色（兼容保留；新渲染请使用 risk_color_continuous）"""
         if score >= 0.7:
             return "red"
         elif score >= 0.4:
