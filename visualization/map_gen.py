@@ -361,6 +361,130 @@ class RiskMapGenerator:
         return m._repr_html_()
 
     # ============================================================
+    # 1b. 省级风险混合图（风险圆点 + 省界描边，悬停/点击高亮）
+    # ============================================================
+
+    def generate_risk_hybrid_map(self, risk_data: List[Dict]) -> str:
+        """
+        生成混合风格风险地图：经典风险圆点 + GADM 真实省界描边
+
+        兼顾小组讨论中两种偏好：圆点直观展示风险强度，
+        省界提供行政区划认知；悬停/点击省份时边框高亮。
+
+        :param risk_data: [{province, risk_score, risk_level}, ...]
+        :return: HTML 字符串
+        """
+        from data.admin_boundaries import PROVINCE_EN2CN, province_centroids
+        from folium.features import GeoJsonPopup, GeoJsonTooltip
+
+        m = folium.Map(
+            location=MYANMAR_CENTER, zoom_start=6,
+            tiles="CartoDB dark_matter"
+        )
+
+        by_prov = {item.get("province", ""): item for item in risk_data}
+        centroids = province_centroids()  # 真实几何质心，替代手写坐标
+        gj = copy.deepcopy(_simplified_boundaries(1))
+
+        # 注入展示属性（供 tooltip/popup/高亮取色）
+        for feat in gj["features"]:
+            name_en = feat["properties"].get("NAME_1", "")
+            name_cn = PROVINCE_EN2CN.get(name_en, name_en)
+            item = by_prov.get(name_cn)
+            feat["properties"]["name_cn"] = name_cn
+            if item:
+                norm = self._normalize_score(item.get("risk_score", 50))
+                feat["properties"]["score_text"] = (
+                    f"{risk_level_name(norm)} · {norm * 100:.1f} 分"
+                )
+                feat["properties"]["_risk_color"] = risk_color_continuous(norm)
+            else:
+                feat["properties"]["score_text"] = "暂无数据"
+                feat["properties"]["_risk_color"] = "#3a3f47"
+
+        def style_fn(f):
+            return {
+                "color": "#7a828c", "weight": 1.1,
+                "fill": False,
+            }
+
+        def highlight_fn(f):
+            # 悬停/点击高亮：白色粗边框 + 本省风险色淡填色
+            return {
+                "weight": 2.6, "color": "#ffffff",
+                "fill": True,
+                "fillColor": f["properties"].get("_risk_color", "#3a3f47"),
+                "fillOpacity": 0.30,
+            }
+
+        layer = folium.GeoJson(
+            gj,
+            name="省界（悬停高亮）",
+            style_function=style_fn,
+            highlight_function=highlight_fn,
+            tooltip=GeoJsonTooltip(
+                fields=["name_cn", "score_text"], labels=False,
+                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+            ),
+        )
+        GeoJsonPopup(
+            fields=["name_cn", "score_text"],
+            labels=True,
+            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+                  "font-size:13px;",
+        ).add_to(layer)
+        layer.add_to(m)
+
+        # 风险圆点（位于真实几何质心，半径/颜色随风险分）
+        for item in risk_data:
+            province = item.get("province", "")
+            risk_level = item.get("risk_level", "未知")
+            score_norm = self._normalize_score(item.get("risk_score", 50))
+
+            latlon = centroids.get(province) or MYANMAR_PROVINCES.get(province)
+            if not latlon:
+                continue
+            color = risk_color_continuous(score_norm)
+            trend_dir = "↑" if score_norm > 0.6 else "↓" if score_norm < 0.4 else "→"
+            popup_html = (
+                f"<div style='min-width:150px'>"
+                f"<b style='font-size:14px'>{province}</b><br>"
+                f"<hr style='border:1px solid #ddd;margin:4px 0'>"
+                f"风险分: <b>{score_norm * 100:.1f}</b><br>"
+                f"风险等级: <b>{risk_level}</b><br>"
+                f"趋势: {trend_dir}<br>"
+                f"<span style='font-size:11px;color:#666'>"
+                f"经纬度: ({latlon[0]:.2f}, {latlon[1]:.2f})"
+                f"</span></div>"
+            )
+            folium.CircleMarker(
+                location=list(latlon),
+                radius=6 + score_norm * 10,
+                color=color,
+                fill=True,
+                fill_opacity=0.75,
+                popup=folium.Popup(popup_html, max_width=250),
+                tooltip=f"{province}: {score_norm * 100:.1f}",
+            ).add_to(m)
+
+        # 国界描边
+        folium.GeoJson(
+            _simplified_boundaries(0),
+            name="国界",
+            style_function=lambda f: {
+                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+            },
+        ).add_to(m)
+
+        folium.LayerControl(collapsed=False).add_to(m)
+        m.get_root().html.add_child(folium.Element(_legend_html()))
+        m.get_root().html.add_child(folium.Element(_source_note_html(
+            "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1 · "
+            "悬停省份高亮，点击查看详情"
+        )))
+        return m._repr_html_()
+
+    # ============================================================
     # 2. 默认地图（无数据时：灰色省界 + 提示）
     # ============================================================
 

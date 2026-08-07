@@ -19,12 +19,13 @@
 
     <main class="container">
         <h2>缅甸风险地图</h2>
-        <p class="subtitle">省级风险分级填色图 / 事件密度核密度分析（KDE），悬停或点击查看详情</p>
+        <p class="subtitle">三种风格对比：分级填色 / 圆点+省界混合 / 事件密度 KDE，悬停或点击查看详情</p>
 
         <div class="controls">
             <label>地图类型
                 <select id="map-mode">
                     <option value="risk" selected>省级风险分级填色</option>
+                    <option value="hybrid">省级风险（圆点+省界）</option>
                     <option value="events">事件密度 (KDE)</option>
                 </select>
             </label>
@@ -66,7 +67,8 @@
 
             var url = mode === 'events'
                 ? '/api/map/events?days=' + encodeURIComponent(days)
-                : '/api/map?days=' + encodeURIComponent(days);
+                : '/api/map?days=' + encodeURIComponent(days)
+                  + '&mode=' + encodeURIComponent(mode === 'hybrid' ? 'hybrid' : 'choropleth');
 
             try {
                 var resp = await fetch(url);

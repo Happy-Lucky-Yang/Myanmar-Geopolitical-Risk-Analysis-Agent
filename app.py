@@ -615,26 +615,30 @@ def scheduler_control():
 @app.route("/api/map", methods=["GET"])
 def risk_map():
     """
-    省级风险分级填色地图接口
+    省级风险地图接口
 
     查询参数:
         - days: 查询最近多少天的数据（默认 7）
+        - mode: choropleth=分级填色（默认） / hybrid=风险圆点+省界描边高亮
 
     响应: HTML 字符串（带 5 分钟 HTML 缓存，模式切换秒开）
     """
     try:
         days = request.args.get("days", 7, type=int)
+        mode = request.args.get("mode", "choropleth")
 
         def _build():
             loader = get_data_loader()
             history = loader.load_risk_history(days=days)
             map_gen = get_map_generator()
             if history:
-                return map_gen.generate_heatmap(
-                    _build_province_risk_data(history))
+                risk_data = _build_province_risk_data(history)
+                if mode == "hybrid":
+                    return map_gen.generate_risk_hybrid_map(risk_data)
+                return map_gen.generate_heatmap(risk_data)
             return map_gen.generate_default_map()
 
-        html = _cached_map_html(f"risk:{days}", 300, _build)
+        html = _cached_map_html(f"risk:{mode}:{days}", 300, _build)
         return Response(html, mimetype="text/html")
 
     except Exception as e:
