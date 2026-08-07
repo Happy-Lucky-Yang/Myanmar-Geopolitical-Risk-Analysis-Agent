@@ -428,7 +428,7 @@ textarea::placeholder {
 /* ---------- 结果面板网格 ---------- */
 .result-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: 1rem;
     margin-top: 1.5rem;
 }
@@ -569,7 +569,7 @@ textarea::placeholder {
 /* ---------- 摘要卡片 (趋势页) ---------- */
 .summary-cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
     margin-top: 1rem;
 }
@@ -715,7 +715,7 @@ textarea::placeholder {
 /* ---------- 图表容器 ---------- */
 #trend-chart {
     width: 100%;
-    height: 420px;
+    height: 520px;
     margin-top: 1.25rem;
     border: 1px solid var(--border-default);
     border-radius: var(--radius);
