@@ -130,28 +130,119 @@ body {
     flex: 1;
 }
 
-/* ---------- 地图页面全屏 flex 布局（地图填满剩余视口） ---------- */
+/* ---------- 地图页面：侧边栏 + 全宽地图 ---------- */
 .map-page {
     display: flex;
-    flex-direction: column;
-    margin: 0 auto;
-    padding: 0.5rem 1.5rem;
+    flex-direction: row;
+    height: calc(100vh - 56px);
     overflow: hidden;
 }
-.map-page h2 {
-    margin: 0;
+
+.map-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+    border-right: 1px solid var(--border-default);
+    background: rgba(0, 0, 0, 0.25);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.map-sidebar h2 {
+    margin: 0 0 0.25rem;
     font-size: 1.05rem;
 }
-.map-page .controls {
-    margin-bottom: 0.4rem;
+.sidebar-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
 }
+.sidebar-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.sidebar-select {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--bg-input, #1a1d23);
+    color: var(--text-primary);
+}
+.sidebar-btn {
+    width: 100%;
+    text-align: center;
+}
+
+/* 图层面板（嵌入侧边栏，不再浮动） */
+.map-sidebar .lp-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+}
+.map-sidebar .lp-group {
+    margin: 0.5rem 0 0.2rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+.map-sidebar .lp-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.map-sidebar .lp-item input {
+    cursor: pointer;
+    accent-color: var(--accent-blue);
+}
+.map-sidebar .lp-slider {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    gap: 4px;
+}
+.map-sidebar .lp-slider input[type="range"] {
+    flex: 1;
+    min-width: 50px;
+    cursor: pointer;
+}
+
+/* 地图主区域 */
 .map-page .map-wrap {
     flex: 1;
-    min-height: 0;
+    position: relative;
+    min-width: 0;
 }
 .map-page #map-container {
+    width: 100%;
     height: 100%;
     min-height: 0;
+    border: none;
+    border-radius: 0;
+}
+
+/* 响应式：窄屏竖排 */
+@media (max-width: 768px) {
+    .map-page {
+        flex-direction: column;
+        height: auto;
+    }
+    .map-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-default);
+        max-height: 240px;
+    }
+    .map-page .map-wrap {
+        height: 60vh;
+    }
 }
 
 h2 {

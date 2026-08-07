@@ -17,37 +17,29 @@
         </ul>
     </nav>
 
-    <main class="container map-page">
-        <h2>缅甸风险地图</h2>
+    <main class="map-page">
+        <!-- 侧边栏：控件 + 图层面板 -->
+        <aside class="map-sidebar">
+            <h2>缅甸风险地图</h2>
 
-        <div class="controls">
-            <label>查看最近
-                <select id="days-select">
-                    <option value="7">7天</option>
-                    <option value="14">14天</option>
-                    <option value="30" selected>30天</option>
-                    <option value="90">90天</option>
+            <div class="sidebar-section">
+                <div class="sidebar-label">时间窗口</div>
+                <select id="days-select" class="sidebar-select">
+                    <option value="7">7 天</option>
+                    <option value="14">14 天</option>
+                    <option value="30" selected>30 天</option>
+                    <option value="90">90 天</option>
                 </select>
-                数据
-            </label>
-            <button type="button" class="btn btn-primary" onclick="loadMap()">刷新地图</button>
-        </div>
-
-        <div class="map-wrap">
-            <div id="map-container">
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                    <p class="loading-text">加载地图中...</p>
-                </div>
+                <button type="button" class="btn btn-primary sidebar-btn" onclick="loadMap()">刷新地图</button>
             </div>
 
-            <!-- 自定义图层面板 -->
-            <div id="layer-panel" class="layer-panel" style="display:none">
+            <div class="sidebar-section">
                 <div class="lp-title">🗂️ 图层面板</div>
                 <div class="lp-group">省级风险风格（二选一）</div>
                 <label class="lp-item"><input type="radio" name="risk-style" value="hybrid" checked> 圆点+光晕</label>
                 <label class="lp-item"><input type="radio" name="risk-style" value="choropleth"> 分级填色</label>
                 <label class="lp-item"><input type="radio" name="risk-style" value="none"> 关闭</label>
+
                 <div class="lp-group">叠加图层</div>
                 <label class="lp-item"><input type="checkbox" id="lyr-kde"> 事件密度 (KDE)</label>
                 <div class="lp-item lp-slider">密度透明度
@@ -55,6 +47,16 @@
                 </div>
                 <label class="lp-item"><input type="checkbox" id="lyr-borders" checked> 省界（悬停高亮）</label>
                 <label class="lp-item"><input type="checkbox" id="lyr-country" checked> 国界</label>
+            </div>
+        </aside>
+
+        <!-- 地图主区域 -->
+        <div class="map-wrap">
+            <div id="map-container">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p class="loading-text">加载地图中...</p>
+                </div>
             </div>
         </div>
     </main>
@@ -71,7 +73,6 @@
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 var html = await resp.text();
 
-                // 安全检查：确保返回的是有效 HTML
                 if (!html || html.length < 50) {
                     throw new Error('地图数据为空');
                 }
@@ -95,26 +96,22 @@
                 if (window._mmLayers && window._mmMap) {
                     clearInterval(timer);
                     doPanelBind();
-                } else if (tries > 50) {  // 10 秒超时：隐藏面板
+                } else if (tries > 50) {
                     clearInterval(timer);
-                    document.getElementById('layer-panel').style.display = 'none';
                 }
             }, 200);
         }
 
         function doPanelBind() {
-            var panel = document.getElementById('layer-panel');
             var layers = window._mmLayers;
             var map = window._mmMap;
-            if (!layers || !map) { panel.style.display = 'none'; return; }
-            panel.style.display = 'block';
+            if (!layers || !map) return;
 
             function setOn(layer, on) {
                 if (!layer) return;
                 if (on) { layer.addTo(map); } else { map.removeLayer(layer); }
             }
 
-            // 风险风格互斥组
             function applyStyle(v) {
                 setOn(layers.hybrid, v === 'hybrid');
                 setOn(layers.choropleth, v === 'choropleth');
@@ -125,7 +122,6 @@
             var checked = document.querySelector('input[name="risk-style"]:checked');
             applyStyle(checked ? checked.value : 'hybrid');
 
-            // 事件密度层（累积库未就绪时禁用）
             var kdeBox = document.getElementById('lyr-kde');
             var kdeSlider = document.getElementById('kde-opacity');
             if (!layers.kde) {
@@ -141,7 +137,6 @@
                 }
             };
 
-            // 省界/国界开关
             document.getElementById('lyr-borders').onchange = function () {
                 setOn(layers.borders, this.checked);
             };
@@ -150,7 +145,6 @@
             };
         }
 
-        // 页面加载时自动加载
         loadMap();
     </script>
 </body>
