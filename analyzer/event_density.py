@@ -81,7 +81,7 @@ class EventDensityAnalyzer:
         :param days: 仅统计最近 N 天事件（按 SQLDATE 过滤），None=全部
         :return: {
             "degraded": 降级原因或 None,
-            "grid": [[lat, lon, weight(0~1)], ...] 供热力图渲染,
+            "grid": [[lat, lon, weight(0~1)], ...] 供密度图层渲染,
             "event_count": 统计窗口内事件总数,
             "located_count": 其中含有效坐标数,
             "peak_lat"/"peak_lon": 密度峰值位置,

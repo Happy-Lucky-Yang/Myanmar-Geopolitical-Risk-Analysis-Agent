@@ -11,7 +11,7 @@ API 接口：
   GET  /api/gdelt      - 查询 GDELT 事件数据
   GET  /api/scheduler  - 查看调度器状态
   POST /api/scheduler  - 手动触发爬取/分析任务
-  GET  /api/map        - 返回风险热力地图 HTML
+  GET  /api/map        - 返回省级风险分级填色地图 HTML
   GET  /api/trend      - 返回趋势数据 JSON
   GET  /health         - 健康检查
 """
@@ -615,7 +615,7 @@ def scheduler_control():
 @app.route("/api/map", methods=["GET"])
 def risk_map():
     """
-    风险热力地图接口
+    省级风险分级填色地图接口
 
     查询参数:
         - days: 查询最近多少天的数据（默认 7）

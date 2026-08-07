@@ -162,7 +162,7 @@ Base URL: `http://localhost:5000`
 
 **GET** `/api/map?days=7`
 
-返回缅甸风险热力地图 HTML（folium 生成），可直接嵌入 iframe。
+返回缅甸省级风险分级填色地图 HTML（folium 生成，GADM 省界 + 6 档色阶），可直接嵌入 iframe。
 
 ### 参数
 
@@ -281,7 +281,7 @@ Content-Type: `text/html`
 | 路径     | 页面       | 说明 |
 |----------|------------|------|
 | `/`      | chat.html  | 对话分析：输入文本 → 结构化分析结果 |
-| `/map`   | map.html   | 风险地图：folium 热力地图 |
+| `/map`   | map.html   | 风险地图：双模式（省界分级填色 / 事件密度 KDE） |
 | `/trend` | trend.html | 趋势预测：ECharts 折线图 |
 | `/dashboard` | dashboard.html | 综合态势：预警、位势、网络和多源融合 |
 

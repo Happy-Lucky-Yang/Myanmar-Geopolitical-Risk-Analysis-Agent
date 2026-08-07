@@ -22,7 +22,7 @@
 | **二 清洗结构化** | 质量检查/多模态对齐/NER/知识图谱 | ✅ 清洗去重 + 多模态时空对齐 + LAC + spaCy 双语 NER + Neo4j 图谱(可选) |
 | **三 智能计算** | LLM/轻量算法/地缘位势/链式推理 | ✅ LLM 封装 + NetworkX + **地缘位势(1/d²)** + **空间自相关(Moran's I)** + 链式推理 |
 | **四 态势分析** | 描述/探索/诊断/预测 | ✅ 描述性 + 异常探测 + **诊断归因** + 趋势预测 |
-| **五 输出可视化** | 态势图/智能报告/预警面板 | ✅ Folium 热力图 + HTML/DOCX 报告 + 动态预警面板 |
+| **五 输出可视化** | 态势图/智能报告/预警面板 | ✅ Folium 风险地图（省界分级填色 + 事件密度 KDE） + HTML/DOCX 报告 + 动态预警面板 |
 
 ## 项目结构
 ```
@@ -64,7 +64,7 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   ├── static/gadm/              # 🆕 GADM 4.1 缅甸四级行政边界（学术许可，论文需注源）
 │   └── raw/                      # 原始数据 + 缓存
 ├── visualization/
-│   ├── map_gen.py                # Folium 热力地图（暗色主题 + 详细弹窗）
+│   ├── map_gen.py                # Folium 地图生成（省界分级填色/事件密度，暗色主题）
 │   └── chart_gen.py              # ECharts 图表数据（预测/阈值线/事件标注）
 ├── templates/                    # Flask 模板（4 个页面）
 │   ├── chat.html                 # 对话分析（含诊断归因 + 链式推理）
