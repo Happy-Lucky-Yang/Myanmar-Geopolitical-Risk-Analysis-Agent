@@ -55,6 +55,10 @@ node_modules/
 docs/_proposal_temp.txt
 # 临时验证脚本
 *_tmp_*.py
+# Python 3.12 安装器/隔离环境（体积大，不入 git）
+py312_installer.exe
+py312/
+venv312/
 # 浏览器验证截图残留
 dashboard_source_health_card.png
 # GIS 原始数据（体积大/二进制，不入 git；行政边界用 data/static/gadm/ 的 GeoJSON）
