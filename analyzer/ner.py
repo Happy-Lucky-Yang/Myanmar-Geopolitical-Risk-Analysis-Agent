@@ -10,11 +10,19 @@ from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
-# 中文 NER：百度 LAC
+# 中文 NER：百度 LAC（首选，需 paddlepaddle）
 try:
     from LAC import LAC
 except ImportError:
     LAC = None
+
+# 中文 NER 回退：jieba 词性标注（纯 Python，全版本可用）
+try:
+    import jieba
+    import jieba.posseg as pseg
+except ImportError:
+    jieba = None
+    pseg = None
 
 # 英文 NER：spaCy
 try:
@@ -22,7 +30,33 @@ try:
 except ImportError:
     spacy = None
 
-# 地缘政治事件关键词（用于辅助事件实体识别）
+# 缅甸地缘政治词典（jieba 自定义词，提升实体识别召回）
+# (词, 词性)  ns=地名 nr=人名 nt=机构
+JIEBA_GEO_DICT = [
+    # 地名/行政区
+    ("缅甸", "ns"), ("仰光", "ns"), ("内比都", "ns"), ("掸邦", "ns"), ("克钦邦", "ns"),
+    ("克伦邦", "ns"), ("若开邦", "ns"), ("钦邦", "ns"), ("克耶邦", "ns"), ("孟邦", "ns"),
+    ("实皆省", "ns"), ("马圭省", "ns"), ("勃固省", "ns"), ("伊洛瓦底省", "ns"),
+    ("德林达依省", "ns"), ("曼德勒", "ns"), ("腊戌", "ns"), ("木姐", "ns"), ("勐拉", "ns"),
+    # 人名
+    ("昂山素季", "nr"), ("敏昂莱", "nr"), ("登盛", "nr"), ("吴廷觉", "nr"),
+    # 机构/组织/武装
+    ("缅甸国防军", "nt"), ("若开军", "nt"), ("克钦独立军", "nt"), ("德昂民族解放军", "nt"),
+    ("缅甸民族民主同盟军", "nt"), ("民族团结政府", "nt"), ("国家管理委员会", "nt"),
+    ("东盟", "nt"), ("联合国", "nt"), ("欧盟", "nt"), ("世界银行", "nt"),
+    ("三兄弟联盟", "nt"), ("佤邦联合军", "nt"),
+]
+_jieba_dict_loaded = False
+
+
+def _ensure_jieba_dict():
+    """向 jieba 注入缅甸地缘词典（仅一次）"""
+    global _jieba_dict_loaded
+    if _jieba_dict_loaded or jieba is None:
+        return
+    for word, flag in JIEBA_GEO_DICT:
+        jieba.add_word(word, freq=100000, tag=flag)
+    _jieba_dict_loaded = True
 EVENT_KEYWORDS_ZH = [
     "冲突", "战斗", "空袭", "武装", "交火", "爆炸", "袭击", "制裁",
     "政变", "选举", "抗议", "暴动", "难民", "停火", "和谈",
@@ -100,6 +134,18 @@ class NERExtractor:
         return entities
 
     def _extract_zh(self, text: str) -> Dict[str, List[str]]:
+        """中文 NER：优先 LAC，回退 jieba 词性标注"""
+        if LAC is not None:
+            try:
+                return self._extract_zh_lac(text)
+            except Exception as e:
+                logger.warning(f"[NER] LAC 不可用，回退 jieba: {e}")
+        if pseg is not None:
+            return self._extract_zh_jieba(text)
+        # 最后回退：正则
+        return self._extract_zh_regex(text)
+
+    def _extract_zh_lac(self, text: str) -> Dict[str, List[str]]:
         """中文 NER：使用 LAC"""
         self._ensure_lac_loaded()
 
@@ -116,10 +162,36 @@ class NERExtractor:
                 elif tag == "PER":
                     entities["persons"].append(word)
 
-        # 去重
         for key in entities:
-            entities[key] = list(dict.fromkeys(entities[key]))  # 保持顺序去重
+            entities[key] = list(dict.fromkeys(entities[key]))
+        return entities
 
+    def _extract_zh_jieba(self, text: str) -> Dict[str, List[str]]:
+        """中文 NER 回退：jieba 词性标注（ns/nr/nt）"""
+        _ensure_jieba_dict()
+        entities = {"locations": [], "organizations": [], "persons": []}
+        for word, flag in pseg.cut(text):
+            if flag == "ns":
+                entities["locations"].append(word)
+            elif flag == "nt":
+                entities["organizations"].append(word)
+            elif flag == "nr":
+                entities["persons"].append(word)
+        for key in entities:
+            entities[key] = list(dict.fromkeys(entities[key]))
+        return entities
+
+    def _extract_zh_regex(self, text: str) -> Dict[str, List[str]]:
+        """中文 NER 最后回退：词典正则匹配"""
+        entities = {"locations": [], "organizations": [], "persons": []}
+        for word, flag in JIEBA_GEO_DICT:
+            if word in text:
+                if flag == "ns":
+                    entities["locations"].append(word)
+                elif flag == "nt":
+                    entities["organizations"].append(word)
+                elif flag == "nr":
+                    entities["persons"].append(word)
         return entities
 
     def _extract_en(self, text: str) -> Dict[str, List[str]]:
