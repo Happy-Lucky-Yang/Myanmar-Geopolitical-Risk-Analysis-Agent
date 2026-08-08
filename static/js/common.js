@@ -127,13 +127,15 @@ function showToast(msg, type) {
 
 /* ---------- 加载态管理 ---------- */
 
-function renderLoading(container) {
+function renderLoading(container, msg) {
     if (!container) return;
     container.innerHTML = '';
     const wrap = createEl('div', 'loading-spinner');
-    const spinner = createEl('div', 'spinner');
-    const text = createEl('p', 'loading-text', '加载中...');
-    wrap.appendChild(spinner);
+    const radar = createEl('div', 'loader-radar');
+    radar.appendChild(createEl('div', 'sweep'));
+    radar.appendChild(createEl('div', 'core'));
+    const text = createEl('p', 'loading-text', msg || '正在加载地理数据…');
+    wrap.appendChild(radar);
     wrap.appendChild(text);
     container.appendChild(wrap);
 }
