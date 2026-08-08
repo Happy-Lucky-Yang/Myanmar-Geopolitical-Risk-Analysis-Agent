@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 趋势预测</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808c">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -19,9 +19,9 @@
         </ul>
     </nav>
 
-    <main class="container">
+    <main class="container console-page">
         <h2>风险趋势分析</h2>
-        <p class="subtitle">基于历史数据的风险评分走势与趋势研判</p>
+        <p class="subtitle">Risk Trend · Forecast · Anomaly Detection</p>
 
         <div class="controls">
             <label>时间范围
@@ -34,32 +34,34 @@
             <button class="btn btn-primary" onclick="loadTrend()">刷新</button>
         </div>
 
-        <!-- 摘要卡片 -->
-        <div class="summary-cards" id="summary-cards"></div>
+        <div class="console-grid">
+            <!-- 摘要卡片 -->
+            <div class="span-12"><div class="summary-cards" id="summary-cards"></div></div>
 
-        <!-- ECharts 图表 -->
-        <div id="trend-chart"></div>
+            <!-- ECharts 图表 -->
+            <div class="span-12"><div id="trend-chart"></div></div>
 
-        <!-- 预测信息 -->
-        <div class="forecast-section">
-            <h3>📈 短期预测 (7天)</h3>
-            <div id="forecast-area"></div>
-        </div>
+            <!-- 预测信息 -->
+            <div class="card span-6">
+                <div class="card-title"><span class="icon">📈</span> 短期预测 (7天)</div>
+                <div id="forecast-area"></div>
+            </div>
 
-        <!-- 异常事件 -->
-        <div class="forecast-section">
-            <h3>⚡ 异常事件检测</h3>
-            <div id="anomaly-area"></div>
-        </div>
+            <!-- 异常事件 -->
+            <div class="card span-6">
+                <div class="card-title"><span class="icon">⚡</span> 异常事件检测</div>
+                <div id="anomaly-area"></div>
+            </div>
 
-        <!-- 报告导出 -->
-        <div class="forecast-section" style="text-align:center;margin-top:1.5rem;">
-            <a href="/api/report?format=html&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;margin-right:8px;">导出 HTML 报告</a>
-            <a href="/api/report?format=docx&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;">导出 DOCX 报告</a>
+            <!-- 报告导出 -->
+            <div class="span-12" style="text-align:center;margin-top:0.5rem;">
+                <a href="/api/report?format=html&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;margin-right:8px;">导出 HTML 报告</a>
+                <a href="/api/report?format=docx&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;">导出 DOCX 报告</a>
+            </div>
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808c"></script>
     <script src="{{ url_for('static', filename='js/trend.js') }}"></script>
 </body>
 </html>

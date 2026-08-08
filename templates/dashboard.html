@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 综合态势</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808c">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -19,9 +19,9 @@
         </ul>
     </nav>
 
-    <main class="container">
+    <main class="container console-page">
         <h2>综合地缘态势仪表盘</h2>
-        <p class="subtitle">多源数据融合 · 地缘位势评估 · 关系网络 · 动态预警</p>
+        <p class="subtitle">Multi-Source Fusion · Geopolitical Potential · Network · Early Warning</p>
 
         <div class="controls">
             <button class="btn btn-primary" onclick="loadAll()">刷新全部</button>
@@ -29,59 +29,59 @@
             <a href="/api/report?format=docx&days=30" target="_blank" class="btn btn-secondary" style="text-decoration:none">导出 DOCX 报告</a>
         </div>
 
-        <!-- 预警面板 -->
-        <div class="card" style="margin-bottom:1rem">
-            <div class="card-title"><span class="icon">🚨</span> 动态预警面板</div>
-            <div id="alert-panel"></div>
-        </div>
+        <div class="console-grid">
+            <!-- 预警面板 -->
+            <div class="card span-4">
+                <div class="card-title"><span class="icon">🚨</span> 动态预警面板</div>
+                <div id="alert-panel"></div>
+            </div>
 
-        <!-- 数据源健康 -->
-        <div class="card" style="margin-bottom:1rem">
-            <div class="card-title"><span class="icon">📡</span> 数据源健康 <span class="tag-hint">成功率 · 自动降级监控</span></div>
-            <div id="source-health-body"></div>
-        </div>
+            <!-- 数据源健康 -->
+            <div class="card span-8">
+                <div class="card-title"><span class="icon">📡</span> 数据源健康 <span class="tag-hint">成功率 · 自动降级监控</span></div>
+                <div id="source-health-body"></div>
+            </div>
 
-        <div class="result-grid">
             <!-- 地缘位势评估 -->
-            <div class="card">
+            <div class="card span-3">
                 <div class="card-title"><span class="icon">🧭</span> 地缘位势评估 <span class="tag-hint">距离加权 1/d²</span></div>
                 <div id="geo-body"></div>
             </div>
 
             <!-- 空间自相关 -->
-            <div class="card">
+            <div class="card span-3">
                 <div class="card-title"><span class="icon">🗺️</span> 空间自相关 <span class="tag-hint">Moran's I</span></div>
                 <div id="autocorr-body"></div>
             </div>
 
             <!-- 关系网络 -->
-            <div class="card">
+            <div class="card span-3">
                 <div class="card-title"><span class="icon">🕸️</span> 关系网络分析 <span class="tag-hint">NetworkX</span></div>
                 <div id="network-body"></div>
             </div>
 
             <!-- 诊断归因 -->
-            <div class="card">
+            <div class="card span-3">
                 <div class="card-title"><span class="icon">🔬</span> 诊断性归因 <span class="tag-hint">驱动机制</span></div>
                 <div id="diagnostic-body"></div>
             </div>
-        </div>
 
-        <!-- 多源融合视图 (ECharts) -->
-        <div class="card" style="margin-top:1rem">
-            <div class="card-title"><span class="icon">📊</span> 多源数据融合视图 <span class="tag-hint">夜光 × 冲突 × 情感</span></div>
-            <div id="multimodal-chart" style="width:100%;height:440px"></div>
-            <div id="correlation-body"></div>
-        </div>
+            <!-- 多源融合视图 -->
+            <div class="card span-12">
+                <div class="card-title"><span class="icon">📊</span> 多源数据融合视图 <span class="tag-hint">夜光 × 冲突 × 情感</span></div>
+                <div id="multimodal-chart" style="width:100%;height:440px"></div>
+                <div id="correlation-body"></div>
+            </div>
 
-        <!-- 历史事件时间线 -->
-        <div class="card" style="margin-top:1rem">
-            <div class="card-title"><span class="icon">📅</span> 历史事件时间线 <span class="tag-hint">2020-2025 重大事件</span></div>
-            <div id="history-body"></div>
+            <!-- 历史事件时间线 -->
+            <div class="card span-12">
+                <div class="card-title"><span class="icon">📅</span> 历史事件时间线 <span class="tag-hint">2020-2025 重大事件</span></div>
+                <div id="history-body"></div>
+            </div>
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808c"></script>
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>
