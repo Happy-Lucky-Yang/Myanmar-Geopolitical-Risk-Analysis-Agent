@@ -171,10 +171,11 @@ class ChainReasoner:
 
         if step_key == "impact_analysis":
             event_info = self._format_result(previous.get("event_identification", {}))
-            return CHAIN_TEMPLATES[step_key]["system_prompt"].format(
-                previous_result=event_info
-            ).replace(CHAIN_TEMPLATES[step_key]["system_prompt"].split("\n")[0] + "\n", "") + \
-                f"\n\n原始新闻:\n{text[:2000]}"
+            # 模板内含 JSON 字面花括号，不能用 .format()（会把 JSON 当占位符解析报 KeyError），
+            # 改用 .replace() 仅替换 {previous_result}
+            prompt = CHAIN_TEMPLATES[step_key]["system_prompt"].replace(
+                "{previous_result}", event_info)
+            return prompt + f"\n\n原始新闻:\n{text[:2000]}"
 
         if step_key == "trend_assessment":
             event_info = self._format_result(previous.get("event_identification", {}))
