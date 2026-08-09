@@ -5,6 +5,32 @@
 
 ---
 
+## 零、环境修复与 NER 复测（最高优先级，其余一切的前置）
+
+### 0.1 安装 Python 3.12 venv + LAC ——【待手动执行】
+
+当前运行环境为 Python 3.14，paddlepaddle/LAC 无 3.14 发行版，中文 NER 走 jieba 回退（micro-F1 0.39）。
+验收环境应为 3.10/3.12 + LAC。在沙箱外手动执行：
+
+```
+py -3.12 -m venv venv312
+venv312\Scripts\activate
+pip install -r requirements.txt lac==2.1.2
+python -m spacy download en_core_web_sm
+```
+
+### 0.2 NER 批次1 复测（装好 3.12+LAC 后的第一步）——【条件触发】
+
+```
+python scripts/evaluate_acceptance.py --ner-gold data/static/ner_annotations/ner_gold_batch1.json
+```
+
+- 判定：**若 micro-F1 ≥ 0.70** → NER 验收通过，立即启动“验证”（将 LAC 作为中文 NER 主路径复跑全链路，更新 README 验收记录）。
+- 若仍 < 0.70 → 不启动验证，转而扩充 jieba 地缘词典或补充标注，再复测。
+- 当前基线（Py3.14 jieba）：情感一致率 0.70 ✅ / NER micro-F1 0.39 ❌。
+
+---
+
 ## 一、遥感升级包（团队已决议推进）
 
 ### 1.1 VIIRS 夜间灯光原始栅格接入 ——【待数据】

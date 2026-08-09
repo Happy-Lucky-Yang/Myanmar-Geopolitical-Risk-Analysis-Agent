@@ -6,9 +6,12 @@ data.source_health - 数据源健康追踪器
 供 /api/sources/health 与前端"数据源健康"卡片展示。
 
 状态判定规则：
-- healthy  : 成功率 >= 70% 且最近一次成功
+- healthy  : 近期窗口（最近6次）成功率 >= 70% 且最近一次成功
 - degraded : 其余情况（时好时坏）
 - dead     : 最近 3 次全部失败（站点停运/被封，应关注替代源）
+
+说明：状态基于“近期窗口”而非全量20条窗口，避免早期失败（如代理刚开启时）
+长期拖累状态，使已恢复的源能及时回到 healthy；整体成功率仍按全窗口展示。
 """
 import os
 import json
@@ -23,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 # 每个源最多保留的历史记录条数
 MAX_RECORDS = 20
+
+# 状态判定使用的近期窗口大小（避免旧失败长期拖累状态）
+RECENT_WINDOW = 6
 
 
 class SourceHealthTracker:
@@ -74,9 +80,12 @@ class SourceHealthTracker:
                 rate = round(success / total, 3) if total else 0.0
 
                 last3 = records[-3:]
+                recent = records[-RECENT_WINDOW:]
+                recent_rate = (sum(1 for r in recent if r["ok"]) / len(recent)
+                               if recent else 0.0)
                 if total >= 3 and all(not r["ok"] for r in last3):
                     status = "dead"
-                elif total > 0 and records[-1]["ok"] and rate >= 0.7:
+                elif total > 0 and records[-1]["ok"] and recent_rate >= 0.7:
                     status = "healthy"
                 else:
                     status = "degraded"
