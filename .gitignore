@@ -55,6 +55,8 @@ node_modules/
 docs/_proposal_temp.txt
 # 临时验证脚本
 *_tmp_*.py
+# 私密文档（汇报/学习资料，不入库；请手动移入私密目录）
+private/
 # Python 3.12 安装器/隔离环境（体积大，不入 git）
 py312_installer.exe
 py312/
