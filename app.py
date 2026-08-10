@@ -470,16 +470,17 @@ def sources_health():
 @app.route("/api/diagnostic", methods=["GET"])
 def diagnostic_analysis():
     """
-    诊断性分析接口 (驱动机制归因)
+    诊断性分析接口 (驱动机制归因 + 上升原因详解 + 未来风险预警)
 
-    参数: days (变化归因窗口, 默认14)
-    返回: 基于历史数据的风险变化归因
+    参数: days (变化归因窗口, 默认14), ahead (未来预测天数, 默认7)
+    返回: 变化归因 + rise_explanation(上升原因详解) + future_outlook(未来预警)
     """
     try:
         from analyzer.diagnostic import get_diagnostic_analyzer
         diag = get_diagnostic_analyzer()
         days = request.args.get("days", 14, type=int)
-        result = diag.diagnose_from_history(days=days)
+        ahead = request.args.get("ahead", 7, type=int)
+        result = diag.explain_and_forecast(days=days, days_ahead=ahead)
         return jsonify({"success": True, "data": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

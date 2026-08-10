@@ -213,6 +213,132 @@ class DiagnosticAnalyzer:
         result["recent_period"] = f"{recent[0]['date']} ~ {recent[-1]['date']}"
         return result
 
+    def explain_and_forecast(self, days: int = 14, days_ahead: int = 7) -> Dict:
+        """
+        风险上升原因详解 + 未来风险预警（诊断增强）
+
+        在 diagnose_from_history 基础上，补充：
+          - rise_explanation: 逐指标带具体数值的上升原因详解
+          - future_outlook: 基于线性外推的未来风险预警（预测分/预警级别/先行信号）
+
+        :param days: 归因窗口天数
+        :param days_ahead: 未来预测天数
+        :return: 增强诊断结果
+        """
+        try:
+            from analyzer.data_loader import get_data_loader
+            loader = get_data_loader()
+            history = loader.load_risk_history(days=days)
+        except Exception as e:
+            return {"error": f"无法加载历史数据: {e}"}
+
+        if len(history) < 4:
+            return {"error": "历史数据不足 (需至少4天)", "data_points": len(history)}
+
+        base = self.diagnose_from_history(days=days)
+
+        mid = len(history) // 2
+        older, recent = history[:mid], history[mid:]
+
+        def _agg_raw(records):
+            agg, cnt = {}, max(len(records), 1)
+            for rec in records:
+                for k, v in rec.get("details", {}).items():
+                    if isinstance(v, (int, float)):
+                        agg[k] = agg.get(k, 0.0) + v
+            return {k: v / cnt for k, v in agg.items()}
+
+        older_raw, recent_raw = _agg_raw(older), _agg_raw(recent)
+
+        # ---- 上升原因详解：逐指标带数值 ----
+        detail_list = []
+        for key in recent_raw:
+            meta = INDICATOR_META.get(key, {"name": key, "desc": ""})
+            v_old, v_new = older_raw.get(key, 0.0), recent_raw.get(key, 0.0)
+            d = v_new - v_old
+            if abs(d) < 1e-6:
+                continue
+            detail_list.append({
+                "indicator": key, "name": meta["name"], "desc": meta["desc"],
+                "value_older": round(v_old, 3), "value_recent": round(v_new, 3),
+                "change": round(d, 3),
+                "direction": "上升" if d > 0 else "下降",
+            })
+        detail_list.sort(key=lambda x: abs(x["change"]), reverse=True)
+
+        rising = [x for x in detail_list if x["change"] > 0]
+        is_rising = base.get("delta", 0) > 0
+
+        if is_rising and rising:
+            lead = rising[0]
+            explain_text = (
+                f"风险分上升 {base.get('delta', 0):.1f} 分。"
+                f"主因是「{lead['name']}」由 {lead['value_older']} 升至 {lead['value_recent']}"
+                f"（{lead['desc']}）。"
+            )
+            if len(rising) >= 2:
+                explain_text += f"同时「{rising[1]['name']}」亦上升，形成叠加推动。"
+        elif is_rising:
+            explain_text = f"风险分上升 {base.get('delta', 0):.1f} 分，但各指标变化均不显著，属综合波动。"
+        else:
+            explain_text = f"风险分未上升（变化 {base.get('delta', 0):+.1f} 分），无需上升归因。"
+
+        # ---- 未来风险预警：线性外推 ----
+        try:
+            from analyzer.trend import get_trend_analyzer
+            scores = [r["risk_score"] for r in history]
+            fc = get_trend_analyzer().forecast(scores, days_ahead=days_ahead)
+            predicted = fc["forecast"][-1] if fc.get("forecast") else scores[-1]
+        except Exception:
+            predicted = history[-1]["risk_score"]
+            fc = {"slope": 0.0, "confidence": "低"}
+
+        level = self._score_to_level(predicted)
+        leading = [f"{x['name']}持续{x['direction']}" for x in detail_list[:3]]
+
+        outlook_text = (
+            f"按当前趋势外推，{days_ahead} 天后风险分约 {predicted:.1f} 分，"
+            f"对应「{level['label']}」。"
+        )
+        if level["threshold"] >= 60:
+            outlook_text += f"{level['description']}，建议提前部署监测与预案。"
+        elif fc.get("slope", 0) > 0:
+            outlook_text += "风险呈上行趋势，建议关注先行指标变化。"
+        else:
+            outlook_text += "风险总体可控，维持常规监测。"
+
+        base["rise_explanation"] = {
+            "is_rising": is_rising,
+            "detail": detail_list,
+            "text": explain_text,
+        }
+        base["future_outlook"] = {
+            "predicted_score": round(predicted, 2),
+            "days_ahead": days_ahead,
+            "projected_level": level["level"],
+            "projected_label": level["label"],
+            "slope": fc.get("slope", 0.0),
+            "confidence": fc.get("confidence", "低"),
+            "leading_signals": leading,
+            "text": outlook_text,
+        }
+        return base
+
+    @staticmethod
+    def _score_to_level(score: float) -> Dict:
+        """风险分 → 预警级别（与 alert_monitor 阈值一致）"""
+        if score >= 80:
+            return {"level": "red", "label": "红色预警", "threshold": 80,
+                    "description": "风险极高，需立即关注"}
+        if score >= 60:
+            return {"level": "orange", "label": "橙色预警", "threshold": 60,
+                    "description": "风险较高，需密切关注"}
+        if score >= 40:
+            return {"level": "yellow", "label": "黄色预警", "threshold": 40,
+                    "description": "风险中等，建议关注"}
+        return {"level": "green", "label": "正常", "threshold": 0,
+                "description": "风险较低"}
+
     # ============================================================
     # 内部工具
     # ============================================================

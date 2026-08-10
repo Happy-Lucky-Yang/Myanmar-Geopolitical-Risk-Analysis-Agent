@@ -230,6 +230,34 @@ async function loadDiagnostic() {
         if (d.recent_period) {
             html += '<div class="muted-note" style="margin-top:0.5rem">对比: ' + escapeHtml(d.older_period) + ' → ' + escapeHtml(d.recent_period) + '</div>';
         }
+
+        // 上升原因详解
+        var rx = d.rise_explanation;
+        if (rx && rx.detail && rx.detail.length > 0) {
+            html += '<div class="sub-title" style="margin-top:0.6rem">上升原因详解</div>';
+            html += '<div class="diag-text">' + escapeHtml(rx.text || '') + '</div>';
+            rx.detail.slice(0, 4).forEach(function (c) {
+                var cColor = c.change > 0 ? 'var(--risk-high)' : 'var(--risk-low)';
+                html += '<div class="change-item"><span>' + escapeHtml(c.name)
+                    + ' <span class="muted-note">' + escapeHtml(formatNumber(c.value_older, 2)) + '→' + escapeHtml(formatNumber(c.value_recent, 2)) + '</span></span>'
+                    + '<span style="color:' + cColor + '">' + (c.change > 0 ? '+' : '') + escapeHtml(formatNumber(c.change, 2)) + '</span></div>';
+            });
+        }
+
+        // 未来风险预警
+        var fo = d.future_outlook;
+        if (fo) {
+            var lvlColor = fo.projected_level === 'red' ? 'var(--risk-high)'
+                : fo.projected_level === 'orange' ? 'var(--risk-medium)'
+                : fo.projected_level === 'yellow' ? '#e3b341' : 'var(--risk-low)';
+            html += '<div class="sub-title" style="margin-top:0.6rem">未来 ' + escapeHtml(String(fo.days_ahead || 7)) + ' 天风险预警</div>';
+            html += '<div class="diag-summary"><span class="diag-delta" style="color:' + lvlColor + '">' + escapeHtml(formatNumber(fo.predicted_score, 1)) + '</span>'
+                + '<span class="muted-note"> 分 → ' + escapeHtml(fo.projected_label || '') + '（置信度 ' + escapeHtml(fo.confidence || '低') + '）</span></div>';
+            html += '<div class="diag-text">' + escapeHtml(fo.text || '') + '</div>';
+            if (fo.leading_signals && fo.leading_signals.length > 0) {
+                html += '<div class="muted-note">先行信号: ' + fo.leading_signals.map(function (s) { return escapeHtml(s); }).join('、') + '</div>';
+            }
+        }
         el.innerHTML = html;
     } catch (e) {
         hideLoading(el);
