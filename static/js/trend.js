@@ -1,6 +1,6 @@
 /**
  * 趋势预测页面 JS
- * 依赖: common.js + ECharts CDN
+ * 依赖: common.js + ECharts (static/vendor/echarts)
  */
 
 var trendChart = null;

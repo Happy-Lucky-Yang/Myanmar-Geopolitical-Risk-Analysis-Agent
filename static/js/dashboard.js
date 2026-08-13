@@ -1,6 +1,6 @@
 /**
  * 综合态势仪表盘 JS
- * 依赖: common.js + ECharts CDN
+ * 依赖: common.js + ECharts (static/vendor/echarts)
  * 整合: 预警 / 地缘位势 / 空间自相关 / 关系网络 / 诊断归因 / 多源融合 / 历史时间线
  */
 

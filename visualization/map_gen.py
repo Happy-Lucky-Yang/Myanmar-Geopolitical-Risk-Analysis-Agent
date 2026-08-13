@@ -66,6 +66,43 @@ _LEGEND_LEVELS = [
 _SIMPLIFIED_CACHE: Dict[int, dict] = {}
 _SIMPLIFY_EPSILON = 0.008  # 约 0.9km，国界渲染足够
 
+# ============================================================
+# CDN → 本地静态文件映射（消除外部依赖，避免 Edge Tracking Prevention 拦截）
+# Folium 生成的 HTML 内含 10+ 个 CDN 引用（Leaflet/jQuery/Bootstrap/FA 等），
+# 统一替换为 static/vendor/ 下的本地副本。
+# ============================================================
+_CDN_TO_LOCAL: Dict[str, str] = {
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css":
+        "/static/vendor/leaflet/leaflet.css",
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js":
+        "/static/vendor/leaflet/leaflet.js",
+    "https://code.jquery.com/jquery-3.7.1.min.js":
+        "/static/vendor/jquery/jquery-3.7.1.min.js",
+    "https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css":
+        "/static/vendor/bootstrap/bootstrap.min.css",
+    "https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js":
+        "/static/vendor/bootstrap/bootstrap.bundle.min.js",
+    "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css":
+        "/static/vendor/fontawesome/all.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css":
+        "/static/vendor/awesome-markers/leaflet.awesome-markers.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js":
+        "/static/vendor/awesome-markers/leaflet.awesome-markers.js",
+    "https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css":
+        "/static/vendor/awesome-markers/leaflet.awesome.rotate.min.css",
+    "https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css":
+        "/static/vendor/bootstrap/bootstrap-glyphicons.css",
+    "https://cdn.jsdelivr.net/gh/python-visualization/folium@main/folium/templates/leaflet_heat.min.js":
+        "/static/vendor/leaflet/leaflet_heat.min.js",
+}
+
+
+def _localize_cdn(html: str) -> str:
+    """将 Folium 生成的 HTML 中的 CDN URL 替换为本地静态文件路径"""
+    for cdn_url, local_path in _CDN_TO_LOCAL.items():
+        html = html.replace(cdn_url, local_path)
+    return html
+
 
 def risk_color_continuous(score_norm: float) -> str:
     """归一化风险分(0~1) → 连续插值色（hex）"""
@@ -359,7 +396,7 @@ class RiskMapGenerator:
             "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1 · "
             "点击省份查看详情"
         )))
-        return m._repr_html_()
+        return _localize_cdn(m._repr_html_())
 
     # ============================================================
     # 1b. 省级风险混合图（风险圆点 + 省界描边，悬停/点击高亮）
@@ -520,7 +557,7 @@ class RiskMapGenerator:
             "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1 · "
             "悬停省份高亮，点击查看详情"
         )))
-        return m._repr_html_()
+        return _localize_cdn(m._repr_html_())
 
     # ============================================================
     # 1c. 统一地图（自定义图层面板版：五图层可开关叠加）
@@ -796,7 +833,7 @@ class RiskMapGenerator:
         )
         m.get_root().script.add_child(folium.Element(reg_script))
 
-        return m._repr_html_()
+        return _localize_cdn(m._repr_html_())
 
     # ============================================================
     # 2. 默认地图（无数据时：灰色省界 + 提示）
@@ -828,7 +865,7 @@ class RiskMapGenerator:
         m.get_root().html.add_child(folium.Element(_source_note_html(
             "暂无历史风险数据，展示行政区划底图（GADM 4.1）"
         )))
-        return m._repr_html_()
+        return _localize_cdn(m._repr_html_())
 
     # ============================================================
     # 3. 事件密度（KDE）地图
@@ -915,7 +952,7 @@ class RiskMapGenerator:
             f"多信源互证 {density.get('verified_count', 0)} 条 · "
             "边界: GADM 4.1"
         )))
-        return m._repr_html_()
+        return _localize_cdn(m._repr_html_())
 
     # ============================================================
     # 4. 提示地图（降级场景）
@@ -944,7 +981,7 @@ class RiskMapGenerator:
             f'⚠️ {message}</div>'
         )
         m.get_root().html.add_child(folium.Element(notice_html))
-        return m._repr_html_()
+        return _localize_cdn(m._repr_html_())
 
     # ============================================================
     # 工具方法
