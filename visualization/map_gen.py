@@ -533,10 +533,10 @@ class RiskMapGenerator:
         图层面板控制开关/互斥/透明度（替代多地图切换）。
 
         图层（自下而上）：
-            choropleth 省级风险分级填色（与圆点互斥，默认关）
+            choropleth 区域填色（与散点互斥，默认关）
             kde        事件密度栅格（可叠加，默认开）
             borders    省界交互层（悬停高亮/tooltip/弹窗）
-            hybrid     风险圆点+荧光光晕（与填色互斥，默认开）
+            hybrid     风险散点+荧光光晕（与填色互斥，默认开）
             country    国界描边
 
         通过注入脚本将图层对象注册到 window._mmLayers，
@@ -576,11 +576,17 @@ class RiskMapGenerator:
                         f"{risk_level_name(norm)} · {norm * 100:.1f} 分")
                     feat["properties"]["_risk_color"] = (
                         risk_color_continuous(norm))
+                    feat["properties"]["_risk_level"] = risk_level_name(norm)
+                    feat["properties"]["_trend"] = (
+                        "↑" if norm > 0.6
+                        else "↓" if norm < 0.4 else "→")
                 else:
                     feat["properties"]["score_text"] = "暂无数据"
                     feat["properties"]["_risk_color"] = "#3a3f47"
+                    feat["properties"]["_risk_level"] = "--"
+                    feat["properties"]["_trend"] = "--"
 
-        # ---- 1) 分级填色层（默认关，与圆点互斥）----
+        # ---- 1) 区域填色层（默认关，与散点互斥）----
         gj_fill = copy.deepcopy(_simplified_boundaries(1))
         _inject_props(gj_fill)
 
@@ -599,10 +605,30 @@ class RiskMapGenerator:
                 "fillColor": "#3a3f47", "fillOpacity": 0.25,
             }
 
-        # show=False：默认不上图（与圆点互斥，由面板切换时才加载，
-        # 避免面板绑定前短暂出现填色+圆点同屏）
+        def fill_highlight_fn(f):
+            """悬停/点击高亮：白色粗边框 + 填充透明度提升"""
+            return {
+                "weight": 2.6, "color": "#ffffff",
+                "fillOpacity": 0.82,
+            }
+
+        # show=False：默认不上图（与散点互斥，由面板切换时才加载，
+        # 避免面板绑定前短暂出现填色+散点同屏）
         choro_layer = folium.GeoJson(
-            gj_fill, name="分级填色", style_function=fill_fn, show=False)
+            gj_fill, name="区域填色", style_function=fill_fn,
+            highlight_function=fill_highlight_fn,
+            tooltip=GeoJsonTooltip(
+                fields=["name_cn", "score_text"], labels=False,
+                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                      "pointer-events:none;"
+            ),
+            show=False)
+        GeoJsonPopup(
+            fields=["name_cn", "score_text", "_risk_level", "_trend"],
+            labels=True,
+            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+                  "font-size:13px;",
+        ).add_to(choro_layer)
 
         # ---- 2) 事件密度栅格层（可叠加；默认不上图，由面板开启）----
         kde_layer = None
@@ -618,8 +644,8 @@ class RiskMapGenerator:
                 interactive=False,
             )
 
-        # ---- 3) 混合层：荧光光晕 + 风险圆点（默认开，与填色互斥）----
-        hybrid_group = folium.FeatureGroup(name="风险圆点+光晕")
+        # ---- 3) 混合层：荧光光晕 + 风险散点（默认开，与填色互斥）----
+        hybrid_group = folium.FeatureGroup(name="风险散点")
         heat_data = []
         for item in risk_data:
             pt = prov_points.get(item.get("province", ""))
@@ -713,7 +739,7 @@ class RiskMapGenerator:
             },
         )
 
-        # 叠加顺序（自下而上）：填色 → KDE → 省界交互 → 圆点光晕 → 国界
+        # 叠加顺序（自下而上）：填色 → KDE → 省界 → 散点光晕 → 国界
         choro_layer.add_to(m)
         if kde_layer is not None:
             kde_layer.add_to(m)
@@ -725,6 +751,14 @@ class RiskMapGenerator:
         m.get_root().header.add_child(folium.Element(
             "<style>.leaflet-overlay-pane canvas"
             "{pointer-events:none;}</style>"))
+
+        # 省界层 pointer-events:none：纯视觉，使鼠标事件穿透至下层填色区域
+        # （区域填色模式下，填充区域需要直接响应悬停/点击）
+        m.get_root().header.add_child(folium.Element(
+            "<style>"
+            f"#{borders_layer.get_name()} {{pointer-events:none;}}"
+            f"#{borders_layer.get_name()} path {{pointer-events:none;}}"
+            "</style>"))
 
         # 图例（保留可视化辅助；底部文字说明已移除，保持页面干净）
         m.get_root().html.add_child(folium.Element(_legend_html()))
