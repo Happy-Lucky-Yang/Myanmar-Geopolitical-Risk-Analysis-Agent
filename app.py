@@ -113,6 +113,30 @@ def health_check():
     })
 
 
+@app.route("/api/models", methods=["GET"])
+def list_models():
+    """
+    可用模型列表接口
+
+    返回 config.yaml 中 llm.available_models 配置，
+    前端据此渲染模型选择下拉框。
+    """
+    try:
+        cfg = load_config()
+        llm_cfg = cfg.get("llm", {})
+        models = llm_cfg.get("available_models", [])
+        default_model = llm_cfg.get("model_name", "glm-4-flash")
+        return jsonify({
+            "success": True,
+            "data": {
+                "models": models,
+                "default": default_model
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     """
@@ -121,8 +145,13 @@ def analyze():
     请求体 (JSON):
     {
         "text": "缅甸军方与克钦独立军在掸邦北部发生武装冲突...",
-        "instruction": "请分析该事件对中缅关系的影响"  // 可选
+        "instruction": "请分析该事件对中缅关系的影响",  // 可选
+        "model": "glm-4-flash"  // 可选，指定分析模型
     }
+
+    也支持 multipart/form-data 文件上传（.txt / .json / .csv）：
+        - text_file: 文本文件（自动读取内容拼入 text）
+        - model: 可选模型 ID
 
     响应 (JSON):
     {
@@ -137,11 +166,27 @@ def analyze():
     """
     try:
         warnings = []
-        req_data = request.get_json()
-        if not req_data or not isinstance(req_data, dict):
-            return jsonify({"success": False, "error": "请求体必须为 JSON 对象"}), 400
 
-        if "text" not in req_data:
+        # ------ 支持 JSON 和 multipart/form-data 两种请求 ------
+        model_id = None
+        if request.content_type and "multipart/form-data" in request.content_type:
+            req_data = {}
+            # 处理文件上传
+            uploaded = request.files.get("text_file")
+            if uploaded and uploaded.filename:
+                content = uploaded.read().decode("utf-8", errors="replace")
+                req_data["text"] = content
+            else:
+                req_data["text"] = request.form.get("text", "")
+            model_id = request.form.get("model")
+            req_data["instruction"] = request.form.get("instruction")
+        else:
+            req_data = request.get_json()
+            if not req_data or not isinstance(req_data, dict):
+                return jsonify({"success": False, "error": "请求体必须为 JSON 对象"}), 400
+            model_id = req_data.get("model")
+
+        if "text" not in req_data or not req_data.get("text"):
             return jsonify({"success": False, "error": "缺少 'text' 字段"}), 400
 
         text = req_data["text"]
@@ -149,7 +194,7 @@ def analyze():
             return jsonify({"success": False, "error": "'text' 必须为非空字符串"}), 400
 
         # 输入长度限制（防止 DoS）
-        MAX_TEXT_LENGTH = 10000
+        MAX_TEXT_LENGTH = 20000
         if len(text) > MAX_TEXT_LENGTH:
             return jsonify({
                 "success": False,
@@ -197,7 +242,7 @@ def analyze():
         llm_result = None
         try:
             llm = get_llm_client()
-            llm_result = llm.analyze_news(cleaned_text, instruction)
+            llm_result = llm.analyze_news(cleaned_text, instruction, model=model_id)
             if llm_result.get("analysis_status") == "degraded":
                 warnings.append(f"LLM 降级: {llm_result.get('error', '未知原因')}")
         except Exception as e:
@@ -367,7 +412,8 @@ def chain_analysis():
 
         from analyzer.chain_reasoner import get_chain_reasoner
         reasoner = get_chain_reasoner()
-        result = reasoner.run_chain(text, depth=int(depth))
+        model_id = req_data.get("model")
+        result = reasoner.run_chain(text, depth=int(depth), model=model_id)
 
         return jsonify({"success": True, "data": result})
     except Exception as e:

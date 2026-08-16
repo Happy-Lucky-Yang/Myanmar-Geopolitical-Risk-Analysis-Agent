@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 对话分析</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808c">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260816b">
 </head>
 <body>
     <nav class="navbar">
@@ -24,9 +24,26 @@
         <div class="chat-console">
             <!-- 输入区 -->
             <div class="input-area">
-                <textarea id="news-input" placeholder="请输入或粘贴缅甸相关新闻内容..." rows="14"></textarea>
+                <!-- 工具栏：模型选择 + 文件上传 -->
+                <div class="input-toolbar">
+                    <div class="toolbar-left">
+                        <label class="toolbar-label">分析模型</label>
+                        <select id="model-select" class="model-select">
+                            <option value="">加载中...</option>
+                        </select>
+                    </div>
+                    <div class="toolbar-right">
+                        <label class="file-upload-btn" title="上传文本文件（.txt / .json / .csv）">
+                            <input type="file" id="file-input" accept=".txt,.json,.csv,.md" multiple style="display:none">
+                            <span class="upload-icon">📎</span> 上传文件
+                        </label>
+                    </div>
+                </div>
+                <!-- 已上传文件列表 -->
+                <div id="file-list" class="file-list" style="display:none"></div>
+                <textarea id="news-input" placeholder="请输入或粘贴缅甸相关新闻内容，或上传文件..." rows="10"></textarea>
                 <div class="input-footer">
-                    <span id="char-count" class="char-count">0 / 10000</span>
+                    <span id="char-count" class="char-count">0 / 20000</span>
                     <div class="btn-group">
                         <label class="chain-toggle"><input type="checkbox" id="chain-enable"> 启用链式推理</label>
                         <button class="btn btn-secondary" onclick="fillSampleText()">填充示例</button>
@@ -38,44 +55,44 @@
             <!-- 结果区 -->
             <div id="result-area" style="display:none">
                 <div class="result-grid">
-                    <!-- 实体识别 -->
-                    <div class="card">
-                        <div class="card-title"><span class="icon">🏷️</span> 实体识别</div>
-                        <div id="entities-body"></div>
-                    </div>
-
-                    <!-- 情感分析 -->
+                    <!-- 情感分析（左，与风险评分并排） -->
                     <div class="card">
                         <div class="card-title"><span class="icon">💬</span> 情感分析</div>
                         <div id="sentiment-body"></div>
                     </div>
 
-                    <!-- 风险评分 -->
+                    <!-- 风险评分（右，与情感分析并排） -->
                     <div class="card">
                         <div class="card-title"><span class="icon">🎯</span> 风险评分</div>
                         <div id="risk-body"></div>
                     </div>
 
-                    <!-- 大模型分析 -->
-                    <div class="card">
+                    <!-- 实体识别（整行横铺，标签多时有足够空间） -->
+                    <div class="card card-full">
+                        <div class="card-title"><span class="icon">🏷️</span> 实体识别</div>
+                        <div id="entities-body"></div>
+                    </div>
+
+                    <!-- 大模型分析（整行） -->
+                    <div class="card card-full">
                         <div class="card-title"><span class="icon">🤖</span> 大模型分析</div>
                         <div id="llm-body"></div>
                     </div>
 
                     <!-- 诊断归因 -->
-                    <div class="card" style="grid-column: 1 / -1">
+                    <div class="card card-full">
                         <div class="card-title"><span class="icon">🔬</span> 诊断性归因分析</div>
                         <div id="diagnostic-body"></div>
                     </div>
 
                     <!-- 链式推理 -->
-                    <div class="card" id="chain-card" style="grid-column: 1 / -1; display:none">
+                    <div class="card card-full" id="chain-card" style="display:none">
                         <div class="card-title"><span class="icon">🔗</span> 链式推理（分步逻辑）</div>
                         <div id="chain-body"></div>
                     </div>
 
                     <!-- GDELT 指标 -->
-                    <div class="card" style="grid-column: 1 / -1">
+                    <div class="card card-full">
                         <div class="card-title"><span class="icon">📡</span> GDELT 全球事件指标</div>
                         <div id="gdelt-body"></div>
                     </div>
@@ -84,7 +101,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808c"></script>
-    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260816b"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260816b"></script>
 </body>
 </html>

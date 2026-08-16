@@ -131,7 +131,41 @@ class NERExtractor:
         # 提取事件关键词
         entities["events"] = self._extract_events(text, lang)
 
+        # 清洗：过滤脏文本产生的垃圾实体（整句/图注/页脚残留）
+        for key in ("locations", "organizations", "persons"):
+            entities[key] = self._clean_entity_list(entities.get(key, []))
+
         return entities
+
+    @staticmethod
+    def _clean_entity_list(items: List[str], max_len: int = 30,
+                            cap: int = 30) -> List[str]:
+        """过滤垃圾实体：过长（多为整句/图注）、过短、纯数字标点、含换行。
+
+        用户上传的网页原文常含图注/页脚/推荐位文本，NER 会把整段
+        句子误判为实体，需在源头清洗避免前端展示混乱。
+        """
+        seen = set()
+        cleaned = []
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            item = item.strip().strip("·|·")
+            if len(item) < 2 or len(item) > max_len:
+                continue
+            if "\n" in item or "\r" in item:
+                continue
+            # 纯数字/标点/空白不是有效实体
+            if not any(ch.isalnum() for ch in item):
+                continue
+            low = item.lower()
+            if low in seen:
+                continue
+            seen.add(low)
+            cleaned.append(item)
+            if len(cleaned) >= cap:
+                break
+        return cleaned
 
     def _extract_zh(self, text: str) -> Dict[str, List[str]]:
         """中文 NER：优先 LAC，回退 jieba 词性标注"""

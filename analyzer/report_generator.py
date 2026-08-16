@@ -415,7 +415,8 @@ class ReportGenerator:
                 "data_points": len(history),
                 "forecast": forecast,
                 "forecast_summary": forecast_summary,
-                "confidence": f"{forecast_result.get('confidence', 0):.0f}%",
+                # confidence 为中文字符串（高/中/低），直接展示
+                "confidence": str(forecast_result.get("confidence", "低")),
             }
         except Exception as e:
             logger.warning(f"[Report] 趋势数据构建失败: {e}")

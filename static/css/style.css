@@ -203,12 +203,14 @@ body {
     padding-bottom: 0.4rem;
 }
 
-/* 对话页双栏控制台 */
+/* 对话页控制台：输入区居中置顶 + 结果区纵向排布
+   （避免左右分栏时滚动后左侧留白） */
 .chat-console {
-    display: grid;
-    grid-template-columns: minmax(380px, 5fr) 7fr;
-    gap: 1rem;
-    align-items: start;
+    display: block;
+}
+.chat-console .input-area {
+    max-width: 960px;
+    margin: 0 auto 1.5rem;
 }
 
 @media (max-width: 1100px) {
@@ -520,13 +522,66 @@ textarea::placeholder {
 /* ---------- 结果面板网格 ---------- */
 .result-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
     margin-top: 1.5rem;
 }
 
 .result-grid .card {
     min-width: 0; /* 防止溢出 */
+}
+
+/* 整行卡片（实体识别/大模型分析/诊断归因等横向内容多的卡片） */
+.result-grid .card-full {
+    grid-column: 1 / -1;
+}
+
+/* ---------- 实体识别分组 ---------- */
+.ent-group {
+    margin-bottom: 0.75rem;
+}
+.ent-group:last-child {
+    margin-bottom: 0;
+}
+.ent-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+    font-weight: 500;
+}
+.ent-count {
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.ent-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.ent-tags .entity-tag {
+    margin: 0;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ent-hidden {
+    display: none;
+}
+.ent-toggle {
+    margin-top: 0.4rem;
+    background: none;
+    border: 1px dashed var(--border-default);
+    color: var(--accent-blue);
+    font-size: 0.75rem;
+    padding: 0.2rem 0.7rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.ent-toggle:hover {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-bg);
 }
 
 /* ---------- 风险标签 ---------- */
@@ -1479,5 +1534,104 @@ textarea::placeholder {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* ========================================
+   对话分析页 - 工具栏 / 模型选择 / 文件上传
+   ======================================== */
+.input-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-default);
+}
+.toolbar-left,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.toolbar-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.model-select {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius);
+    padding: 0.3rem 0.6rem;
+    font-size: 0.82rem;
+    font-family: var(--font-serif);
+    cursor: pointer;
+    min-width: 180px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.model-select:hover,
+.model-select:focus {
+    border-color: var(--border-accent);
+}
+.file-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: var(--bg-input);
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.file-upload-btn:hover {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-bg);
+}
+.upload-icon {
+    font-size: 1rem;
+}
+/* 已上传文件列表 */
+.file-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 0.4rem;
+    background: var(--bg-input);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-default);
+    font-size: 0.78rem;
+}
+.fl-label {
+    color: var(--text-muted);
+    margin-right: 0.2rem;
+}
+.fl-tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+    border-radius: 4px;
+    font-size: 0.75rem;
+}
+.fl-clear {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0 0.3rem;
+    margin-left: auto;
+}
+.fl-clear:hover {
+    color: var(--risk-high);
 }
 

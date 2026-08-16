@@ -16,6 +16,29 @@ llm:
   max_retries: 3
   timeout_seconds: 30
   cache_enabled: true
+  # 可选模型列表（前端下拉框展示，用户可切换）
+  # 每个模型可指定独立的 base_url 和 api_key_env（环境变量名），
+  # 未指定时回退到上方的 base_url / api_key（即 GLM 默认值）。
+  available_models:
+    - id: "glm-4-flash"
+      name: "GLM-4-Flash (快速)"
+      description: "免费高速，适合批量初筛"
+    - id: "glm-4-plus"
+      name: "GLM-4-Plus (精准)"
+      description: "深度分析，地缘推理能力更强"
+    - id: "glm-4-long"
+      name: "GLM-4-Long (长文)"
+      description: "支持 20k 上下文，适合长报告"
+    - id: "deepseek-chat"
+      name: "DeepSeek-V4-Flash (极速)"
+      description: "DeepSeek 高速模型，响应极快"
+      base_url: "https://api.deepseek.com/v1"
+      api_key_env: "DEEPSEEK_API_KEY"
+    - id: "deepseek-reasoner"
+      name: "DeepSeek-V4-Pro (推理)"
+      description: "深度推理，复杂地缘分析能力更强"
+      base_url: "https://api.deepseek.com/v1"
+      api_key_env: "DEEPSEEK_API_KEY"
 
 # ---------- HTTP 代理（境外数据源专用） ----------
 # 启动 Clash 后代理地址通常为 http://127.0.0.1:7890；留空 = 直连（境外源大概率失败）。

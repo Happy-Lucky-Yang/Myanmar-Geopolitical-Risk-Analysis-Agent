@@ -53,7 +53,11 @@ def build_degraded_result(error: str) -> Dict:
 
 
 class LLMClient:
-    """OpenAI Chat Completions 兼容客户端，含校验、重试和本地缓存。"""
+    """OpenAI Chat Completions 兼容客户端，含校验、重试和本地缓存。
+
+    支持多提供商模型：每个模型可配置独立的 base_url 和 api_key_env，
+    运行时按需创建对应的 OpenAI 客户端并缓存。
+    """
 
     def __init__(self, config: Dict = None, client=None, cache_path=None,
                  sleep_fn=None):
@@ -66,7 +70,28 @@ class LLMClient:
         self._cache_enabled = bool(cfg.get("cache_enabled", True))
         self._sleep = sleep_fn or time.sleep
         self._api_key = str(cfg.get("api_key", "")).strip()
+        self._base_url = cfg.get("base_url", "http://localhost:8000/v1")
         self._availability_error = ""
+
+        # 多提供商支持：构建模型 → (base_url, api_key) 注册表
+        self._model_registry: Dict[str, Dict] = {}
+        self._client_cache: Dict[str, object] = {}
+        for m in cfg.get("available_models", []):
+            mid = m.get("id", "")
+            if not mid:
+                continue
+            # 解析 base_url：模型专属 > 全局默认
+            m_base = m.get("base_url", self._base_url)
+            # 解析 api_key：从指定环境变量 > 全局 api_key
+            key_env = m.get("api_key_env", "")
+            if key_env:
+                m_key = os.environ.get(key_env, "").strip()
+            else:
+                m_key = self._api_key
+            self._model_registry[mid] = {
+                "base_url": m_base,
+                "api_key": m_key,
+            }
 
         if client is not None:
             self._client = client
@@ -78,7 +103,7 @@ class LLMClient:
             self._availability_error = "LLM API Key 未配置"
         else:
             self._client = OpenAI(
-                base_url=cfg.get("base_url", "http://localhost:8000/v1"),
+                base_url=self._base_url,
                 api_key=self._api_key,
             )
 
@@ -91,8 +116,39 @@ class LLMClient:
     def _is_placeholder_key(api_key: str) -> bool:
         return not api_key or "your-" in api_key.lower() or "粘贴" in api_key
 
-    def analyze_news(self, text: str, instruction: str = None) -> Dict:
-        """分析单条新闻；自定义指令只作为附加关注点，不覆盖 JSON 契约。"""
+    def _get_client_for_model(self, model: str = None):
+        """根据模型 ID 获取对应的 OpenAI 客户端（按需创建并缓存）。
+
+        :param model: 模型 ID，None 表示使用默认客户端
+        :return: (client, actual_model, error)
+        """
+        if not model or model not in self._model_registry:
+            return self._client, model or self._model, self._availability_error
+
+        reg = self._model_registry[model]
+        if model in self._client_cache:
+            return self._client_cache[model], model, ""
+
+        m_key = reg["api_key"]
+        if self._is_placeholder_key(m_key) or not m_key:
+            return None, model, f"模型 {model} 的 API Key 未配置"
+
+        if OpenAI is None:
+            return None, model, "openai SDK 未安装"
+
+        try:
+            client = OpenAI(base_url=reg["base_url"], api_key=m_key)
+            self._client_cache[model] = client
+            return client, model, ""
+        except Exception as e:
+            return None, model, str(e)
+
+    def analyze_news(self, text: str, instruction: str = None,
+                     model: str = None) -> Dict:
+        """分析单条新闻；自定义指令只作为附加关注点，不覆盖 JSON 契约。
+
+        :param model: 可选模型ID，覆盖默认模型（用于前端模型切换）
+        """
         system_prompt = NEWS_ANALYSIS_PROMPT.format(text="")
         if instruction and instruction.strip():
             system_prompt += f"\n\n用户额外关注：{instruction.strip()}"
@@ -100,7 +156,7 @@ class LLMClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ]
-        return self._analyze_messages(messages, text)
+        return self._analyze_messages(messages, text, model=model)
 
     def call_with_prompt(self, prompt_name: str, text: str) -> Dict:
         """使用命名模板调用，仍应用统一返回契约和缓存。"""
@@ -111,8 +167,9 @@ class LLMClient:
         ]
         return self._analyze_messages(messages, text)
 
-    def _analyze_messages(self, messages: List[Dict], text: str) -> Dict:
-        cache_key = self._build_cache_key(messages, text)
+    def _analyze_messages(self, messages: List[Dict], text: str,
+                          model: str = None) -> Dict:
+        cache_key = self._build_cache_key(messages, text, model)
         cached = self._cache.get(cache_key)
         if cached is not None:
             result = self._normalize_result(cached)
@@ -123,29 +180,33 @@ class LLMClient:
             logger.warning("[LLM] 缓存条目校验失败，重新请求: %s", result["error"])
             self._cache.pop(cache_key, None)
 
-        if self._is_placeholder_key(self._api_key):
-            return self._degraded_result("LLM API Key 未配置")
-        if self._client is None:
-            return self._degraded_result(self._availability_error or "LLM 客户端不可用")
+        # 多提供商路由：根据 model 选择对应的客户端
+        client, actual_model, err = self._get_client_for_model(model)
+        if client is None:
+            return self._degraded_result(err or "LLM 客户端不可用")
 
-        result = self._call_with_retry(messages, normalize=True)
+        result = self._call_with_retry(messages, normalize=True,
+                                        model=actual_model, client=client)
         if self._cache_enabled and result["analysis_status"] == "ok":
             self._store_cache(cache_key, result)
         return result
 
-    def _call_with_retry(self, messages: List[Dict], normalize: bool = False) -> Dict:
+    def _call_with_retry(self, messages: List[Dict], normalize: bool = False,
+                          model: str = None, client=None) -> Dict:
         """Call the model; normalize only the main news-analysis contract.
 
         Chain reasoning uses this compatibility method with its own JSON schema,
         so the default preserves arbitrary JSON dictionaries.
         """
+        _client = client or self._client
+        _model = model or self._model
         last_error: Optional[Exception] = None
         last_degraded = None
         for attempt in range(self._max_retries):
             normalized_failure = None
             try:
-                response = self._client.chat.completions.create(
-                    model=self._model,
+                response = _client.chat.completions.create(
+                    model=_model,
                     messages=messages,
                     temperature=self._temperature,
                     max_tokens=self._max_tokens,
@@ -260,9 +321,10 @@ class LLMClient:
     def _degraded_result(self, error: str) -> Dict:
         return build_degraded_result(error)
 
-    def _build_cache_key(self, messages: List[Dict], text: str) -> str:
+    def _build_cache_key(self, messages: List[Dict], text: str,
+                         model: str = None) -> str:
         material = json.dumps(
-            {"model": self._model, "messages": messages, "text": text},
+            {"model": model or self._model, "messages": messages, "text": text},
             ensure_ascii=False,
             sort_keys=True,
         )

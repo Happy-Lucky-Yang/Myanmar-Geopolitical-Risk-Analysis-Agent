@@ -105,6 +105,10 @@ class SentimentAnalyzer:
         """
         英文情感分析：VADER (Valence Aware Dictionary for sEntiment Reasoning)
         VADER compound 范围 [-1, +1]，归一化到 [0, 1]
+
+        长文档处理：VADER 面向短句设计，整篇长文直接打分 compound 会
+        饱和到 ±1.0（表现为情感分恒为 0/1）。按句拆分后取均值，
+        得到更细粒度的文档级情感分。
         """
         self._ensure_vader_loaded()
 
@@ -112,13 +116,28 @@ class SentimentAnalyzer:
             # VADER 不可用，降级为关键词匹配
             return self._analyze_en_fallback(text)
 
-        scores = self._vader.polarity_scores(text)
-        # compound 在 [-1, +1] 范围，归一化到 [0, 1]
-        compound = scores["compound"]
+        sentences = self._split_sentences(text)
+        if not sentences:
+            return 0.5
+        compounds = [
+            self._vader.polarity_scores(s)["compound"]
+            for s in sentences[:300]
+        ]
+        compound = sum(compounds) / len(compounds)
         return round((compound + 1) / 2, 4)
 
+    @staticmethod
+    def _split_sentences(text: str) -> List[str]:
+        """按句拆分（英文句号/问号/叹号或换行），过滤过短片段。"""
+        parts = re.split(r"(?<=[.!?。！？])\s+|\n+", text.strip())
+        return [p.strip() for p in parts if len(p.strip()) >= 3]
+
     def _analyze_en_fallback(self, text: str) -> float:
-        """英文情感降级方案：基于关键词的简单判断"""
+        """英文情感降级方案：逐句关键词判断后取均值。
+
+        逐句打分避免长文档中负面词累积导致得分饱和到 0；
+        未命中关键词的句子记中性 0.5，使结果更接近真实分布。
+        """
         positive_words = [
             "peace", "ceasefire", "cooperation", "agreement", "progress",
             "development", "growth", "stability", "reform", "dialogue",
@@ -127,15 +146,20 @@ class SentimentAnalyzer:
         negative_words = [
             "conflict", "attack", "airstrike", "killed", "dead", "casualties",
             "sanction", "coup", "protest", "crisis", "refugee", "violence",
-            "bombing", "armed", "military", "war", "destruction", "flee"
+            "bombing", "armed", "military", "war", "destruction", "flee",
+            "hunger", "famine", "insecurity", "emergency"
         ]
-        text_lower = text.lower()
-        pos = sum(1 for w in positive_words if w in text_lower)
-        neg = sum(1 for w in negative_words if w in text_lower)
-        total = pos + neg
-        if total == 0:
-            return 0.5
-        return round(pos / total, 4)
+        sentences = self._split_sentences(text) or [text]
+        scores = []
+        for sent in sentences[:300]:
+            sent_lower = sent.lower()
+            pos = sum(1 for w in positive_words if w in sent_lower)
+            neg = sum(1 for w in negative_words if w in sent_lower)
+            if pos + neg == 0:
+                scores.append(0.5)
+            else:
+                scores.append(pos / (pos + neg))
+        return round(sum(scores) / len(scores), 4)
 
     def analyze_batch(self, texts: List[str]) -> List[float]:
         """批量情感分析"""

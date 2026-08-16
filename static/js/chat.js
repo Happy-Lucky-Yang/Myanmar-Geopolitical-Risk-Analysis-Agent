@@ -18,7 +18,121 @@ document.addEventListener('DOMContentLoaded', function () {
     if (input) {
         input.addEventListener('input', updateCharCount);
     }
+    // 加载模型列表
+    loadModelList();
+    // 文件上传事件
+    var fileInput = document.getElementById('file-input');
+    if (fileInput) {
+        fileInput.addEventListener('change', handleFileUpload);
+    }
 });
+
+/* ---------- 模型列表 ---------- */
+var _models = [];
+
+async function loadModelList() {
+    var sel = document.getElementById('model-select');
+    if (!sel) return;
+    try {
+        var json = await fetchJSON('/api/models');
+        if (json.success && json.data && json.data.models) {
+            _models = json.data.models;
+            sel.innerHTML = '';
+            _models.forEach(function (m) {
+                var opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = m.name;
+                opt.title = m.description || '';
+                if (m.id === json.data.default) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) {
+        sel.innerHTML = '<option value="">默认模型</option>';
+    }
+}
+
+/* ---------- 文件上传 ---------- */
+var _uploadedFiles = [];
+
+function handleFileUpload(e) {
+    var files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    var textArea = document.getElementById('news-input');
+    var readers = 0;
+    var total = files.length;
+    var contents = [];
+
+    Array.from(files).forEach(function (file) {
+        // 检查文件大小 (最大 2MB)
+        if (file.size > 2 * 1024 * 1024) {
+            showToast('文件 "' + file.name + '" 超过 2MB 限制', 'error');
+            readers++;
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+            var content = ev.target.result;
+            // JSON 文件尝试提取文本
+            if (file.name.endsWith('.json')) {
+                try {
+                    var data = JSON.parse(content);
+                    if (Array.isArray(data)) {
+                        content = data.map(function (item) {
+                            return item.text || item.content || item.title || JSON.stringify(item);
+                        }).join('\n\n---\n\n');
+                    } else if (typeof data === 'object') {
+                        content = data.text || data.content || JSON.stringify(data, null, 2);
+                    }
+                } catch (e) { /* 不是有效 JSON，用原始内容 */ }
+            }
+            contents.push({ name: file.name, content: content });
+            readers++;
+            if (readers === total) {
+                // 所有文件读取完成
+                if (contents.length === 1) {
+                    textArea.value = contents[0].content;
+                } else {
+                    textArea.value = contents.map(function (c) {
+                        return '===== ' + c.name + ' =====\n' + c.content;
+                    }).join('\n\n');
+                }
+                _uploadedFiles = contents.map(function (c) { return c.name; });
+                updateFileList();
+                updateCharCount();
+                showToast('已加载 ' + contents.length + ' 个文件', 'success');
+            }
+        };
+        reader.readAsText(file, 'utf-8');
+    });
+    // 重置 input 以便再次选择同一文件
+    e.target.value = '';
+}
+
+function updateFileList() {
+    var el = document.getElementById('file-list');
+    if (!el) return;
+    if (_uploadedFiles.length === 0) {
+        el.style.display = 'none';
+        return;
+    }
+    el.style.display = 'block';
+    var html = '<span class="fl-label">已加载文件:</span> ';
+    _uploadedFiles.forEach(function (name) {
+        html += '<span class="fl-tag">' + escapeHtml(name) + '</span> ';
+    });
+    html += '<button class="fl-clear" onclick="clearFiles()" title="清除">✕</button>';
+    el.innerHTML = html;
+}
+
+function clearFiles() {
+    _uploadedFiles = [];
+    updateFileList();
+    var textArea = document.getElementById('news-input');
+    if (textArea) textArea.value = '';
+    updateCharCount();
+}
 
 function fillSampleText() {
     document.getElementById('news-input').value = SAMPLE_TEXT;
@@ -30,8 +144,8 @@ function updateCharCount() {
     var counter = document.getElementById('char-count');
     if (!input || !counter) return;
     var len = input.value.length;
-    counter.textContent = len + ' / 10000';
-    counter.className = 'char-count' + (len > 9000 ? ' over' : len > 7000 ? ' warn' : '');
+    counter.textContent = len + ' / 20000';
+    counter.className = 'char-count' + (len > 18000 ? ' over' : len > 15000 ? ' warn' : '');
 }
 
 /* ---------- 分析 ---------- */
@@ -39,11 +153,11 @@ async function analyzeText() {
     var input = document.getElementById('news-input');
     var text = input ? input.value.trim() : '';
     if (!text) {
-        showToast('请输入新闻文本', 'error');
+        showToast('请输入新闻文本或上传文件', 'error');
         return;
     }
-    if (text.length > 10000) {
-        showToast('文本超过 10000 字符限制', 'error');
+    if (text.length > 20000) {
+        showToast('文本超过 20000 字符限制', 'error');
         return;
     }
 
@@ -53,11 +167,18 @@ async function analyzeText() {
     btn.textContent = '分析中...';
     resultArea.style.display = 'none';
 
+    // 获取选中的模型
+    var modelSel = document.getElementById('model-select');
+    var selectedModel = modelSel ? modelSel.value : '';
+
     try {
+        var body = { text: text };
+        if (selectedModel) body.model = selectedModel;
+
         var json = await fetchJSON('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify(body)
         });
 
         if (json.success) {
@@ -122,11 +243,19 @@ async function runChainReasoning(text) {
     if (!card || !body) return;
     card.style.display = 'block';
     renderLoading(body);
+
+    // 获取选中的模型
+    var modelSel = document.getElementById('model-select');
+    var selectedModel = modelSel ? modelSel.value : '';
+
     try {
+        var chainBody = { text: text, chain_depth: 4 };
+        if (selectedModel) chainBody.model = selectedModel;
+
         var json = await fetchJSON('/api/chain', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, chain_depth: 4 })
+            body: JSON.stringify(chainBody)
         }, 60000);
         hideLoading(body);
         if (!json.success) {
@@ -183,48 +312,87 @@ function formatChainAnswer(answer) {
 }
 
 /* -- 实体识别 -- */
+var ENTITY_COLLAPSED_LIMIT = 10;  // 每类默认最多展示数量
+var ENTITY_DISPLAY_LEN = 18;      // 单个标签最大显示字符数
+
 function renderEntitiesCard(entities) {
     var el = document.getElementById('entities-body');
     if (!el) return;
     var ent = entities || {};
-    var html = '';
 
     var groups = [
         { key: 'locations', label: '地名', cls: 'location' },
         { key: 'organizations', label: '组织', cls: 'organization' },
-        { key: 'persons', label: '人物', cls: 'person' }
+        { key: 'persons', label: '人物', cls: 'person' },
+        { key: 'events', label: '事件', cls: 'event' }
     ];
 
-    groups.forEach(function (g) {
+    var html = '';
+    var hasAny = false;
+    groups.forEach(function (g, gi) {
         var arr = ent[g.key] || [];
-        html += '<div style="margin-bottom:0.5rem"><span style="color:var(--text-muted);font-size:0.8rem">'
-            + escapeHtml(g.label) + '</span><br>';
-        if (arr.length === 0) {
-            html += '<span style="color:var(--text-muted)">无</span>';
-        } else {
-            arr.forEach(function (item) {
-                html += '<span class="entity-tag ' + g.cls + '">' + escapeHtml(item) + '</span> ';
-            });
+        if (arr.length === 0) return;
+        hasAny = true;
+        html += '<div class="ent-group"><div class="ent-label">' + escapeHtml(g.label)
+            + ' <span class="ent-count">(' + arr.length + ')</span></div>';
+        html += '<div class="ent-tags" id="ent-tags-' + gi + '">';
+        arr.forEach(function (item, i) {
+            var display = item.length > ENTITY_DISPLAY_LEN
+                ? item.slice(0, ENTITY_DISPLAY_LEN) + '…' : item;
+            var hiddenCls = i >= ENTITY_COLLAPSED_LIMIT ? ' ent-hidden' : '';
+            html += '<span class="entity-tag ' + g.cls + hiddenCls + '" title="'
+                + escapeHtml(item) + '">' + escapeHtml(display) + '</span>';
+        });
+        html += '</div>';
+        if (arr.length > ENTITY_COLLAPSED_LIMIT) {
+            html += '<button class="ent-toggle" onclick="toggleEntityGroup(' + gi
+                + ', this)" data-expanded="0" data-label="展开全部 ' + arr.length
+                + ' 项 ▾">展开全部 ' + arr.length + ' 项 ▾</button>';
         }
         html += '</div>';
     });
+    if (!hasAny) {
+        html = '<span style="color:var(--text-muted)">未识别到实体</span>';
+    }
     el.innerHTML = html;
 }
 
+function toggleEntityGroup(gi, btn) {
+    var box = document.getElementById('ent-tags-' + gi);
+    if (!box) return;
+    var expanded = btn.getAttribute('data-expanded') === '1';
+    box.querySelectorAll('.ent-hidden').forEach(function (t) {
+        t.style.display = expanded ? 'none' : '';
+    });
+    btn.setAttribute('data-expanded', expanded ? '0' : '1');
+    btn.textContent = expanded ? btn.getAttribute('data-label') : '收起 ▴';
+}
+
 /* -- 情感分析 -- */
+var SENTIMENT_LEVEL_MAP = { 'high': '高风险', 'medium': '中风险', 'low': '低风险' };
+var SENTIMENT_SOURCE_MAP = {
+    'vader': 'VADER 英文情感词典',
+    'snownlp': 'SnowNLP 中文模型',
+    'gdelt': 'GDELT 官方 Tone',
+    'fallback': '关键词基线（词典未加载）'
+};
+
 function renderSentimentCard(sentiment) {
     var el = document.getElementById('sentiment-body');
     if (!el) return;
     var s = sentiment || {};
+    var levelText = SENTIMENT_LEVEL_MAP[s.risk_level] || s.risk_level || 'N/A';
     var riskCls = riskLevelClass(s.risk_level);
 
     var html = gaugeRingHTML((s.risk_score || 0) * 100, 100, '风险值');
     html += '<div style="text-align:center;margin-top:0.75rem">';
-    html += '<span class="risk-badge ' + riskCls + '">' + escapeHtml(s.risk_level || 'N/A') + '</span>';
+    html += '<span class="risk-badge ' + riskCls + '">' + escapeHtml(levelText) + '</span>';
     html += '</div>';
     html += '<div style="margin-top:0.75rem">';
-    html += metricBarHTML('情感分', s.sentiment_score || 0, 1, 'var(--accent-blue)');
+    html += metricBarHTML('情感分（0=负面 1=正面）', s.sentiment_score || 0, 1, 'var(--accent-blue)');
     html += '</div>';
+    html += '<div class="muted-note" style="margin-top:0.5rem">数据来源: '
+        + escapeHtml(SENTIMENT_SOURCE_MAP[s.source] || s.source || '未知') + '</div>';
     el.innerHTML = html;
 }
 
@@ -259,7 +427,9 @@ function renderRiskCard(risk) {
         };
         Object.keys(indicators).forEach(function (k) {
             var label = nameMap[k] || k;
-            var val = indicators[k];
+            var item = indicators[k];
+            // indicator_scores 值为 {value, weight, contribution} 对象，取 value
+            var val = (item && typeof item === 'object') ? (item.value || 0) : item;
             html += metricBarHTML(label, val, 1);
         });
         html += '</div>';

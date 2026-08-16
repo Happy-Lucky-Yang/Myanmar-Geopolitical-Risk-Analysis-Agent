@@ -12,6 +12,7 @@ analyzer.chain_reasoner - 链式推理模拟（多轮 LLM 问答串联）
   /api/analyze 新增可选参数 chain_depth (默认1=单步，2-4=链式)
 """
 import logging
+import re
 import threading
 from typing import Dict, List, Optional
 
@@ -103,12 +104,13 @@ class ChainReasoner:
             self._llm = get_llm_client()
         return self._llm
 
-    def run_chain(self, text: str, depth: int = 2) -> Dict:
+    def run_chain(self, text: str, depth: int = 2, model: str = None) -> Dict:
         """
         执行链式推理
 
         :param text: 原始新闻文本
         :param depth: 推理深度 (1=仅事件识别, 2=+影响分析, 3=+趋势研判, 4=+建议)
+        :param model: 可选模型ID，覆盖默认模型
         :return: {"chain": [...], "final_summary": {...}}
         """
         depth = max(1, min(4, depth))
@@ -123,7 +125,7 @@ class ChainReasoner:
             # 构建 prompt (注入前序结果)
             prompt = self._build_step_prompt(step_key, text, previous_results)
 
-            # 调用 LLM
+            # 调用 LLM（多提供商路由：按 model 选择对应客户端）
             try:
                 llm = self._get_llm()
                 # 使用自定义 prompt
@@ -131,7 +133,11 @@ class ChainReasoner:
                     {"role": "system", "content": template["system_prompt"]},
                     {"role": "user", "content": prompt}
                 ]
-                result = llm._call_with_retry(messages)
+                client, actual_model, err = llm._get_client_for_model(model)
+                if client is None:
+                    raise RuntimeError(err or "LLM 客户端不可用")
+                result = llm._call_with_retry(messages, model=actual_model,
+                                               client=client)
 
                 chain.append({
                     "step": template["step"],
@@ -236,7 +242,7 @@ class ChainReasoner:
 
         impact = previous.get("impact_analysis", {})
         if impact:
-            severity = event.get("severity", 3)
+            severity = self._parse_severity(event.get("severity", 3))
             summary["risk_level"] = "高" if severity >= 4 else "中" if severity >= 2 else "低"
 
         rec = previous.get("recommendation", {})
@@ -244,6 +250,28 @@ class ChainReasoner:
             summary["recommendations"] = rec.get("policy_recommendations", [])
 
         return summary
+
+    @staticmethod
+    def _parse_severity(value) -> int:
+        """宽容解析严重度：LLM 可能返回数字、数字字符串或中文描述，
+        直接比较会抛 TypeError 导致 /api/chain 500。"""
+        if isinstance(value, bool):
+            return 3
+        if isinstance(value, (int, float)):
+            return max(1, min(5, int(value)))
+        s = str(value or "").strip()
+        # 提取字符串中的数字（如 "4" / "严重程度: 4"）
+        m = re.search(r"[1-5]", s)
+        if m:
+            return int(m.group())
+        # 中文/英文描述映射
+        if any(k in s for k in ("高", "high", "severe", "critical")):
+            return 4
+        if any(k in s for k in ("中", "medium", "moderate")):
+            return 3
+        if any(k in s for k in ("低", "low", "minor")):
+            return 1
+        return 3
 
 
 # ============================================================

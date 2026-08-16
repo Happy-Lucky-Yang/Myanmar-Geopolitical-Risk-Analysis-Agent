@@ -22,7 +22,7 @@ import requests
 from datetime import datetime
 from typing import List, Dict, Set, Optional
 from bs4 import BeautifulSoup
-from utils.config import get_crawler_config, get_storage_config
+from utils.config import get_crawler_config, get_storage_config, get_proxy
 
 # ============================================================
 # 日志配置
@@ -89,19 +89,27 @@ class NewsCrawler:
         }
 
     def retry_request(self, url: str, max_retries: int = None,
-                      backoff: int = None) -> Optional[requests.Response]:
+                      backoff: int = None, use_proxy: bool = False) -> Optional[requests.Response]:
         """
         带重试机制的 HTTP GET 请求
 
         :param url: 目标 URL
         :param max_retries: 最大重试次数
         :param backoff: 退避基数（秒），实际延迟 = backoff * 2^attempt
+        :param use_proxy: 境外源传 True（走项目 PROXY 配置）；
+            国内源默认 False 显式直连——必须显式传空代理，
+            否则 requests 会继承终端 HTTPS_PROXY 环境变量，
+            导致国内源被代理工具中断连接（WinError 10053）。
         :return: Response 对象或 None
         """
         if max_retries is None:
             max_retries = self._max_retries
         if backoff is None:
             backoff = self._backoff
+        if use_proxy:
+            proxies = get_proxy() or {"http": None, "https": None}
+        else:
+            proxies = {"http": None, "https": None}
 
         for attempt in range(max_retries):
             try:
@@ -109,7 +117,8 @@ class NewsCrawler:
                     url,
                     headers=self._get_headers(),
                     timeout=self._timeout,
-                    allow_redirects=True
+                    allow_redirects=True,
+                    proxies=proxies
                 )
 
                 if resp.status_code == 200:
@@ -376,7 +385,7 @@ class NewsCrawler:
         注意：路透社可能有较强的反爬措施，需关注 403/CAPTCHA
         """
         news_list = []
-        resp = self.retry_request(source_url)
+        resp = self.retry_request(source_url, use_proxy=True)
         if resp is None:
             return news_list
 
@@ -402,7 +411,7 @@ class NewsCrawler:
 
                 # 尝试获取文章详情
                 time.sleep(random.uniform(1.5, 3.0))
-                detail_resp = self.retry_request(href)
+                detail_resp = self.retry_request(href, use_proxy=True)
                 content = ""
                 pub_time = ""
 
@@ -449,7 +458,7 @@ class NewsCrawler:
         详情页选择器: div.entry-content
         """
         news_list = []
-        resp = self.retry_request(source_url)
+        resp = self.retry_request(source_url, use_proxy=True)
         if resp is None:
             return news_list
 
@@ -466,7 +475,7 @@ class NewsCrawler:
                 continue
 
             time.sleep(random.uniform(1.0, 2.0))
-            detail_resp = self.retry_request(href)
+            detail_resp = self.retry_request(href, use_proxy=True)
             if detail_resp is None:
                 continue
 
@@ -681,7 +690,7 @@ class NewsCrawler:
         :param url: 文章 URL
         :return: 解析结果字典
         """
-        resp = self.retry_request(url)
+        resp = self.retry_request(url, use_proxy="mhwmm" not in url)
         if resp is None:
             return {"error": f"请求失败: {url}"}
 
