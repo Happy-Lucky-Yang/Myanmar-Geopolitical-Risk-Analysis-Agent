@@ -66,6 +66,13 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     报告时间范围: {{ date_range }} | 生成时间: {{ generated_at }} | 数据来源: {{ sources }}
   </div>
 
+  <div class="card">
+    <p>快照: {{ snapshot_id }} | 数据修订: {{ revision }}</p>
+    <p>区域: {{ filters.region }} | 来源筛选: {{ filters.source or '全部' }} | 风险版本: {{ metadata.algorithm_version }}</p>
+    <p>有效日: {{ metadata.valid_days }}/{{ metadata.requested_days }} | 覆盖率: {{ (metadata.coverage * 100)|round(1) }}% | 最新观测: {{ metadata.latest_observation or '无' }}</p>
+    <p>单位: {{ metadata.unit }} | 时区: {{ metadata.timezone }} | 过期: {{ metadata.stale }}</p>
+    {% for warning in warnings %}<p class="disclaimer">{{ warning }}</p>{% endfor %}
+  </div>
   {% if risk_summary %}
   <h2>风险评分摘要</h2>
   <div class="card">
@@ -90,14 +97,14 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   <h2>关键事件</h2>
   <div class="card">
     <table>
-      <thead><tr><th>日期</th><th>事件</th><th>类型</th><th>严重程度</th></tr></thead>
+      <thead><tr><th>日期</th><th>事件</th><th>类型</th><th>烈度/来源证据</th></tr></thead>
       <tbody>
       {% for ev in key_events %}
       <tr>
         <td>{{ ev.date }}</td>
         <td>{{ ev.title }}</td>
         <td>{{ ev.event_type }}</td>
-        <td>{{ ev.severity }}</td>
+        <td>{{ ev.severity }} / {{ ev.source }} / {{ ev.url }}</td>
       </tr>
       {% endfor %}
       </tbody>
@@ -113,11 +120,18 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     <p>数据点数: {{ trend_data.data_points }}</p>
     {% if trend_data.forecast %}
     <p>7日预测: {{ trend_data.forecast_summary }}</p>
-    <p>预测置信度: {{ trend_data.confidence }}</p>
+    <p>外推可靠性说明: {{ trend_data.confidence }}</p>
     {% endif %}
   </div>
   {% endif %}
 
+  <h2>日历观测明细</h2>
+  <table><thead><tr><th>业务日</th><th>风险分（缺失不补零）</th></tr></thead><tbody>
+  {% for day, value in daily_values %}<tr><td>{{ day }}</td><td>{{ value if value is not none else '缺测' }}</td></tr>{% endfor %}
+  </tbody></table>
+  <p>外推状态: {{ forecast.status }}；{{ forecast.reason }}</p>
+  {% if forecast.backtest %}<p>回测模型与误差: {{ forecast.backtest }}</p>{% endif %}
+  {% if forecast.interval %}<p>经验区间: {{ forecast.interval }}</p>{% endif %}
   {% if economic_data %}
   <h2>宏观经济指标</h2>
   <div class="card">
@@ -159,13 +173,13 @@ class ReportGenerator:
         if self._jinja_env is None:
             try:
                 from jinja2 import Environment
-                self._jinja_env = Environment()
+                self._jinja_env = Environment(autoescape=True)
             except ImportError:
                 logger.error("[Report] Jinja2 未安装")
                 raise
         return self._jinja_env
 
-    def generate_html_report(self, days: int = 30) -> str:
+    def generate_html_report(self, days: int = 30, snapshot=None, **filters) -> str:
         """
         生成 HTML 格式结构化报告
 
@@ -175,18 +189,15 @@ class ReportGenerator:
         from analyzer.data_loader import get_data_loader
         from analyzer.trend import get_trend_analyzer
 
-        loader = get_data_loader()
-        history = loader.load_risk_history(days=days)
-
-        # 收集报告数据
-        context = self._build_report_context(days, history)
+        snapshot = self.build_snapshot(days=days, **filters) if snapshot is None else snapshot
+        context = self._build_report_context(snapshot)
 
         # 渲染模板
         env = self._get_jinja_env()
         template = env.from_string(_HTML_TEMPLATE)
         return template.render(**context)
 
-    def generate_docx_report(self, days: int = 30) -> bytes:
+    def generate_docx_report(self, days: int = 30, snapshot=None, **filters) -> bytes:
         """
         生成 DOCX 格式报告
 
@@ -201,10 +212,8 @@ class ReportGenerator:
             raise RuntimeError("python-docx 未安装，请运行: pip install python-docx")
 
         from analyzer.data_loader import get_data_loader
-        loader = get_data_loader()
-        history = loader.load_risk_history(days=days)
-
-        context = self._build_report_context(days, history)
+        snapshot = self.build_snapshot(days=days, **filters) if snapshot is None else snapshot
+        context = self._build_report_context(snapshot)
 
         doc = Document()
 
@@ -217,6 +226,12 @@ class ReportGenerator:
             f"报告时间范围: {context['date_range']} | "
             f"生成时间: {context['generated_at']}"
         )
+
+        doc.add_paragraph(f"快照: {context['snapshot_id']} | 数据修订: {context['revision']}")
+        doc.add_paragraph(f"筛选: {context['filters']} | 实际来源: {context['sources']}")
+        doc.add_paragraph(f"数据覆盖与质量: {context['metadata']}")
+        for warning in context['warnings']:
+            doc.add_paragraph(warning)
 
         # 风险评分摘要
         risk = context.get("risk_summary")
@@ -249,12 +264,12 @@ class ReportGenerator:
             hdr[1].text = "事件"
             hdr[2].text = "类型"
             hdr[3].text = "严重程度"
-            for ev in events[:10]:
+            for ev in events:
                 row = table.add_row().cells
                 row[0].text = ev["date"]
                 row[1].text = ev["title"]
                 row[2].text = ev["event_type"]
-                row[3].text = ev["severity"]
+                row[3].text = ev['severity'] + ' / ' + ev['source'] + ' / ' + ev['url']
 
         # 趋势分析
         trend = context.get("trend_data")
@@ -264,7 +279,7 @@ class ReportGenerator:
             doc.add_paragraph(f"趋势方向: {trend['trend']}")
             if trend.get("forecast"):
                 doc.add_paragraph(f"7日预测: {trend['forecast_summary']}")
-                doc.add_paragraph(f"预测置信度: {trend['confidence']}")
+                doc.add_paragraph(f"外推可靠性说明: {trend['confidence']}")
 
         # 经济数据
         econ = context.get("economic_data")
@@ -278,6 +293,11 @@ class ReportGenerator:
         if assessment:
             doc.add_heading("综合研判与建议", level=2)
             doc.add_paragraph(assessment)
+
+        doc.add_heading('日历观测明细', level=2)
+        for day, value in context['daily_values']:
+            doc.add_paragraph(f"{day}: {value if value is not None else '缺测'}")
+        doc.add_paragraph(f"探索性外推与回测: {context['forecast']}")
 
         # 页脚
         doc.add_paragraph()
@@ -296,79 +316,78 @@ class ReportGenerator:
     # 内部: 构建报告上下文数据
     # ============================================================
 
-    def _build_report_context(self, days: int, history: list) -> Dict:
-        """构建报告模板渲染所需的上下文数据"""
-        now = datetime.now()
-        start_date = (now - timedelta(days=days)).strftime("%Y-%m-%d")
-        end_date = now.strftime("%Y-%m-%d")
+    def build_snapshot(self, days=30, end_date=None, region='MMR', source=None, expected_revision=None):
+        """只读已存数据；修订号变化时拒绝拼接两个时刻的报告。"""
+        from analyzer.data_loader import get_data_loader
+        from data.event_store import get_event_store
+        from analyzer.spatial_analysis import unique_events, locate_event
+        from utils.data_contract import time_window, coverage_metadata, fingerprint, json_safe, utc_now
+        start, end = time_window(days, end_date)
+        loader = get_data_loader()
+        revision = loader.revision()
+        if expected_revision is not None and expected_revision != revision:
+            raise SnapshotChanged('数据已更新，请刷新页面后重新导出')
+        history = loader.load_risk_history(days=days, end_date=end_date, region=region) if not source else []
+        events = unique_events(get_event_store().load(days=days, end_date=end_date), days, end_date, source)
+        if region != 'MMR':
+            events = [e for e in events if locate_event(e)[0] == region]
+        warnings = []
+        if source:
+            warnings.append('单来源筛选仅作用于事件；未重算来源子集日风险，因此综合风险留空。')
+        if loader.last_read_errors:
+            warnings.append(f'风险文件有 {len(loader.last_read_errors)} 个异常记录，已隔离；结果可能不完整。')
+        sources = sorted({str(s) for row in history for s in row.get('sources', [])}
+                         | {str(e.get('source', 'gdelt')) for e in events})
+        snapshot = {'filters': {'days': days, 'end_date': (end - timedelta(days=1)).isoformat(),
+                               'region': region, 'source': source},
+                    'revision': revision, 'algorithm_version': 'report-v2', 'history': history,
+                    'events': events, 'sources': sources, 'warnings': warnings,
+                    'metadata': coverage_metadata(history, days, end_date, region=region)}
+        if loader.revision() != revision:
+            raise SnapshotChanged('读取期间数据已变更，请重试')
+        snapshot = json_safe(snapshot)
+        snapshot['snapshot_id'] = fingerprint(snapshot)
+        snapshot['generated_at'] = utc_now().isoformat()
+        return snapshot
 
-        context = {
-            "title": f"缅甸地缘风险分析报告 ({start_date} ~ {end_date})",
-            "date_range": f"{start_date} 至 {end_date}",
-            "generated_at": now.strftime("%Y-%m-%d %H:%M"),
-            "sources": "新闻文本 + GDELT + World Bank + VIIRS 遥感",
-        }
-
-        # 风险评分摘要
-        if history:
-            scores = [r["risk_score"] for r in history]
-            avg_score = sum(scores) / len(scores)
-            latest_score = scores[-1]
-
-            score_class = "score-high" if latest_score >= 70 else "score-mid" if latest_score >= 40 else "score-low"
-            level = "高风险" if latest_score >= 70 else "中风险" if latest_score >= 40 else "低风险"
-
-            # 趋势判断
-            if len(scores) >= 7:
-                recent_avg = sum(scores[-7:]) / 7
-                older_avg = sum(scores[:7]) / min(7, len(scores[:7]))
-                if recent_avg > older_avg + 5:
-                    trend_text = "近期风险呈上升趋势"
-                elif recent_avg < older_avg - 5:
-                    trend_text = "近期风险呈下降趋势"
-                else:
-                    trend_text = "近期风险相对平稳"
-            else:
-                trend_text = "数据不足，无法判断趋势"
-
-            # 收集指标
-            last_details = history[-1].get("details", {})
-            metrics = []
-            metric_names = {
-                "conflict_frequency": "冲突频次",
-                "sentiment_avg": "情感风险",
-                "nightlight_change": "夜光变化",
-                "refugee_change": "难民变化",
-                "event_severity": "事件严重度",
-            }
-            for key, label in metric_names.items():
-                val = last_details.get(key)
-                if val is not None:
-                    metrics.append({"name": label, "value": f"{val:.2f}"})
-
-            context["risk_summary"] = {
-                "score": f"{latest_score:.1f}",
-                "score_class": score_class,
-                "level": level,
-                "trend_text": trend_text,
-                "metrics": metrics,
-            }
-
-            # 关键事件 (从分析结果中提取)
-            context["key_events"] = self._extract_key_events(history)
-        else:
-            context["risk_summary"] = None
-            context["key_events"] = []
-
-        # 趋势分析
-        context["trend_data"] = self._build_trend_data(history)
-
-        # 经济数据
-        context["economic_data"], context["economic_quality"] = self._build_economic_data()
-
-        # 综合研判
-        context["assessment"] = self._generate_assessment(context)
-
+    def _build_report_context(self, snapshot):
+        from analyzer.trend import get_trend_analyzer
+        from analyzer.diagnostic import DiagnosticAnalyzer
+        from utils.data_contract import calendar_series
+        metadata, filters = snapshot['metadata'], snapshot['filters']
+        history = snapshot['history']
+        dates, scores = calendar_series(history, filters['days'], filters['end_date'])
+        analyzer = get_trend_analyzer()
+        trend = analyzer.full_analysis(scores, dates=dates)
+        forecast = analyzer.forecast(scores, dates=dates)
+        latest = history[-1] if history else None
+        score = latest['risk_score'] if latest else None
+        current = bool(latest and latest['date'] == filters['end_date'])
+        diagnosis = DiagnosticAnalyzer().diagnose(latest) if latest else {'drivers': []}
+        context = {'title': '缅甸地缘风险分析报告',
+                   'date_range': metadata['requested_start'] + ' 至 ' + metadata['requested_end'],
+                   'generated_at': snapshot['generated_at'], 'snapshot_id': snapshot['snapshot_id'],
+                   'revision': snapshot['revision'], 'sources': '、'.join(snapshot['sources']) or '无有效来源',
+                   'metadata': metadata, 'filters': filters, 'warnings': snapshot['warnings'],
+                   'daily_values': list(zip(dates, scores)), 'economic_data': None,
+                   'economic_quality': None, 'key_events': [],
+                   'risk_summary': {'score': f'{score:.1f}' if current else '无当前观测',
+                       'score_class': 'score-high' if current and score >= 70 else 'score-mid' if current and score >= 40 else 'score-low' if current else 'trend-flat',
+                       'level': latest.get('risk_level', '') if current else '缺测或过期',
+                       'trend_text': trend['trend'],
+                       'metrics': [{'name': d['name'] + '贡献（分）', 'value': d['contribution_points']} for d in diagnosis['drivers']]},
+                   'trend_data': {'period': f"{metadata['actual_start']} ~ {metadata['actual_end']}",
+                       'trend': trend['trend'], 'trend_class': 'trend-flat', 'data_points': trend['data_points'],
+                       'forecast': forecast['forecast'], 'forecast_summary': str(forecast['forecast']),
+                       'confidence': forecast['confidence']},
+                   'forecast': forecast,
+                   'assessment': '风险分不是发生概率。贡献分析不等于因果解释；缺测不代表低风险。外推只作探索，不触发正式预警。'}
+        for event in sorted(snapshot['events'], key=lambda e: (e['date'], str(e.get('event_id', ''))), reverse=True)[:20]:
+            context['key_events'].append({'date': event['date'],
+                'title': str(event.get('description') or event.get('location') or event.get('event_id') or '未命名事件'),
+                'event_type': str(event.get('event_type') or event.get('root_code') or '未知'),
+                'severity': str(event.get('severity') if event.get('severity') is not None else '未标注'),
+                'source': str(event.get('source', 'gdelt')), 'url': str(event.get('source_url') or event.get('url') or '')})
         return context
 
     def _extract_key_events(self, history: list) -> list:
@@ -465,6 +484,10 @@ class ReportGenerator:
             return "数据不足，暂无法生成综合研判。建议等待系统采集更多数据后再生成报告。"
 
         return " ".join(parts)
+
+
+class SnapshotChanged(RuntimeError):
+    """页面所用修订号已经变化，需刷新后再导出。"""
 
 
 # ============================================================

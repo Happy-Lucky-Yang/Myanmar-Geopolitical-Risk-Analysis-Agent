@@ -43,6 +43,11 @@ class EventDensityAnalyzer:
         self._min_sources = int(config.get("min_sources", 1))
         self._verified_boost = float(config.get("verified_boost", 1.25))
         self._mask_paths = None  # 惰性加载国界掩膜
+        self._bandwidth_km = float(config.get("bandwidth_km", 50))
+        self._color_max = float(config.get("color_max_per_km2_day", 0.001))
+        if not np.isfinite(self._bandwidth_km) or self._bandwidth_km <= 0 or not np.isfinite(self._color_max) or self._color_max <= 0:
+            raise ValueError("KDE带宽和公共色标上限必须为正有限数")
+        self._country_geometry = None
 
     # ============================================================
     # 国界掩膜（GADM L0）
@@ -69,16 +74,19 @@ class EventDensityAnalyzer:
 
     def _inside_country(self, lonlat: np.ndarray) -> np.ndarray:
         """判定 (lon, lat) 点集是否位于缅甸国境（任一边界多边形内）"""
-        inside = np.zeros(len(lonlat), dtype=bool)
-        for path in self._get_mask_paths():
-            inside |= path.contains_points(lonlat)
-        return inside
+        from shapely import contains_xy
+        from shapely.geometry import shape
+        from shapely.ops import unary_union
+        from data.admin_boundaries import load_boundaries
+        if self._country_geometry is None:
+            self._country_geometry = unary_union([shape(f['geometry']) for f in load_boundaries(0)['features']])
+        return contains_xy(self._country_geometry, lonlat[:, 0], lonlat[:, 1])
 
     # ============================================================
     # 核心计算
     # ============================================================
 
-    def compute(self, events: List[Dict], days: int = None) -> Dict:
+    def compute(self, events: List[Dict], days: int = None, end_date=None) -> Dict:
         """
         计算事件密度面
 
@@ -99,29 +107,32 @@ class EventDensityAnalyzer:
         from data.gdelt_files import event_severity_weight
 
         # 时间窗口过滤
-        cutoff = None
-        if days:
-            cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
-        window_events = [
-            ev for ev in (events or [])
-            if cutoff is None or ev.get("date", "") >= cutoff
-        ]
+        from analyzer.spatial_analysis import unique_events
+        from utils.data_contract import finite_number, business_date
+        window_events = unique_events(events or [], days, end_date)
 
         lats, lons, weights = [], [], []
         verified = 0
         for ev in window_events:
-            if ev.get("lat") is None or ev.get("lon") is None:
+            if not finite_number(ev.get("lat")) or not finite_number(ev.get("lon")):
+                continue
+            if not -90 <= ev['lat'] <= 90 or not -180 <= ev['lon'] <= 180:
+                continue
+            if not self._inside_country(np.array([[ev['lon'], ev['lat']]]))[0]:
                 continue
             # 信源门槛过滤（默认 1 即不过滤）
-            if ev.get("num_sources", 1) < self._min_sources:
+            sources = ev.get("num_sources", 1)
+            sources = sources if finite_number(sources) else 1
+            if sources < self._min_sources:
+                continue
+            severity = event_severity_weight(ev)
+            if not finite_number(severity):
                 continue
             lats.append(float(ev["lat"]))
             lons.append(float(ev["lon"]))
-            w = max(0.05, event_severity_weight(ev))
+            w = severity
             # 互证判定：≥2 家信源 或 ≥2 篇报道（缅甸事件多为单信源多篇）
-            if (ev.get("num_sources", 1) >= 2
-                    or ev.get("num_articles", 1) >= 2):
-                w *= self._verified_boost
+            if sources >= 2:
                 verified += 1
             weights.append(w)
 
@@ -141,9 +152,11 @@ class EventDensityAnalyzer:
             }
 
         # 加权核密度估计（Scott 带宽，随样本量自适应）
-        from scipy.stats import gaussian_kde
-        positions = np.vstack([lons, lats])
-        kde = gaussian_kde(positions, weights=np.asarray(weights))
+        from pyproj import Transformer
+        projection = '+proj=laea +lat_0=19 +lon_0=96 +datum=WGS84 +units=m +no_defs'
+        transform = Transformer.from_crs('EPSG:4326', projection, always_xy=True)
+        event_x, event_y = transform.transform(lons, lats)
+        positions_km = np.column_stack([event_x, event_y]) / 1000.0
 
         # 规则网格求值
         grid_lon = np.linspace(LON_RANGE[0], LON_RANGE[1], self._grid_cols)
@@ -151,7 +164,17 @@ class EventDensityAnalyzer:
         glon, glat = np.meshgrid(grid_lon, grid_lat)
         pts = np.vstack([glon.ravel(), glat.ravel()])
 
-        z = kde(pts)
+        grid_x, grid_y = transform.transform(pts[0], pts[1])
+        grid_km = np.column_stack([grid_x, grid_y]) / 1000.0
+        z = np.zeros(len(grid_km), dtype=float)
+        # 固定各向同性公里带宽，分块求和；重复坐标和共线数据无需协方差求逆。
+        for offset in range(0, len(positions_km), 128):
+            distance2 = ((grid_km[:, None, :] - positions_km[None, offset:offset + 128, :]) ** 2).sum(axis=2)
+            kernels = np.exp(-distance2 / (2 * self._bandwidth_km ** 2)) / (2 * np.pi * self._bandwidth_km ** 2)
+            z += kernels @ np.asarray(weights[offset:offset + 128])
+        observed_dates = [business_date(e['date']) for e in window_events]
+        normalization_days = days or max(1, (max(observed_dates) - min(observed_dates)).days + 1)
+        z /= normalization_days
 
         # 国界掩膜：境外的密度置零（事件点本身在境内，但核函数会向外扩散）
         z[~self._inside_country(pts.T)] = 0.0
@@ -164,6 +187,8 @@ class EventDensityAnalyzer:
                 "located_count": located,
                 "window_days": days,
             }
+        absolute_z = z.copy().reshape(self._grid_rows, self._grid_cols)
+        comparable_z = np.clip(absolute_z / self._color_max, 0, 1)
         z = z / zmax  # 归一化 0~1
 
         # 峰值位置
@@ -186,6 +211,17 @@ class EventDensityAnalyzer:
             "degraded": None,
             "grid": grid,
             "z_matrix": zz,
+            "absolute_density": absolute_z,
+            "comparable_z_matrix": comparable_z,
+            "relative_density_note": "z_matrix仅供窗口内相对分布，不可跨窗口比较强弱",
+            "unit": "加权事件/(平方公里·天)",
+            "bandwidth_km": self._bandwidth_km,
+            "color_max_per_km2_day": self._color_max,
+            "algorithm_version": "kde-laea-v2",
+            "projection": projection,
+            "normalization_days": normalization_days,
+            "reported_multi_source_count": verified,
+            "quality_note": "多来源报道数不证明来源独立；不据此额外放大权重",
             "bbox": [[LAT_RANGE[0], LON_RANGE[0]],
                      [LAT_RANGE[1], LON_RANGE[1]]],
             "event_count": total,

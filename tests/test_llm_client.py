@@ -256,6 +256,37 @@ def test_placeholder_key_skips_network_immediately(tmp_path):
     assert fake.chat.completions.calls == []
 
 
+def test_private_provider_echo_is_absent_from_logs(tmp_path, caplog):
+    from analyzer.chain_reasoner import ChainReasoner
+    marker = '仅测试私密内容不可写入共享日志'
+    client = LLMClient(config=make_config(max_retries=1),
+        client=FakeClient([RuntimeError(marker)]), cache_path=tmp_path / 'cache.jsonl')
+    assert client.analyze_news(marker)['analysis_status'] == 'degraded'
+    assert marker not in caplog.text
+    reasoner = ChainReasoner()
+    class FailingLLM:
+        def _get_client_for_model(self, model):
+            raise RuntimeError(marker)
+    reasoner._llm = FailingLLM()
+    assert reasoner.run_chain(marker)['status'] == 'degraded'
+    assert marker not in caplog.text
+    assert 'RuntimeError' in caplog.text
+
+
+def test_task_llm_does_not_reuse_or_write_shared_cache(tmp_path):
+    from threading import Event
+    from storage.repository import task_scope
+    fake = FakeClient([json.dumps(VALID_RESULT)] * 3)
+    path = tmp_path / 'cache.jsonl'
+    client = LLMClient(config=make_config(), client=fake, cache_path=path)
+    client.analyze_news('同一输入')
+    before = path.read_bytes()
+    with task_scope(SimpleNamespace(repo=object()), {'id': 'fixture'}, Event()):
+        assert not client.analyze_news('同一输入')['cached']
+        assert not client.analyze_news('另一输入')['cached']
+    assert len(fake.chat.completions.calls) == 3 and path.read_bytes() == before
+
+
 def test_internal_retry_keeps_chain_specific_json_schema(tmp_path):
     chain_result = {"actors": ["缅甸军方"], "location": "掸邦", "event": "冲突"}
     fake = FakeClient([json.dumps(chain_result, ensure_ascii=False)])

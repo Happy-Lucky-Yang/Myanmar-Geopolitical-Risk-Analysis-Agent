@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>课题组登录</title></head>
+<body style="background:#10151f;color:#eee;font-family:system-ui;max-width:420px;margin:12vh auto;padding:24px;">
+<h1>课题组登录</h1>
+<p>手工输入默认仅本人可见；共享需由本人主动确认。</p>
+<form id="login-form">
+<p><label>用户名 <input id="username" autocomplete="username" required maxlength="128"></label></p>
+<p><label>密码 <input id="password" type="password" autocomplete="current-password" required maxlength="512"></label></p>
+<button type="submit">登录</button>
+</form>
+<p id="status" role="status"></p>
+<script src="/static/js/common.js"></script>
+<script>
+document.getElementById('login-form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var status = document.getElementById('status');
+    status.textContent = '登录中…';
+    try {
+        var result = await fetchJSON('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username: document.getElementById('username').value, password: document.getElementById('password').value})});
+        if (result.success) location.href = '/dashboard';
+        else status.textContent = result.error || '登录失败';
+    } catch (error) { status.textContent = error.message; }
+});
+</script>
+</body></html>

@@ -67,7 +67,7 @@ class LLMClient:
         self._max_tokens = cfg.get("max_tokens", 2048)
         self._max_retries = max(1, int(cfg.get("max_retries", 3)))
         self._timeout_seconds = max(1, int(cfg.get("timeout_seconds", 30)))
-        self._cache_enabled = bool(cfg.get("cache_enabled", True))
+        self._cache_enabled = bool(cfg.get("cache_enabled", True)) and os.environ.get("APP_SHARED_MODE", "false").lower() != "true"
         self._sleep = sleep_fn or time.sleep
         self._api_key = str(cfg.get("api_key", "")).strip()
         self._base_url = cfg.get("base_url", "http://localhost:8000/v1")
@@ -94,7 +94,11 @@ class LLMClient:
             }
 
         if client is not None:
+            # 注入客户端同样受占位 Key 守卫约束：配置里是占位 Key 时
+            # 必须短路网络调用，防止误连真实服务（契约测试依赖此行为）
             self._client = client
+            if self._is_placeholder_key(self._api_key):
+                self._availability_error = "LLM API Key 未配置，调用已短路"
         elif OpenAI is None:
             self._client = None
             self._availability_error = "openai SDK 未安装"
@@ -102,10 +106,12 @@ class LLMClient:
             self._client = None
             self._availability_error = "LLM API Key 未配置"
         else:
-            self._client = OpenAI(
-                base_url=self._base_url,
-                api_key=self._api_key,
-            )
+            try:
+                self._client = OpenAI(base_url=self._base_url, api_key=self._api_key,
+                                      timeout=self._timeout_seconds, max_retries=0)
+            except Exception:
+                self._client = None
+                self._availability_error = "默认提供商配置无效"
 
         default_cache = Path(get_data_paths()["raw"]) / "llm_cache.jsonl"
         self._cache_path = Path(cache_path) if cache_path else default_cache
@@ -122,8 +128,9 @@ class LLMClient:
         :param model: 模型 ID，None 表示使用默认客户端
         :return: (client, actual_model, error)
         """
-        if not model or model not in self._model_registry:
-            return self._client, model or self._model, self._availability_error
+        model = model or self._model
+        if model not in self._model_registry:
+            return self._client, model, self._availability_error
 
         reg = self._model_registry[model]
         if model in self._client_cache:
@@ -137,7 +144,8 @@ class LLMClient:
             return None, model, "openai SDK 未安装"
 
         try:
-            client = OpenAI(base_url=reg["base_url"], api_key=m_key)
+            client = OpenAI(base_url=reg["base_url"], api_key=m_key,
+                            timeout=self._timeout_seconds, max_retries=0)
             self._client_cache[model] = client
             return client, model, ""
         except Exception as e:
@@ -169,8 +177,10 @@ class LLMClient:
 
     def _analyze_messages(self, messages: List[Dict], text: str,
                           model: str = None) -> Dict:
+        from storage.repository import current_task
+        cache_allowed = self._cache_enabled and current_task() is None
         cache_key = self._build_cache_key(messages, text, model)
-        cached = self._cache.get(cache_key)
+        cached = self._cache.get(cache_key) if cache_allowed else None
         if cached is not None:
             result = self._normalize_result(cached)
             if result["analysis_status"] == "ok":
@@ -182,12 +192,13 @@ class LLMClient:
 
         # 多提供商路由：根据 model 选择对应的客户端
         client, actual_model, err = self._get_client_for_model(model)
-        if client is None:
+        if client is None or err:
+            # err 非空即视为配置不可用（如占位 Key / SDK 缺失），不触网
             return self._degraded_result(err or "LLM 客户端不可用")
 
         result = self._call_with_retry(messages, normalize=True,
                                         model=actual_model, client=client)
-        if self._cache_enabled and result["analysis_status"] == "ok":
+        if cache_allowed and result["analysis_status"] == "ok":
             self._store_cache(cache_key, result)
         return result
 
@@ -198,7 +209,11 @@ class LLMClient:
         Chain reasoning uses this compatibility method with its own JSON schema,
         so the default preserves arbitrary JSON dictionaries.
         """
-        _client = client or self._client
+        if client is None:
+            client, model, error = self._get_client_for_model(model)
+            if client is None or error:
+                return self._degraded_result(error) if normalize else {"error": error}
+        _client = client
         _model = model or self._model
         last_error: Optional[Exception] = None
         last_degraded = None
@@ -230,7 +245,7 @@ class LLMClient:
                     "[LLM] 调用失败 (尝试 %s/%s): %s",
                     attempt + 1,
                     self._max_retries,
-                    exc,
+                    type(exc).__name__,
                 )
                 if attempt < self._max_retries - 1:
                     self._sleep(2 * (2 ** attempt))
@@ -316,6 +331,8 @@ class LLMClient:
             result["analysis_status"] = "ok"
             result["error"] = ""
         result["cached"] = False
+        result["schema_completeness"] = round(1 - len(set(invalid)) / len(_REQUIRED_FIELDS), 4)
+        result["schema_version"] = "news-v2"
         return result
 
     def _degraded_result(self, error: str) -> Dict:
@@ -324,7 +341,10 @@ class LLMClient:
     def _build_cache_key(self, messages: List[Dict], text: str,
                          model: str = None) -> str:
         material = json.dumps(
-            {"model": model or self._model, "messages": messages, "text": text},
+            {"model": model or self._model, "messages": messages, "text": text,
+             "provider": self._model_registry.get(model or self._model, {}).get("base_url", self._base_url),
+             "schema_version": "news-v2", "prompt_version": "news-v2",
+             "temperature": self._temperature, "max_tokens": self._max_tokens},
             ensure_ascii=False,
             sort_keys=True,
         )
@@ -339,7 +359,7 @@ class LLMClient:
                 for line in handle:
                     try:
                         record = json.loads(line)
-                        if record.get("key") and isinstance(record.get("result"), dict):
+                        if isinstance(record, dict) and record.get("key") and isinstance(record.get("result"), dict) and record["result"].get("analysis_status") == "ok":
                             cache[record["key"]] = record["result"]
                     except json.JSONDecodeError:
                         logger.warning("[LLM] 忽略损坏的缓存行")

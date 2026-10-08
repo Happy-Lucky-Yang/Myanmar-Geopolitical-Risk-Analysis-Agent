@@ -1,4 +1,4 @@
-"""Offline dependency smoke check for the documented Python 3.10 environment."""
+"""Python 3.12 核心环境与可选NLP能力的离线检查。"""
 import importlib.util
 import importlib
 import sys
@@ -6,11 +6,11 @@ import sys
 
 REQUIRED_MODULES = (
     "flask", "flask_cors", "requests", "bs4", "pandas", "numpy",
-    "LAC", "snownlp", "nltk", "folium", "pyecharts", "networkx",
+    "jieba", "snownlp", "nltk", "folium", "pyecharts", "networkx",
     "wbgapi", "docx", "jinja2", "yaml", "spacy",
-    "pytest",
+    "pytest", "sqlalchemy", "psycopg", "alembic", "geoalchemy2", "shapely", "pyproj",
 )
-OPTIONAL_MODULES = ("openai", "neo4j")
+OPTIONAL_MODULES = ("openai", "neo4j", "LAC", "paddle")
 
 
 def _resource_available(resource_find, candidates):
@@ -80,9 +80,9 @@ def check_dependencies(find_spec=importlib.util.find_spec, resource_find=None,
 def main(version_info=None, find_spec=importlib.util.find_spec,
          resource_find=None, importer=importlib.import_module) -> int:
     version_info = tuple(version_info or sys.version_info[:2])
-    version_ok = version_info[:2] == (3, 10)
+    version_ok = version_info[:2] == (3, 12)
     if not version_ok:
-        print(f"[FAIL] 当前 Python {version_info[0]}.{version_info[1]}，验收版本为 Python 3.10")
+        print(f"[FAIL] 当前 Python {version_info[0]}.{version_info[1]}，验收版本为 Python 3.12")
 
     result = check_dependencies(
         find_spec=find_spec,

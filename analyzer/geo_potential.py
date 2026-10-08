@@ -38,7 +38,7 @@ STRATEGIC_CENTERS = {
 }
 
 
-class GeoPotentialAnalyzer:
+class LegacyGeoPotentialAnalyzer:
     """地缘位势评估器"""
 
     def __init__(self):
@@ -292,6 +292,68 @@ class GeoPotentialAnalyzer:
 # ============================================================
 # 单例
 # ============================================================
+class GeoPotentialAnalyzer(LegacyGeoPotentialAnalyzer):
+    """战略权重作为可见研究假设，风险输入只取实际区域样本。"""
+
+    def _get_provinces(self):
+        from analyzer.spatial_analysis import province_shapes
+        return {r['province']: (r['geometry'].representative_point().y, r['geometry'].representative_point().x)
+                for r in province_shapes()}
+
+    def _build_province_risk(self):
+        from analyzer.spatial_analysis import aggregate_provinces
+        from data.event_store import get_event_store
+        return {r['province']: r['risk_score'] for r in aggregate_provinces(get_event_store().load(7), 7)}
+
+    def compute_potential(self, province_risk=None):
+        from utils.data_contract import finite_number
+        risk = self._build_province_risk() if province_risk is None else province_risk
+        results = []
+        for province, (lat, lon) in self._get_provinces().items():
+            influences = {name: c['weight'] / (max(self._haversine(lat, lon, c['lat'], c['lon']), 10) / 100) ** 2
+                          for name, c in STRATEGIC_CENTERS.items()}
+            value = risk.get(province)
+            total = sum(influences.values())
+            results.append({'province': province, 'lat': lat, 'lon': lon,
+                            'risk_score': value if finite_number(value) else None,
+                            'potential': total * value / 100 if finite_number(value) else None,
+                            'total_influence': total, 'center_contributions': influences,
+                            'dominant_center': max(influences, key=influences.get),
+                            'data_status': 'derived' if finite_number(value) else 'missing'})
+        results.sort(key=lambda r: r['potential'] if r['potential'] is not None else -1, reverse=True)
+        maximum = max((r['potential'] for r in results if r['potential'] is not None), default=None)
+        for row in results:
+            row['potential_normalized'] = (100 * row['potential'] / maximum if maximum else 0) if row['potential'] is not None else None
+        return {'provinces': results, 'max_potential': maximum, 'centers': [{'name': k, **v} for k, v in STRATEGIC_CENTERS.items()],
+                'model': '规则烈度×Σ战略权重/(距离km/100)²；距离下限10km', 'algorithm_version': 'potential-v2',
+                'note': '战略权重为研究假设，不是观测；归一化值仅用于本窗口排序，不可跨时比较'}
+
+    def compute_spatial_autocorrelation(self, province_risk=None):
+        from analyzer.spatial_analysis import morans_i, province_shapes
+        risk = self._build_province_risk() if province_risk is None else province_risk
+        result = morans_i([{'region': r['code'], 'risk_score': risk.get(r['province'])} for r in province_shapes()])
+        return {**result, 'morans_i': result['moran_i'], 'n': result['sample_count']}
+
+    def identify_hotspots(self, province_risk=None, threshold=60):
+        from analyzer.spatial_analysis import province_shapes
+        from utils.data_contract import finite_number
+        risk = self._build_province_risk() if province_risk is None else province_risk
+        regions, result = province_shapes(), []
+        for region in regions:
+            value = risk.get(region['province'])
+            if not finite_number(value) or value < threshold:
+                continue
+            neighbors = [r['province'] for r in regions if r['code'] != region['code']
+                         and region['geometry'].touches(r['geometry']) and finite_number(risk.get(r['province']))]
+            if neighbors:
+                mean = sum(risk[n] for n in neighbors) / len(neighbors)
+                if mean >= threshold:
+                    result.append({'province': region['province'], 'risk_score': value,
+                                   'neighbor_avg_risk': mean, 'neighbors': neighbors,
+                                   'cluster_type': '描述性高-高邻接（未作局部显著性检验）'})
+        return result
+
+
 _instance = None
 _lock = threading.Lock()
 

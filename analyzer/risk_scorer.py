@@ -30,7 +30,7 @@ DEFAULT_WEIGHTS = {
 PLACEHOLDER_INDICATORS = {"nightlight_change", "refugee_change"}
 
 
-class RiskScorer:
+class LegacyRiskScorer:
     """多指标加权风险评分器"""
 
     def __init__(self, weights: Dict[str, float] = None):
@@ -312,6 +312,104 @@ class RiskScorer:
         """动态更新权重"""
         self._weights = new_weights
         self._validate_weights()
+
+
+class RiskScorer(LegacyRiskScorer):
+    """risk-v2：真实零值保留，缺测剔除，贡献及覆盖率显式输出。"""
+
+    def _validate_weights(self):
+        from utils.data_contract import finite_number
+        self._weights = dict(self._weights)
+        if not self._weights or any(not finite_number(v) or v < 0 for v in self._weights.values()):
+            raise ValueError("风险权重必须是非负有限数")
+        total = sum(self._weights.values())
+        if total <= 0:
+            raise ValueError("风险权重之和必须大于零")
+        self._weights = {k: v / total for k, v in self._weights.items()}
+
+    def normalize_indicators(self, raw_values, historical_data=None):
+        from utils.data_contract import finite_number
+        valid = {k: v for k, v in raw_values.items() if finite_number(v)}
+        history = {k: [v for v in vals if finite_number(v)]
+                   for k, vals in (historical_data or {}).items()}
+        normalized = super().normalize_indicators(valid, history)
+        return {k: normalized.get(k) for k in raw_values}
+
+    def calculate_risk_score(self, indicators, quality=None):
+        from utils.data_contract import RISK_VERSION, finite_number
+        quality = quality or {}
+        available = {k: w for k, w in self._weights.items()
+                     if finite_number(indicators.get(k)) and quality.get(k, "observed") in {"observed", "derived"}}
+        coverage = sum(available.values())
+        weights = {k: w / coverage for k, w in available.items()} if coverage else {}
+        details = {}
+        for key in self._weights:
+            value = indicators.get(key)
+            included = key in weights
+            value = min(1.0, max(0.0, value)) if finite_number(value) else None
+            contribution = value * weights[key] if included else None
+            details[key] = {"value": value, "weight": weights.get(key, 0),
+                            "contribution": contribution,
+                            "contribution_points": round(100 * contribution, 4) if included else None,
+                            "quality": quality.get(key, "observed" if value is not None else "missing"),
+                            "note": "" if included else "缺测或非正式观测，不参与评分"}
+        score = round(sum(d["contribution"] or 0 for d in details.values()) * 100, 2) if coverage else None
+        return {"risk_score": score,
+                "risk_level": "无数据" if score is None else "高风险" if score >= 70 else "中风险" if score >= 40 else "低风险",
+                "indicator_scores": details, "weights_used": weights,
+                "weight_rebalanced": coverage < 0.9999, "indicator_coverage": round(coverage, 4),
+                "data_status": "empty" if not coverage else "partial" if coverage < 0.9999 else "ok",
+                "algorithm_version": RISK_VERSION, "unit": "风险分（非发生概率）"}
+
+    def compute_daily_risk(self, daily_news, external_data=None, historical_data=None):
+        from utils.data_contract import article_identity, finite_number
+        import re
+        unique = {article_identity(item): item for item in daily_news if isinstance(item, dict)
+                  and (item.get("content") or item.get("text") or item.get("title"))}
+        news = list(unique.values())
+        if not news:
+            return {**self.calculate_risk_score({}), "news_count": 0, "raw_indicators": {}}
+        cfg = load_config().get("conflict_keywords", {})
+        words = cfg.get("zh", ["冲突", "空袭", "交火", "袭击"]) + cfg.get("en", ["conflict", "attack", "airstrike"])
+        def is_conflict(item):
+            text = str(item.get("content") or item.get("text") or item.get("title")).lower()
+            return any((re.search(r"\b" + re.escape(w.lower()) + r"\b", text) is not None)
+                       if w.isascii() else w in text for w in words)
+        count = sum(is_conflict(item) for item in news)
+        sentiments = [item["sentiment_score"] for item in news
+                      if finite_number(item.get("sentiment_score")) and 0 <= item["sentiment_score"] <= 1]
+        raw = {"conflict_frequency": count / len(news),
+               "sentiment_avg": 1 - sum(sentiments) / len(sentiments) if sentiments else None,
+               "nightlight_change": None, "refugee_change": None, "event_severity": None}
+        quality = {k: "derived" if v is not None else "missing" for k, v in raw.items()}
+        # 外部数据必须声明真实观测质量；未声明的代理值不进入正式评分。
+        ext = external_data or {}
+        for key in ("nightlight_change", "refugee_change", "event_severity"):
+            observation = ext.get(key)
+            if isinstance(observation, dict) and observation.get("quality") == "observed" and finite_number(observation.get("value")):
+                value = observation["value"]
+                raw[key] = max(0.0, -value) if key == "nightlight_change" else value
+                quality[key] = "observed"
+        result = self.calculate_risk_score(self.normalize_indicators(raw, historical_data), quality)
+        result.update(news_count=len(news), raw_indicators=raw, conflict_count=count, gdelt_used=False,
+                      sentiment_samples=len(sentiments), metric_description="去重报道的关键词比例与情感，不等于独立事件频次")
+        return result
+
+    def calculate_weekly_score(self, daily_scores):
+        from utils.data_contract import finite_number
+        values = [v for v in daily_scores if finite_number(v)]
+        return round(sum(values) / len(values), 2) if values else None
+
+    def fill_missing(self, scores):
+        """仅供显式估算视图使用：只插补内部缺测，不改零值、不外推端点。"""
+        from utils.data_contract import finite_number
+        result = [v if finite_number(v) else None for v in scores]
+        indices = [i for i, v in enumerate(result) if v is not None]
+        if len(indices) >= 2:
+            for i in range(indices[0], indices[-1] + 1):
+                if result[i] is None:
+                    result[i] = round(float(np.interp(i, indices, [result[j] for j in indices])), 2)
+        return result
 
 
 # 模块级单例

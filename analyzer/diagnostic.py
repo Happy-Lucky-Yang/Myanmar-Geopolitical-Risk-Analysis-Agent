@@ -28,8 +28,8 @@ INDICATOR_META = {
 }
 
 
-class DiagnosticAnalyzer:
-    """诊断性归因分析器"""
+class LegacyDiagnosticAnalyzer:
+    """保留旧版用于历史对照；正式入口使用下方贡献分析器。"""
 
     def diagnose(self, risk_result: Dict) -> Dict:
         """
@@ -384,6 +384,119 @@ class DiagnosticAnalyzer:
             parts.append("风险来源较为分散，属多因素综合作用。")
 
         return "".join(parts)
+
+
+class DiagnosticAnalyzer:
+    """只分解已保存的实际贡献，不用当前权重反推历史或作因果解释。"""
+
+    @staticmethod
+    def _contributions(record):
+        from utils.data_contract import finite_number
+        nested = record.get('details')
+        nested = nested if isinstance(nested, dict) else {}
+        details = record.get('indicator_scores', nested.get('indicator_scores', {}))
+        details = details if isinstance(details, dict) else {}
+        return {k: v for k, v in details.items() if isinstance(v, dict)
+                and finite_number(v.get('contribution')) and v['contribution'] >= 0
+                and v.get('quality', 'derived') in {'observed', 'derived'}}
+
+    def diagnose(self, risk_result):
+        from utils.data_contract import finite_number
+        details = self._contributions(risk_result)
+        score = risk_result.get('risk_score')
+        total = sum(v['contribution'] for v in details.values())
+        drivers = []
+        for key, value in details.items():
+            drivers.append({'indicator': key, 'name': INDICATOR_META.get(key, {}).get('name', key),
+                'value': value.get('value'), 'weight': value.get('weight'),
+                'contribution': value['contribution'], 'contribution_points': round(value['contribution'] * 100, 4),
+                'contribution_pct': round(value['contribution'] / total * 100, 2) if total else 0})
+        drivers.sort(key=lambda v: (-v['contribution'], v['indicator']))
+        text = ('按实际有效权重分解风险分，贡献不代表因果作用。' if drivers
+                else '缺少有效贡献明细，不能用当前权重反推历史。')
+        if drivers and total == 0:
+            text += '有效指标贡献均为零，不指定主导因素。'
+        return {'total_score': score if finite_number(score) else None, 'drivers': drivers,
+                'primary_driver': drivers[0]['name'] if drivers and total else None,
+                'attribution_text': text, 'contribution_text': text,
+                'concentration': sum((r['contribution_pct'] / 100) ** 2 for r in drivers) if total else None,
+                'algorithm_version': 'contribution-v2'}
+
+    def diagnose_change(self, current, previous):
+        from utils.data_contract import finite_number
+        cur, prev = self._contributions(current), self._contributions(previous)
+        current_score, previous_score = current.get('risk_score'), previous.get('risk_score')
+        delta = current_score - previous_score if all(map(finite_number, [current_score, previous_score])) else None
+        changes = []
+        for key in sorted(cur.keys() & prev.keys()):
+            change = 100 * (cur[key]['contribution'] - prev[key]['contribution'])
+            changes.append({'indicator': key, 'name': INDICATOR_META.get(key, {}).get('name', key),
+                            'change': round(change, 4), 'direction': '上升' if change > 0 else '下降' if change < 0 else '持平'})
+        changes.sort(key=lambda v: (-abs(v['change']), v['indicator']))
+        unavailable = sorted(cur.keys() ^ prev.keys())
+        text = '比较等长业务日窗口内的实际贡献均值；贡献变化包含指标值和有效权重变化，不作因果归因。'
+        if unavailable:
+            text += '部分指标覆盖不同，贡献差不可完整解释总分变化。'
+        residual = delta - sum(v['change'] for v in changes) if delta is not None else None
+        return {'current_score': current_score, 'previous_score': previous_score,
+                'delta': round(delta, 4) if delta is not None else None,
+                'trend': '数据不足' if delta is None else '上升' if delta > 0 else '下降' if delta < 0 else '持平',
+                'changes': changes, 'main_change': changes[0] if changes and changes[0]['change'] else None,
+                'uncomparable_indicators': unavailable, 'unexplained_delta': round(residual, 4) if residual is not None else None,
+                'change_text': text, 'algorithm_version': 'contribution-v2'}
+
+    def diagnose_from_history(self, days=14, end_date=None, region='MMR', algorithm_version='risk-v2', records=None):
+        from datetime import timedelta
+        from utils.data_contract import business_date, time_window, select_history, coverage_metadata
+        if type(days) is not int or not 4 <= days <= 3660:
+            raise ValueError('贡献比较窗口须为4～3660天')
+        period = days // 2
+        effective_days = period * 2
+        start, end = time_window(effective_days, end_date)
+        split = start + timedelta(days=period)
+        if records is None:
+            from analyzer.data_loader import get_data_loader
+            records = get_data_loader().load_risk_history(days=effective_days, end_date=end_date,
+                                                          region=region, algorithm_version=algorithm_version)
+        history = select_history(records, effective_days, end_date, algorithm_version=algorithm_version, region=region)
+        older = [r for r in history if business_date(r['date']) < split]
+        recent = [r for r in history if business_date(r['date']) >= split]
+        metadata = {'window_days': effective_days, 'requested_days': days, 'period_days': period,
+                    'older_period': f'{start} ~ {split - timedelta(days=1)}',
+                    'recent_period': f'{split} ~ {end - timedelta(days=1)}',
+                    'older_coverage': len(older) / period, 'recent_coverage': len(recent) / period,
+                    'metadata': coverage_metadata(history, effective_days, end_date, region=region, algorithm_version=algorithm_version)}
+        if len(older) < 2 or len(recent) < 2 or min(len(older), len(recent)) / period < .8:
+            return {**metadata, 'error': '两期各需至少2个有效日且覆盖率≥80%，不补零比较', 'delta': None, 'changes': []}
+
+        def aggregate(rows):
+            contributions = [self._contributions(row) for row in rows]
+            keys = set.intersection(*(set(c) for c in contributions))
+            return {'risk_score': sum(r['risk_score'] for r in rows) / len(rows),
+                    'indicator_scores': {k: {'contribution': sum(c[k]['contribution'] for c in contributions) / len(rows)} for k in keys}}
+
+        return {**self.diagnose_change(aggregate(recent), aggregate(older)), **metadata}
+
+    def explain_and_forecast(self, days=14, days_ahead=7, end_date=None, region='MMR', algorithm_version='risk-v2', records=None):
+        from utils.data_contract import calendar_series, select_history
+        from analyzer.trend import get_trend_analyzer
+        if records is None:
+            from analyzer.data_loader import get_data_loader
+            records = get_data_loader().load_risk_history(days=days, end_date=end_date,
+                                                          region=region, algorithm_version=algorithm_version)
+        base = self.diagnose_from_history(days, end_date, region, algorithm_version, records)
+        selected = select_history(records, days, end_date, algorithm_version=algorithm_version, region=region)
+        dates, scores = calendar_series(selected, days, end_date)
+        fc = get_trend_analyzer().forecast(scores, days_ahead=days_ahead, dates=dates)
+        predicted = fc['forecast'][-1] if fc.get('forecast') else None
+        base['future_outlook'] = {'predicted_score': predicted, 'days_ahead': days_ahead,
+            'projected_level': 'unknown', 'projected_label': '探索性外推，非正式预警' if predicted is not None else '样本不足',
+            'status': fc['status'], 'slope': fc.get('slope'), 'model': fc.get('model'),
+            'backtest': fc.get('backtest'), 'interval': fc.get('interval'),
+            'reliability': fc['confidence'], 'text': fc.get('reason', '')}
+        base['rise_explanation'] = {'is_rising': base.get('delta') is not None and base['delta'] > 0,
+                                   'detail': [], 'text': base.get('change_text', base.get('error'))}
+        return base
 
 
 # ============================================================

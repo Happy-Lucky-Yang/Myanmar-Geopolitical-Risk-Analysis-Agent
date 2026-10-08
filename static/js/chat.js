@@ -283,7 +283,7 @@ function renderChain(data) {
         html += '<div class="chain-step-head">';
         html += '<span class="chain-step-num">' + escapeHtml(String(step.step)) + '</span>';
         html += '<span class="chain-step-name">' + escapeHtml(step.name || '') + '</span>';
-        html += '<span class="chain-step-conf">置信度 ' + escapeHtml(formatNumber((step.confidence || 0) * 100, 0)) + '%</span>';
+        html += '<span class="chain-step-conf">字段完整率 ' + escapeHtml(formatNumber((step.schema_completeness || 0) * 100, 0)) + '%（非正确率）</span>';
         html += '</div>';
         html += '<div class="chain-qa"><span class="cq-q">' + escapeHtml(step.question || '') + '</span></div>';
         html += '<div class="chain-qa">' + formatChainAnswer(step.answer) + '</div>';

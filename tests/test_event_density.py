@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """事件密度（KDE）分析器单元测试（合成数据，无网络依赖）"""
 from datetime import datetime, timedelta
+from itertools import count
+
+_EVENT_IDS = count()
 
 import pytest
 
@@ -12,6 +15,7 @@ def _mk_event(lat, lon, root="19", quad="4", date=None, num_sources=2):
     if date is None:
         date = datetime.now().strftime("%Y%m%d")
     return {
+        "event_id": str(next(_EVENT_IDS)),
         "date": date,
         "event_code": root + "2",
         "root_code": root,
@@ -35,7 +39,7 @@ def _cluster_events():
     """仰光周边 20 条冲突 + 掸邦 10 条冲突（全部境内有效坐标）"""
     events = []
     for i in range(20):
-        events.append(_mk_event(16.8 + (i % 5) * 0.05, 96.15 + (i % 4) * 0.05))
+        events.append(_mk_event(16.88 + (i % 5) * 0.01, 96.12 + (i % 4) * 0.01))
     for i in range(10):
         events.append(_mk_event(21.4 + (i % 3) * 0.06, 97.9 + (i % 3) * 0.06))
     return events
@@ -77,6 +81,8 @@ def test_invalid_coordinates_skipped(analyzer):
     result = analyzer.compute(events, days=7)
     assert result["event_count"] == 32
     assert result["located_count"] == 31  # None 坐标被剔除
+    events.append(_mk_event(16.8, 96.25))
+    assert analyzer.compute(events, days=7)["located_count"] == 31
 
 
 def test_too_few_events_degrades(analyzer):
@@ -119,8 +125,8 @@ def test_verified_events_counted(analyzer):
     assert result["verified_count"] == result["located_count"]
 
 
-def test_single_source_multi_article_verified(analyzer):
-    """缅甸常见形态：单信源但多篇报道（num_articles>=2）也计为互证"""
+def test_single_source_reprints_are_not_independent_evidence(analyzer):
+    """同一来源多篇报道不能充当多个独立信源。"""
     events = []
     for i in range(10):
         ev = _mk_event(16.8 + (i % 3) * 0.05, 96.15 + (i % 2) * 0.06,
@@ -128,7 +134,8 @@ def test_single_source_multi_article_verified(analyzer):
         ev["num_articles"] = 5
         events.append(ev)
     result = analyzer.compute(events, days=7)
-    assert result["verified_count"] == result["located_count"]
+    assert result["verified_count"] == 0
+    assert result["reported_multi_source_count"] == 0
 
 
 def test_min_sources_filter():

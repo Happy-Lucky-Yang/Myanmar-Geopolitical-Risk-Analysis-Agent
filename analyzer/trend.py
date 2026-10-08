@@ -11,7 +11,7 @@ from utils.config import get_trend_config
 logger = logging.getLogger(__name__)
 
 
-class TrendAnalyzer:
+class LegacyTrendAnalyzer:
     """风险趋势分析器"""
 
     def __init__(self):
@@ -331,6 +331,133 @@ class TrendAnalyzer:
             "r_squared": round(float(r_squared), 4),
             "confidence": confidence
         }
+
+
+class TrendAnalyzer(LegacyTrendAnalyzer):
+    """trend-v2：按业务日计算，缺测不补值，时间回测先于模型复杂化。"""
+
+    @staticmethod
+    def _series(scores, dates=None):
+        from utils.data_contract import business_date, finite_number
+        if dates is not None:
+            if len(scores) != len(dates):
+                raise ValueError("日期与评分长度不一致")
+            parsed = [business_date(d) for d in dates]
+            if any(d is None for d in parsed) or any(a >= b for a, b in zip(parsed, parsed[1:])):
+                raise ValueError("日期必须有效、唯一、递增")
+            x = np.array([(d - parsed[0]).days for d in parsed], dtype=float)
+        else:
+            x = np.arange(len(scores), dtype=float)
+        valid = np.array([finite_number(v) for v in scores], dtype=bool)
+        y = np.array([float(v) if finite_number(v) else np.nan for v in scores])
+        span = int(x[-1] - x[0] + 1) if len(x) else 0
+        return x, y, valid, span
+
+    def moving_average(self, scores, window=None):
+        from utils.data_contract import finite_number
+        window = window or self._ma_window
+        if window < 1:
+            raise ValueError("窗口必须为正整数")
+        result = []
+        for i in range(window - 1, len(scores)):
+            values = [v for v in scores[i - window + 1:i + 1] if finite_number(v)]
+            result.append(round(float(np.mean(values)), 4) if len(values) >= np.ceil(window * .8) else None)
+        return result
+
+    def linear_regression(self, scores, dates=None):
+        x, y, valid, span = self._series(scores, dates)
+        count = int(valid.sum())
+        if count < 14 or count / max(span, 1) < .8:
+            return {"slope": None, "intercept": None, "r_squared": None,
+                    "trend": "数据不足", "data_points": count}
+        slope, intercept = np.polyfit(x[valid], y[valid], 1)
+        residual = y[valid] - (slope * x[valid] + intercept)
+        total = np.sum((y[valid] - np.mean(y[valid])) ** 2)
+        return {"slope": round(float(slope), 6), "intercept": round(float(intercept), 4),
+                "r_squared": round(float(1 - np.sum(residual ** 2) / total), 4) if total > 0 else None,
+                "trend": "上升" if slope > .005 else "下降" if slope < -.005 else "平稳",
+                "data_points": count, "slope_unit": "风险分/日"}
+
+    def full_analysis(self, scores, dates=None):
+        x, y, valid, span = self._series(scores, dates)
+        reg = self.linear_regression(scores, dates)
+        return {"moving_average": self.moving_average(scores), "regression": reg, "trend": reg["trend"],
+                "latest_score": float(y[valid][-1]) if valid.any() else None,
+                "avg_score": round(float(np.mean(y[valid])), 4) if valid.any() else None,
+                "data_points": int(valid.sum()), "calendar_days": span,
+                "coverage": round(int(valid.sum()) / max(span, 1), 4), "algorithm_version": "trend-v2"}
+
+    @staticmethod
+    def _predict(model, x, y, target):
+        if model == "linear":
+            a, b = np.polyfit(x, y, 1)
+            values = a * target + b
+        elif model == "ewma":
+            level = y[0]
+            for i in range(1, len(y)):
+                alpha = 1 - .7 ** max(1, x[i] - x[i - 1])
+                level = alpha * y[i] + (1 - alpha) * level
+            values = np.full(len(target), level)
+        else:
+            values = np.full(len(target), y[-1])
+        return np.clip(values, 0, 100)
+
+    def forecast(self, scores, days_ahead=7, dates=None):
+        if not isinstance(days_ahead, int) or not 1 <= days_ahead <= 30:
+            raise ValueError("预测期须为 1～30 天")
+        x, y, valid, span = self._series(scores, dates)
+        count = int(valid.sum())
+        result = {"forecast": [], "slope": None, "r_squared": None, "backtest": None,
+                  "interval": None, "confidence": "未验收", "algorithm_version": "trend-v2"}
+        if count < 14 or count / max(span, 1) < .8 or not len(valid) or not valid[-1]:
+            return {**result, "status": "insufficient", "reason": "需至少14个有效日、覆盖率≥80%，且截止日有观测"}
+        models = ("last", "ewma", "linear")
+        errors = {m: [] for m in models}
+        folds = 0
+        if count >= 56 and span >= 56:
+            for cut in range(14, span - 6, 7):
+                train = valid & (x < cut)
+                test = valid & (x >= cut) & (x < cut + 7)
+                if train.sum() < 14 or train.sum() / cut < .8 or test.sum() < 6:
+                    continue
+                folds += 1
+                for model in models:
+                    errors[model].extend((y[test] - self._predict(model, x[train], y[train], x[test])).tolist())
+        model = "last"
+        if folds >= 4:
+            metrics = {m: {"mae": float(np.mean(np.abs(e))), "rmse": float(np.sqrt(np.mean(np.square(e)))),
+                           "samples": len(e)} for m, e in errors.items()}
+            model = min(models, key=lambda m: (metrics[m]["mae"], metrics[m]["rmse"]))
+            result["backtest"] = {"windows": folds, "horizon_days": 7, "models": metrics,
+                                  "selected_model": model, "status": "探索性滚动回测，非独立留出验收"}
+        target = x[-1] + np.arange(1, days_ahead + 1)
+        prediction = self._predict(model, x[valid], y[valid], target)
+        if folds >= 4 and days_ahead <= 7:
+            lo, hi = np.quantile(errors[model], [.1, .9])
+            result["interval"] = {"lower": np.clip(prediction + lo, 0, 100).round(2).tolist(),
+                                  "upper": np.clip(prediction + hi, 0, 100).round(2).tolist(),
+                                  "label": "滚动回测残差10%～90%经验区间，非概率保证"}
+        reg = self.linear_regression(scores, dates)
+        result.update(forecast=prediction.round(2).tolist(), slope=reg["slope"], r_squared=reg["r_squared"],
+                      status="exploratory", model=model, confidence="探索性；不以R²表示可靠性",
+                      reason="回测不足，保留末值基线" if folds < 4 else "以滚动MAE/RMSE选择模型")
+        return result
+
+    def detect_anomalies(self, scores, threshold=3.5):
+        from utils.data_contract import finite_number
+        anomalies = []
+        for i, value in enumerate(scores):
+            history = [v for v in scores[max(0, i - 28):i] if finite_number(v)]
+            if not finite_number(value) or len(history) < 14:
+                continue
+            median = float(np.median(history))
+            mad = float(np.median(np.abs(np.array(history) - median)))
+            scale = max(1.0, 1.4826 * mad)
+            deviation = abs(value - median) / scale
+            if deviation > threshold:
+                anomalies.append({"index": i, "value": value, "deviation": round(deviation, 4),
+                                  "type": "peak" if value > median else "trough", "method": "历史窗口中位数/MAD"})
+        return anomalies
 
 
 # 模块级单例

@@ -4,6 +4,7 @@ visualization.chart_gen - 图表生成模块
 """
 import threading
 from typing import List, Dict, Optional
+from utils.data_contract import finite_number
 
 
 class TrendChartGenerator:
@@ -29,15 +30,21 @@ class TrendChartGenerator:
         :param title: 图表标题
         :return: 图表数据字典
         """
+        if len(dates) != len(scores):
+            raise ValueError('日期与评分长度不一致')
+        def rounded(value):
+            return round(value, 4) if finite_number(value) else None
+
         chart_data = {
             "title": title,
-            "xAxis": dates,
+            "xAxis": list(dates),
             "series": [
                 {
                     "name": "风险分",
                     "type": "line",
-                    "data": [round(s, 4) for s in scores],
-                    "smooth": True,
+                    "data": [rounded(s) for s in scores],
+                    "smooth": False,
+                    "connectNulls": False,
                     "lineStyle": {"width": 2},
                     "areaStyle": {"opacity": 0.1}
                 }
@@ -51,15 +58,20 @@ class TrendChartGenerator:
 
         # 添加移动平均线
         if moving_avg and len(moving_avg) > 0:
-            # 移动平均序列比原始数据短，需要对齐
+            # 移动平均序列比原始数据短，需要对齐；
+            # 若存在预测序列，xAxis 会向后延长，尾部同样补 None 占位
             offset = len(scores) - len(moving_avg)
-            ma_padded = [None] * offset + [round(v, 4) for v in moving_avg]
+            tail = len(forecast) if forecast else 0
+            ma_padded = ([None] * offset
+                         + [rounded(v) for v in moving_avg]
+                         + [None] * tail)
 
             chart_data["series"].append({
                 "name": f"移动平均",
                 "type": "line",
                 "data": ma_padded,
-                "smooth": True,
+                "smooth": False,
+                "connectNulls": False,
                 "lineStyle": {"width": 2, "type": "dashed"},
                 "symbol": "none"
             })
@@ -78,26 +90,39 @@ class TrendChartGenerator:
                     chart_data["xAxis"] = dates + [f"D+{i+1}" for i in range(len(forecast))]
 
             # 实际数据填充 None 占位
-            actual_padded = [round(s, 4) for s in scores] + [None] * len(forecast)
+            actual_padded = [rounded(s) for s in scores] + [None] * len(forecast)
             chart_data["series"][0]["data"] = actual_padded
 
             # 预测序列
             forecast_padded = [None] * len(scores) + [round(f, 4) for f in forecast]
             # 连接点: 预测序列的第一个点 = 实际数据的最后一个点
             if scores:
-                forecast_padded[len(scores) - 1] = round(scores[-1], 4)
+                forecast_padded[len(scores) - 1] = rounded(scores[-1])
 
             chart_data["series"].append({
                 "name": "预测",
                 "type": "line",
                 "data": forecast_padded,
-                "smooth": True,
+                "smooth": False,
+                "connectNulls": False,
                 "lineStyle": {"width": 2, "type": "dashed"},
                 "itemStyle": {"color": "#d29922"},
                 "symbol": "none"
             })
 
             chart_data["forecast_meta"] = forecast_meta or {}
+            interval = (forecast_meta or {}).get('interval')
+            if isinstance(interval, dict):
+                for key, label in (('lower', '经验区间下界'), ('upper', '经验区间上界')):
+                    values = interval.get(key)
+                    if isinstance(values, list) and len(values) == len(forecast):
+                        chart_data['series'].append({
+                            'name': label, 'type': 'line', 'smooth': False, 'connectNulls': False,
+                            'data': [None] * len(scores) + [rounded(v) for v in values],
+                            'lineStyle': {'width': 1, 'type': 'dotted'},
+                            'itemStyle': {'color': '#d29922'}, 'areaStyle': {'opacity': 0},
+                            'symbol': 'none'})
+                chart_data['interval_label'] = interval.get('label')
 
         # 添加预警阈值参考线 (markLine)
         if threshold_lines:
@@ -131,16 +156,18 @@ class TrendChartGenerator:
         :return: 图表数据字典
         """
         # 按风险分降序排列
-        paired = sorted(zip(provinces, scores), key=lambda x: x[1], reverse=True)
+        paired = sorted(zip(provinces, scores), key=lambda x: x[1] if finite_number(x[1]) else -1, reverse=True)
         sorted_provinces = [p[0] for p in paired]
-        sorted_scores = [round(p[1], 4) for p in paired]
+        sorted_scores = [round(p[1], 4) if finite_number(p[1]) else None for p in paired]
 
         # 根据分数设置颜色
         colors = []
         for s in sorted_scores:
-            if s >= 0.7:
+            if s is None:
+                colors.append('#8b949e')
+            elif s >= 70:
                 colors.append("#e74c3c")  # 红
-            elif s >= 0.4:
+            elif s >= 40:
                 colors.append("#f39c12")  # 橙
             else:
                 colors.append("#27ae60")  # 绿

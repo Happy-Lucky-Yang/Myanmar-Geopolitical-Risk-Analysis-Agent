@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 趋势预测</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808c">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 </head>
 <body>
@@ -23,14 +23,9 @@
         <h2>风险趋势分析</h2>
         <p class="subtitle">Risk Trend · Forecast · Anomaly Detection</p>
 
+        {% include '_view_filters.html' %}
         <div class="controls">
-            <label>时间范围
-                <select id="days-select">
-                    <option value="30" selected>近30天</option>
-                    <option value="60">近60天</option>
-                    <option value="90">近90天</option>
-                </select>
-            </label>
+            <label>数据域 <select id="domain-filter"><option value="observed">正式观测</option><option value="legacy">旧版历史（不预测）</option></select></label>
             <button class="btn btn-primary" onclick="loadTrend()">刷新</button>
         </div>
 
@@ -55,13 +50,13 @@
 
             <!-- 报告导出 -->
             <div class="span-12" style="text-align:center;margin-top:0.5rem;">
-                <a href="/api/report?format=html&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;margin-right:8px;">导出 HTML 报告</a>
-                <a href="/api/report?format=docx&days=30" target="_blank" class="btn btn-primary" style="text-decoration:none;">导出 DOCX 报告</a>
+                <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none;margin-right:8px;">导出 HTML 报告</a>
+                <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none;">导出 DOCX 报告</a>
             </div>
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808c"></script>
-    <script src="{{ url_for('static', filename='js/trend.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
+    <script src="{{ url_for('static', filename='js/trend.js') }}?v=views-v3"></script>
 </body>
 </html>

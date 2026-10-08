@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_DB: mmr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?请设置数据库管理员密码}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?请设置应用数据库密码}
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD:?请设置迁移数据库密码}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mmr"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+  web:
+    build: .
+    environment: &runtime
+      STORAGE_BACKEND: postgres
+      DATABASE_URL: ${DATABASE_URL:?请设置mmr_app连接URL，主机使用db}
+      APP_SHARED_MODE: "true"
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?请设置至少32字符随机会话密钥}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      ENABLE_EMBEDDED_SCHEDULER: "false"
+    volumes:
+      - runtime_data:/runtime
+    ports:
+      - "127.0.0.1:5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["python", "worker.py"]
+    environment: *runtime
+    volumes:
+      - runtime_data:/runtime
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  migrate:
+    build: .
+    profiles: ["tools"]
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  postgres_data:
+  runtime_data:

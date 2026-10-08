@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 对话分析</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260816b">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
 </head>
 <body>
     <nav class="navbar">
@@ -19,7 +19,11 @@
 
     <main class="container console-page">
         <h2>新闻文本分析</h2>
-        <p class="subtitle">Text Analysis · NER · Sentiment · Risk Scoring · LLM</p>
+        <p class="subtitle">手工输入仅作独立文本分析，不写入正式日风险或共享图谱。</p>
+        <details><summary>浏览数据的筛选上下文（跨页面保留，不裁剪下面的输入文本）</summary>
+            {% include '_view_filters.html' %}
+        </details>
+        <p class="muted-note">推荐从“综合态势”查看正式观测。模型结论须结合证据与不确定性复核，字段完整不等于结论正确。</p>
 
         <div class="chat-console">
             <!-- 输入区 -->
@@ -81,7 +85,7 @@
 
                     <!-- 诊断归因 -->
                     <div class="card card-full">
-                        <div class="card-title"><span class="icon">🔬</span> 诊断性归因分析</div>
+                        <div class="card-title"><span class="icon">🔬</span> 指标贡献分析（非因果）</div>
                         <div id="diagnostic-body"></div>
                     </div>
 
@@ -101,7 +105,8 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260816b"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260816b"></script>
+    <script>initViewFilters();</script>
 </body>
 </html>

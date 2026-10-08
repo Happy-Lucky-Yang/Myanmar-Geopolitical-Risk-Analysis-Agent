@@ -25,6 +25,7 @@ import logging
 import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
+from utils.data_contract import finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -117,9 +118,10 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
         if len(row) < _MIN_COLS or row[COL_ACTIONGEO_COUNTRY] != country:
             continue
         try:
-            tone = float(row[COL_AVGTONE]) if row[COL_AVGTONE] else 0.0
+            tone = float(row[COL_AVGTONE]) if row[COL_AVGTONE] else None
+            tone = tone if finite_number(tone) else None
         except ValueError:
-            tone = 0.0
+            tone = None
         # 经纬度（可能为空或地理编码错误，越界置 None 供下游过滤）
         lat = lon = None
         try:
@@ -131,6 +133,7 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
         except (ValueError, IndexError):
             pass
         events.append({
+            "source": "gdelt", "run_kind": "live", "location_method": "action_geo",
             "event_id": row[COL_EVENTID],
             "date": row[COL_SQLDATE],
             "event_code": row[COL_EVENTCODE],
@@ -164,30 +167,31 @@ def _batch_ts_from_url(url: str) -> Optional[datetime]:
         return None
 
 
-def event_severity_weight(ev: Dict) -> float:
+def event_severity_weight(ev: Dict) -> Optional[float]:
     """
     事件严重度权重（0~1），指标聚合与 KDE 密度估计共用，保证口径一致
 
     规则：QuadClass 4（实质性冲突）或冲突类根码 → ≥0.7；
     QuadClass 3（口头冲突/动荡）→ ≥0.4；其余按根码映射。
     """
-    root = ev.get("root_code", "")[:2]
-    category, severity = ROOT_INFO.get(root, ("diplomacy", 0.1))
-    if ev.get("quad_class") == "4" or category == "conflict":
-        return max(severity, 0.7)
-    if ev.get("quad_class") == "3":
-        return max(severity, 0.4)
+    root = str(ev.get('root_code', '')).strip().zfill(2)
+    category, severity = ROOT_INFO.get(root, ('unknown', None))
+    quad = str(ev.get('quad_class', ''))
+    if quad == '4' or category == 'conflict':
+        return max(severity or 0, 0.7)
+    if quad == '3':
+        return max(severity or 0, 0.4)
     return severity
 
 
 def event_category(ev: Dict) -> str:
     """事件分类（conflict/unrest/diplomacy），与严重度规则联动"""
-    root = ev.get("root_code", "")[:2]
-    category, _ = ROOT_INFO.get(root, ("diplomacy", 0.1))
-    if ev.get("quad_class") == "4" or category == "conflict":
-        return "conflict"
-    if ev.get("quad_class") == "3":
-        return "unrest"
+    root = str(ev.get('root_code', '')).strip().zfill(2)
+    category, _ = ROOT_INFO.get(root, ('unknown', None))
+    if str(ev.get('quad_class', '')) == '4' or category == 'conflict':
+        return 'conflict'
+    if str(ev.get('quad_class', '')) == '3':
+        return 'unrest'
     return category
 
 
@@ -213,13 +217,19 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
     events = []
     newest_ts = None  # 成功处理（200/404）的最新批次，供水位线推进
     urls = enumerate_batch_urls(count=max_files, base_url=base_url)
+    if since_ts is not None and urls:
+        latest = _batch_ts_from_url(urls[0])
+        count = max(0, min(max_files, int((latest - since_ts).total_seconds() // 900))) if latest else 0
+        upper = since_ts + timedelta(minutes=15 * count)
+        urls = enumerate_batch_urls(end_dt=upper, count=count, base_url=base_url) if count else []
+    urls = sorted(urls, key=lambda url: _batch_ts_from_url(url) or datetime.min)
 
     for i, url in enumerate(urls):
         batch_ts = _batch_ts_from_url(url)
         # 增量模式：到达水位线即停（更早批次已入库）
         if since_ts is not None and batch_ts is not None and batch_ts <= since_ts:
             logger.info(f"[GDELT-CSV] 已达增量水位线 {since_ts:%Y%m%d%H%M}，停止")
-            break
+            continue
         # 全量模式：目标事件数提前停止
         if since_ts is None and len(events) >= target_events:
             logger.info(f"[GDELT-CSV] 已达目标事件数 {target_events}，提前停止")
@@ -227,9 +237,8 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
         try:
             resp = requests.get(url, timeout=(15, timeout))
             if resp.status_code == 404:
-                if batch_ts and (newest_ts is None or batch_ts > newest_ts):
-                    newest_ts = batch_ts
-                continue  # 该批次尚未发布，继续向前
+                logger.warning("[GDELT-CSV] 批次缺失，停止并保留连续成功水位")
+                break
             resp.raise_for_status()
 
             with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
@@ -247,7 +256,7 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
         except Exception as e:
             logger.warning(f"[GDELT-CSV] 文件下载/解析失败 {url}: {e}")
             # 失败批次不推进水位线，下轮重试
-            continue
+            break
 
     return events, newest_ts
 
@@ -259,19 +268,8 @@ def compute_metrics_from_events(events: List[Dict]) -> Dict:
     :param events: fetch_myanmar_events 的返回值
     :return: 指标字典（article_count/conflict_frequency/avg_tone_risk 等）
     """
-    if not events:
-        return {
-            "article_count": 0,
-            "conflict_count": 0,
-            "conflict_frequency": 0.0,
-            "avg_tone_risk": 0.5,
-            "avg_severity": 0.0,
-            "max_severity": 0.0,
-            "event_summary": {},
-            "top_locations": [],
-            "data_channel": "gdelt_csv",
-        }
-
+    from analyzer.spatial_analysis import unique_events
+    events = unique_events(events or [])
     n = len(events)
     conflict_count = 0
     tone_risks = []
@@ -286,27 +284,34 @@ def compute_metrics_from_events(events: List[Dict]) -> Dict:
         if category == "conflict":
             conflict_count += 1
 
-        severities.append(severity)
+        if finite_number(severity):
+            severities.append(severity)
         event_counts[category] = event_counts.get(category, 0) + 1
 
         # tone 风险映射：AvgTone 典型范围 -10~10，越负风险越高
-        tone_risks.append(max(0.0, min(1.0, 0.5 - ev.get("avg_tone", 0.0) / 20.0)))
+        if finite_number(ev.get('avg_tone')):
+            tone_risks.append(max(0.0, min(1.0, 0.5 - ev['avg_tone'] / 20.0)))
 
         loc = ev.get("location", "")
-        if loc:
+        if isinstance(loc, str) and loc:
             location_counts[loc] = location_counts.get(loc, 0) + 1
 
     top_locations = sorted(
         location_counts.items(), key=lambda x: x[1], reverse=True
     )[:10]
 
+    classified = n - event_counts.get('unknown', 0)
     return {
-        "article_count": n,
-        "conflict_count": conflict_count,
-        "conflict_frequency": round(conflict_count / max(n, 1), 4),
-        "avg_tone_risk": round(sum(tone_risks) / len(tone_risks), 4),
-        "avg_severity": round(sum(severities) / len(severities), 4),
-        "max_severity": round(max(severities), 4) if severities else 0.0,
+        'event_count': n, 'article_count': None,
+        'count_note': '按来源事件ID去重的事件记录数；不是独立报道数或已验证独立事件数。',
+        'data_status': 'partial' if n else 'empty', 'algorithm_version': 'event-metrics-v2',
+        'classified_count': classified, 'tone_sample_count': len(tone_risks),
+        'severity_sample_count': len(severities),
+        'conflict_count': conflict_count if classified else None,
+        'conflict_frequency': round(conflict_count / classified, 4) if classified else None,
+        'avg_tone_risk': round(sum(tone_risks) / len(tone_risks), 4) if tone_risks else None,
+        'avg_severity': round(sum(severities) / len(severities), 4) if severities else None,
+        'max_severity': round(max(severities), 4) if severities else None,
         "event_summary": event_counts,
         "top_locations": [{"name": k, "count": v} for k, v in top_locations],
         "data_channel": "gdelt_csv",

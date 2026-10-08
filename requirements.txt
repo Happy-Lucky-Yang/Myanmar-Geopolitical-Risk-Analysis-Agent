@@ -16,7 +16,8 @@ pandas==2.2.2
 numpy==1.26.4
 
 # ---------- NLP ----------
-LAC==2.1.2
+jieba==0.42.1
+# LAC/Paddle 为可选能力，不阻断 Python 3.12 主环境。
 spacy==3.7.5                       # 英文 NER（另需下载 en_core_web_sm）
 snownlp==0.12.3
 nltk==3.8.1                       # VADER 英文情感分析
@@ -43,3 +44,18 @@ Jinja2==3.1.4                      # HTML 报告模板
 # ---------- 工具 ----------
 pyyaml==6.0.1
 pytest==8.2.2                      # 离线自动化验收
+
+# ---------- PostgreSQL / PostGIS ----------
+SQLAlchemy==2.0.43
+psycopg[binary]==3.2.10
+alembic==1.16.5
+GeoAlchemy2==0.18.0
+shapely==2.1.1
+pyproj==3.7.2
+tzdata==2025.2
+
+# ---------- 空间统计与部署 ----------
+scipy==1.14.1
+matplotlib==3.9.2
+gunicorn==23.0.0; sys_platform != 'win32'
+playwright==1.55.0

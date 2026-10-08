@@ -18,6 +18,8 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from copy import deepcopy
+from utils.data_contract import business_date, time_window, fingerprint, json_safe, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,10 @@ class EventStore:
 
     def __init__(self, persist_path: str = None,
                  keep_days: int = DEFAULT_KEEP_DAYS):
+        from storage.repository import get_repository
+        self._repository = get_repository()
+        self._watermark = None
+        self._load_error = False
         self._lock = threading.Lock()
         self._keep_days = keep_days
         if persist_path is None:
@@ -39,52 +45,81 @@ class EventStore:
         self._file = persist_path
         self._events: List[Dict] = []
         self._ids = set()
-        self._load()
+        if self._repository is None:
+            self._load()
 
     # ============================================================
     # 追加与查询
     # ============================================================
 
-    def append(self, events: List[Dict]) -> int:
+    def append(self, events: List[Dict], watermark=None) -> int:
         """
         追加事件（按 event_id 去重；无 ID 的旧格式事件按全字段指纹去重）
 
         :return: 实际新增条数
         """
+        if self._load_error:
+            raise RuntimeError("事件文件损坏，禁止覆盖；请先备份并人工核验")
+        if watermark is not None:
+            if len(str(watermark)) != 14:
+                raise ValueError("水位必须为14位UTC批次时间")
+            datetime.strptime(str(watermark), "%Y%m%d%H%M%S")
+        events = list(events or [])
+        if any(not isinstance(ev, dict) or business_date(ev.get("date")) is None for ev in events):
+            raise ValueError("事件批次存在无效记录，未提交或推进水位")
+        if self._repository is not None:
+            return len(self._repository.save_events(events, watermark=watermark))
         added = 0
         with self._lock:
-            for ev in events or []:
-                eid = ev.get("event_id") or self._fingerprint(ev)
+            before = (list(self._events), set(self._ids), self._watermark)
+            for ev in events:
+                eid = str(ev.get("event_id") or self._fingerprint(ev))
                 if eid in self._ids:
                     continue
                 self._ids.add(eid)
-                self._events.append(ev)
+                self._events.append(deepcopy(ev))
                 added += 1
-            if added:
-                self._prune_locked()
-                self._save_locked()
+            if watermark and (not self._watermark or str(watermark) > self._watermark):
+                self._watermark = str(watermark)
+            if added or watermark:
+                try:
+                    self._save_locked()
+                except Exception:
+                    self._events, self._ids, self._watermark = before
+                    raise
         if added:
             logger.info(
                 f"[EventStore] 新增 {added} 条事件"
                 f"（库内累计 {len(self._events)} 条）")
         return added
 
-    def load(self, days: int = None) -> List[Dict]:
+    def load(self, days: int = None, end_date=None) -> List[Dict]:
         """
         读取事件（可选时间窗口过滤）
 
         :param days: 仅返回最近 N 天（按事件日期），None=全部
         """
+        if self._repository is not None:
+            return self._repository.load_events(days, end_date)
         with self._lock:
-            if not days:
-                return list(self._events)
-            cutoff = (datetime.now() - timedelta(days=days)
-                      ).strftime("%Y%m%d")
-            return [ev for ev in self._events
-                    if ev.get("date", "") >= cutoff]
+            records = [ev for ev in self._events if ev.get("run_kind", "existing") in {"live", "existing"}]
+            if days is None:
+                return deepcopy(records)
+            start, end = time_window(days, end_date)
+            return deepcopy([ev for ev in records if business_date(ev.get("date")) is not None
+                             and start <= business_date(ev["date"]) < end])
+
+    def checkpoint(self):
+        return self._repository.checkpoint() if self._repository is not None else self._watermark
 
     def stats(self) -> Dict:
         """库概况（供健康检查/日志）"""
+        if self._repository is not None:
+            records = self.load()
+            dates = sorted(ev.get("date", "") for ev in records)
+            return {"total": len(records), "earliest": dates[0] if dates else None,
+                    "latest": dates[-1] if dates else None,
+                    "located": sum(ev.get("lat") is not None for ev in records)}
         with self._lock:
             dates = sorted(ev.get("date", "") for ev in self._events)
             return {
@@ -102,7 +137,7 @@ class EventStore:
     @staticmethod
     def _fingerprint(ev: Dict) -> str:
         """无 event_id 时的去重指纹：日期+位置+事件码"""
-        return f"{ev.get('date')}|{ev.get('event_code')}|{ev.get('location')}"
+        return fingerprint(ev)
 
     def _prune_locked(self):
         """修剪超过保留期的事件"""
@@ -124,16 +159,19 @@ class EventStore:
     def _save_locked(self):
         try:
             payload = {
-                "updated_at": datetime.now().isoformat(timespec="seconds"),
+                "updated_at": utc_now().isoformat(),
+                "watermark": self._watermark,
                 "event_count": len(self._events),
                 "events": self._events,
             }
+            os.makedirs(os.path.dirname(os.path.abspath(self._file)), exist_ok=True)
             tmp = self._file + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False)
+                json.dump(json_safe(payload), f, ensure_ascii=False, allow_nan=False)
             os.replace(tmp, self._file)
         except Exception as e:
-            logger.warning(f"[EventStore] 持久化失败: {e}")
+            logger.warning("[EventStore] 持久化失败，批次已回滚")
+            raise
 
     def _load(self):
         try:
@@ -142,16 +180,18 @@ class EventStore:
             with open(self._file, "r", encoding="utf-8") as f:
                 payload = json.load(f)
             with self._lock:
-                self._events = payload.get("events", [])
-                self._ids = {
-                    ev.get("event_id") or self._fingerprint(ev)
-                    for ev in self._events
-                }
-                self._prune_locked()
+                candidates = payload.get("events", [])
+                self._events = [ev for ev in candidates if isinstance(ev, dict) and business_date(ev.get("date")) is not None]
+                if len(candidates) != len(self._events):
+                    self._load_error = True
+                    logger.warning("[EventStore] 跳过 %s 条无效事件，保留原文件", len(candidates) - len(self._events))
+                self._watermark = payload.get("watermark")
+                self._ids = {str(ev.get("event_id") or self._fingerprint(ev)) for ev in self._events}
             logger.info(
                 f"[EventStore] 载入 {len(self._events)} 条历史事件")
         except Exception as e:
-            logger.warning(f"[EventStore] 加载失败: {e}")
+            self._load_error = True
+            logger.warning("[EventStore] 加载失败（%s），已阻止覆盖损坏文件", type(e).__name__)
 
 
 # ============================================================

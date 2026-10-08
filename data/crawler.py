@@ -148,6 +148,9 @@ class NewsCrawler:
 
     def _load_urls_seen(self) -> Set[str]:
         """加载已抓取 URL 集合"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return set()
         if not os.path.exists(self._urls_seen_file):
             return set()
         with open(self._urls_seen_file, "r", encoding="utf-8") as f:
@@ -155,6 +158,9 @@ class NewsCrawler:
 
     def _save_urls_seen(self):
         """持久化已抓取 URL 集合（保留最新 10000 条，防止文件无限增长）"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return
         urls = sorted(self._urls_seen)
         if len(urls) > 10000:
             urls = urls[-10000:]  # 保留最新的 URL
@@ -165,6 +171,9 @@ class NewsCrawler:
 
     def _is_new_url(self, url: str) -> bool:
         """检查 URL 是否为新链接"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return True
         normalized = url.rstrip("/")
         if normalized in self._urls_seen:
             return False
@@ -633,6 +642,11 @@ class NewsCrawler:
         :param filename: 文件名，默认按日期生成
         :return: 保存的文件路径
         """
+        from storage.repository import get_repository
+        repo = get_repository()
+        if repo is not None:
+            repo.save_collected_articles(news_list)
+            return 'postgres:articles'
         if not news_list:
             logger.info("[Crawler] 无数据可保存")
             return None

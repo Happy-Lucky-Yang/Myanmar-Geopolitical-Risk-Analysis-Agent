@@ -148,7 +148,7 @@ class KGSeeder:
             props = entity.get("properties", {}).copy()
             if "aliases" in entity:
                 props["aliases"] = ",".join(entity["aliases"])
-            kg.add_entity(entity["name"], entity["type"], props)
+            kg.add_entity(entity["name"], entity["type"], {**props, 'data_domain': 'demo', 'run_kind': 'demo'})
             count += 1
 
         logger.info(f"[KGSeeder] 导入 {count} 个实体节点")
@@ -162,11 +162,13 @@ class KGSeeder:
             return 0
 
         count = 0
+        entity_types = {entity['name']: entity['type'] for entity in SEED_ENTITIES}
         for rel in SEED_RELATIONSHIPS:
             kg.add_relationship(
-                rel["source"], rel["target"],
-                rel["type"], rel.get("properties")
-            )
+                rel['source'], rel['target'], rel['type'],
+                {**rel.get('properties', {}), 'data_domain': 'demo', 'run_kind': 'demo'},
+                source_id=kg.entity_id(rel['source'], entity_types[rel['source']], 'demo'),
+                target_id=kg.entity_id(rel['target'], entity_types[rel['target']], 'demo'))
             count += 1
 
         logger.info(f"[KGSeeder] 导入 {count} 条关系边")
@@ -174,76 +176,23 @@ class KGSeeder:
 
     def seed_from_news_data(self, news_dir: str = None) -> int:
         """从已有新闻分析结果中提取实体和关系填充 KG"""
-        if news_dir is None:
-            # 从统一路径中枢获取（支持 DATA_ROOT 外置）
-            try:
-                from utils.config import get_data_paths
-                news_dir = get_data_paths()["raw"]
-            except Exception:
-                news_dir = os.path.join(os.path.dirname(__file__), "raw")
-
+        from analyzer.data_loader import DataLoader
         kg = self._get_kg()
         if not kg._enabled:
             return 0
-
-        count = 0
-        # 扫描 JSONL 文件
-        if not os.path.isdir(news_dir):
-            return 0
-        for fname in os.listdir(news_dir):
-            if not fname.endswith(".jsonl"):
-                continue
-            filepath = os.path.join(news_dir, fname)
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            record = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-
-                        # 提取实体
-                        entities = record.get("entities", {})
-                        title = record.get("title", "")[:100]
-                        date = record.get("date", "")
-
-                        if not title:
-                            continue
-
-                        # 创建新闻事件节点
-                        kg.add_entity(title, "NewsEvent", {"date": date})
-
-                        for loc in entities.get("locations", []):
-                            kg.add_entity(loc, "Location")
-                            kg.add_relationship(title, loc, "MENTIONS_LOCATION")
-                            count += 1
-
-                        for org in entities.get("organizations", []):
-                            kg.add_entity(org, "Organization")
-                            kg.add_relationship(title, org, "MENTIONS_ORGANIZATION")
-                            count += 1
-
-                        for person in entities.get("persons", []):
-                            kg.add_entity(person, "Person")
-                            kg.add_relationship(title, person, "MENTIONS_PERSON")
-                            count += 1
-
-            except Exception as e:
-                logger.warning(f"[KGSeeder] 处理 {fname} 失败: {e}")
-
-        logger.info(f"[KGSeeder] 从新闻数据导入 {count} 条关系")
-        return count
+        loader = DataLoader(raw_dir=news_dir)
+        return sum(kg.add_news_analysis(row, row.get('entities', {}), row.get('llm_analysis')) or 0
+                   for row in loader.load_raw_news() if isinstance(row, dict))
 
     def seed_all(self) -> Dict:
         """执行全部种子数据填充"""
         entities = self.seed_entities()
         relationships = self.seed_relationships()
-        news_count = self.seed_from_news_data()
+        news_count = 0
 
         result = {
+            "data_domain": "demo",
+            "warning": "仅写入演示种子，正式新闻证据需要单独导入",
             "entities": entities,
             "relationships": relationships,
             "news_derived": news_count,
@@ -261,7 +210,18 @@ def main():
     print("  知识图谱种子数据填充")
     print("=" * 60)
 
+    import argparse
+    parser = argparse.ArgumentParser(description='可选Neo4j种子/证据导入，默认只预演')
+    parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--from-news', action='store_true')
+    args = parser.parse_args()
+    if not args.apply:
+        print('预演：不会连接或写入Neo4j；确认目标配置后加 --apply。演示种子与正式新闻证据分开导入。')
+        return
     seeder = KGSeeder()
+    if args.from_news:
+        print(f'正式新闻证据关系：{seeder.seed_from_news_data()}')
+        return
     result = seeder.seed_all()
 
     print(f"\n填充结果:")

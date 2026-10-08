@@ -115,7 +115,8 @@ kde:
   grid_cols: 95                       # 密度网格列数（经度方向）
   min_events: 5                       # 有效定位事件少于该数时降级提示
   min_sources: 1                      # 信源门槛：仅统计≥N家信源报道的事件（1=不过滤）
-  verified_boost: 1.25                # 互证事件（≥2家信源或≥2篇报道）的权重加成
+  bandwidth_km: 50                    # LAEA 等面积投影下固定公里带宽
+  color_max_per_km2_day: 0.001         # 各窗口共同色标上限，单位：加权事件/(平方公里·天)
 
 # ---------- RSS/Atom 新闻源 ----------
 rss_feeds:
@@ -167,6 +168,7 @@ economic:
 
 # ---------- 数据存储 ----------
 storage:
+  backend: "file"                     # file / postgres；STORAGE_BACKEND 优先，数据库失败不回写文件
   # 数据根目录：留空=项目内 ./data；可指向项目外私密目录将爬取数据外置。
   # 优先级: 环境变量 DATA_ROOT (写在 .env) > 此处 data_root > 默认 ./data
   # 注: raw/processed/external 子目录会在根目录下自动创建
@@ -215,6 +217,16 @@ trend:
   moving_avg_window: 7
   # 回归分析最少需要数据点数
   min_regression_points: 14
+
+# ---------- 正式预警 ----------
+alerts:
+  thresholds:
+    yellow: 40
+    orange: 60
+    red: 80
+  persistence_days: 2                  # 连续有效业务日确认，缺测打断持续性
+  hysteresis_points: 5                 # 降级需低于原级阈值减此分差，并再次持续确认
+  min_indicator_coverage: 0.5          # 有效指标原始权重覆盖率，非采集完整率
 
 # ---------- 定时调度器 ----------
 scheduler:

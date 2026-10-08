@@ -113,7 +113,10 @@ class ChainReasoner:
         :param model: 可选模型ID，覆盖默认模型
         :return: {"chain": [...], "final_summary": {...}}
         """
-        depth = max(1, min(4, depth))
+        if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= 4:
+            raise ValueError("depth 必须为1～4整数")
+        if not isinstance(text, str) or not text.strip() or len(text) > 20000:
+            raise ValueError("text 必须为非空且不超过20000字符的文本")
         chain = []
         previous_results = {}
 
@@ -134,29 +137,36 @@ class ChainReasoner:
                     {"role": "user", "content": prompt}
                 ]
                 client, actual_model, err = llm._get_client_for_model(model)
-                if client is None:
+                if client is None or err:
                     raise RuntimeError(err or "LLM 客户端不可用")
                 result = llm._call_with_retry(messages, model=actual_model,
                                                client=client)
+                if not isinstance(result, dict) or result.get("error") or result.get("_parse_error"):
+                    raise ValueError("模型调用失败或未返回有效结构")
+                completeness = self._schema_completeness(step_key, result)
+                if completeness < 1:
+                    raise ValueError("该步骤的结构化字段不完整或类型不正确")
 
                 chain.append({
                     "step": template["step"],
                     "name": template["name"],
                     "question": self._get_step_question(step_key),
                     "answer": result,
-                    "confidence": self._estimate_confidence(result),
+                    "schema_completeness": completeness,
+                    "status": "ok",
                 })
 
                 previous_results[step_key] = result
 
             except Exception as e:
-                logger.error(f"[Chain] 步骤 {step_key} 失败: {e}")
+                logger.error('[Chain] 步骤 %s 失败: %s', step_key, type(e).__name__)
                 chain.append({
                     "step": template["step"],
                     "name": template["name"],
                     "question": self._get_step_question(step_key),
                     "answer": {"error": str(e)},
-                    "confidence": 0,
+                    "schema_completeness": 0,
+                    "status": "failed",
                 })
                 break  # 链式推理中断后停止
 
@@ -166,7 +176,9 @@ class ChainReasoner:
         return {
             "chain_depth": depth,
             "chain": chain,
-            "steps_completed": len(chain),
+            "steps_completed": len(previous_results),
+            "status": "ok" if len(previous_results) == depth else "degraded",
+            "evidence_scope": "仅基于输入及前序模型输出，字段完整率不代表结论正确率",
             "final_summary": final_summary,
         }
 
@@ -215,15 +227,29 @@ class ChainReasoner:
         }
         return questions.get(step_key, "")
 
-    def _estimate_confidence(self, result: Dict) -> float:
-        """基于结果完整度估计置信度 (0-1)"""
-        if not result or "error" in result:
-            return 0.0
-
-        # 基于返回字段数量估算
-        expected_fields = 4
-        actual = len([k for k in result.keys() if k not in ("error", "raw_response")])
-        return min(1.0, actual / expected_fields * 0.8 + 0.2)
+    @staticmethod
+    def _schema_completeness(step_key, result):
+        """按步骤校验字段及类型，不能解释为结论正确率。"""
+        schemas = {
+            "event_identification": {"event_type": str, "key_actors": list, "location": str,
+                                     "timeframe": str, "severity": (int, str), "summary": str},
+            "impact_analysis": {"china_myanmar_impact": str, "regional_stability": str,
+                                "economic_impact": str, "affected_infrastructure": list, "risk_factors": list},
+            "trend_assessment": {"short_term_trend": str, "medium_term_trend": str,
+                                 "escalation_probability": str, "key_indicators_to_watch": list,
+                                 "scenario_best": str, "scenario_worst": str},
+            "recommendation": {"policy_recommendations": list, "risk_mitigation": list,
+                               "early_warning_signals": list, "confidence_level": str, "data_gaps": list},
+        }
+        def valid(key, kind):
+            value = result.get(key)
+            if isinstance(value, bool) or not isinstance(value, kind):
+                return False
+            if isinstance(value, list):
+                return all(isinstance(item, str) and item.strip() for item in value)
+            return not isinstance(value, str) or bool(value.strip())
+        schema = schemas[step_key]
+        return sum(valid(k, t) for k, t in schema.items()) / len(schema)
 
     def _build_final_summary(self, chain: List, previous: Dict) -> Dict:
         """构建最终摘要"""

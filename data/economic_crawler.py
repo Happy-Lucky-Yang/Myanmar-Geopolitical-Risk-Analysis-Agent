@@ -320,6 +320,9 @@ class EconomicCrawler:
 
     def _save_cache(self, data: Dict):
         """保存缓存到本地"""
+        from storage.repository import current_task
+        if current_task() is not None:
+            return
         try:
             with open(self._cache_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)

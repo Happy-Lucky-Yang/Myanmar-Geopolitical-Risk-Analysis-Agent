@@ -15,6 +15,85 @@ import logging
 import os
 import threading
 from typing import Dict, List, Optional
+from itertools import combinations
+from utils.data_contract import (FORMAL_MODES, article_identity, business_date, fingerprint,
+                                 source_evidence, time_window, timestamp_utc)
+
+
+def build_article_graph(records, days=30, end_date=None, region='MMR', source=None):
+    """从正式文章中已有实体构建无向共现；不在查询时调用NER或LLM。"""
+    start, end = time_window(days, end_date)
+    articles = {}
+    for row in records:
+        if not isinstance(row, dict) or row.get('run_kind') not in FORMAL_MODES:
+            continue
+        day = business_date(row.get('published_at') or row.get('pub_time') or row.get('date'))
+        if day is None or not isinstance(row.get('entities'), dict):
+            continue
+        evidence = source_evidence(row)
+        aid = article_identity(row)
+        previous = articles.get(aid)
+        selected = row
+        if previous:
+            evidence = source_evidence({'source_evidence': previous['evidence'] + evidence})
+            old_stamp, new_stamp = timestamp_utc(previous['row'].get('analyzed_at')), timestamp_utc(row.get('analyzed_at'))
+            if (old_stamp and (new_stamp is None or old_stamp > new_stamp)
+                    or old_stamp == new_stamp and fingerprint(previous['row']) < fingerprint(row)):
+                selected = previous['row']
+            day = min(day, business_date(previous['day']))
+        articles[aid] = {'row': selected, 'evidence': evidence, 'day': day.isoformat()}
+    selected_articles = {}
+    for aid, item in articles.items():
+        if not start <= business_date(item['day']) < end:
+            continue
+        if region != 'MMR':
+            from analyzer.spatial_analysis import locate_event
+            if locate_event(item['row'])[0] != region:
+                continue
+        if source:
+            item['evidence'] = [e for e in item['evidence'] if e['source'] == source]
+        if item['evidence']:
+            selected_articles[aid] = item
+    articles = selected_articles
+    nodes, edges = {}, {}
+    unassessed, excessive = 0, 0
+    for aid, article in sorted(articles.items()):
+        row = article['row']
+        mentions = {}
+        for field, kind in (('locations', 'Location'), ('organizations', 'Organization'), ('persons', 'Person')):
+            names = row['entities'].get(field, [])
+            if not isinstance(names, list):
+                continue
+            for name in names:
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                name = ' '.join(name.split())
+                nid = fingerprint([kind, name.casefold()])
+                mentions[nid] = {'id': nid, 'name': name, 'entity_type': kind}
+        if len(mentions) > 50:
+            excessive += 1
+            continue
+        if not mentions:
+            unassessed += 1
+            continue
+        nodes.update(mentions)
+        for left, right in combinations(sorted(mentions), 2):
+            edge = edges.setdefault((left, right), {'source': left, 'target': right,
+                       'type': 'CO_OCCURS_IN_ARTICLE', 'evidence': []})
+            edge['evidence'].append({'article_id': aid, 'date': article['day'],
+                'sources': article['evidence'], 'method': 'article_entity_cooccurrence',
+                'algorithm_version': row.get('ner_version', 'unknown'), 'run_kind': row['run_kind']})
+    for edge in edges.values():
+        edge['weight'] = len(edge['evidence'])
+    return {'nodes': sorted(nodes.values(), key=lambda n: n['id']),
+            'edges': [edges[key] for key in sorted(edges)],
+            'metadata': {'algorithm_version': 'network-v2', 'data_domain': 'observed',
+                'requested_start': start.isoformat(), 'end_exclusive': end.isoformat(),
+                'region': region, 'source': source, 'article_count': len(articles),
+                'empty_entity_articles': unassessed, 'excluded_excessive_entities': excessive,
+                'ner_versions': sorted({a['row'].get('ner_version', 'unknown') for a in articles.values()}),
+                'sources': sorted({e['source'] for a in articles.values() for e in a['evidence']}),
+                'relation_semantics': '文章级实体共现，不表示合作、冲突或因果；中心性不代表现实影响力'}}
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +118,8 @@ class NetworkAnalyzer:
                 raise RuntimeError("networkx 未安装，请运行: pip install networkx")
         return self._nx
 
-    def analyze(self, graph_data: Dict = None) -> Dict:
+    def analyze(self, graph_data: Dict = None, days=30, end_date=None,
+                region='MMR', source=None, domain='observed') -> Dict:
         """
         执行完整的关系网络分析
 
@@ -48,6 +128,16 @@ class NetworkAnalyzer:
         :return: 分析结果字典
         """
         nx = self._get_nx()
+        if domain not in {'observed', 'demo'}:
+            raise ValueError('网络数据域须为 observed 或 demo')
+        if graph_data is None and domain == 'observed':
+            from analyzer.data_loader import get_data_loader
+            graph_data = build_article_graph(get_data_loader().load_raw_news(), days, end_date, region, source)
+        if domain == 'demo':
+            from data.kg_seeder import SEED_ENTITIES, SEED_RELATIONSHIPS
+            graph_data = {'nodes': [dict(n, id=n['name']) for n in SEED_ENTITIES],
+                          'edges': SEED_RELATIONSHIPS,
+                          'metadata': {'data_domain': 'demo', 'warning': '演示种子，非当前真实关系；不应用时间筛选'}}
 
         # 构建图
         G = self._build_graph(nx, graph_data)
@@ -56,10 +146,12 @@ class NetworkAnalyzer:
             return {
                 "node_count": 0,
                 "edge_count": 0,
-                "density": 0,
+                "density": None,
                 "top_actors": [],
                 "communities": [],
-                "error": "无节点数据"
+                "metadata": (graph_data or {}).get('metadata', {}),
+                "graph": graph_data,
+                "error": "窗口内没有可用实体证据，未使用演示数据回填"
             }
 
         # 1. 基本统计
@@ -81,7 +173,8 @@ class NetworkAnalyzer:
         top_actors = sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True)[:10]
         top_actors_list = [
             {
-                "name": name,
+                "id": name,
+                "name": G.nodes[name].get('name', name),
                 "degree_centrality": round(score, 4),
                 "betweenness": round(betweenness.get(name, 0), 4),
                 "closeness": round(closeness.get(name, 0), 4),
@@ -100,6 +193,8 @@ class NetworkAnalyzer:
             relation_types[rtype] = relation_types.get(rtype, 0) + 1
 
         return {
+            "metadata": (graph_data or {}).get('metadata', {}),
+            "graph": graph_data,
             "node_count": G.number_of_nodes(),
             "edge_count": G.number_of_edges(),
             "density": round(density, 4),
@@ -111,54 +206,16 @@ class NetworkAnalyzer:
         }
 
     def _build_graph(self, nx, graph_data: Dict = None):
-        """构建 NetworkX 图"""
-        G = nx.DiGraph()
-
-        if graph_data:
-            # 从传入数据构建
-            for node in graph_data.get("nodes", []):
-                name = node.get("name", node.get("id", ""))
-                if name:
-                    G.add_node(name, **{k: v for k, v in node.items() if k != "name"})
-
-            for edge in graph_data.get("edges", []):
-                src = edge.get("source", "")
-                tgt = edge.get("target", "")
-                if src and tgt:
-                    G.add_edge(src, tgt, **{k: v for k, v in edge.items()
-                                           if k not in ("source", "target")})
-            return G
-
-        # 尝试从 Neo4j 获取
-        try:
-            from analyzer.knowledge_graph import get_knowledge_graph
-            kg = get_knowledge_graph()
-            if kg._enabled:
-                data = kg.get_graph_data_for_vis(max_nodes=100)
-                for node in data.get("nodes", []):
-                    G.add_node(node["name"])
-                for edge in data.get("edges", []):
-                    G.add_edge(edge["source"], edge["target"], type=edge.get("type", ""))
-                if G.number_of_nodes() > 0:
-                    return G
-        except Exception as e:
-            logger.debug(f"[Network] Neo4j 不可用: {e}")
-
-        # 降级: 从本地 JSON 或种子数据构建
-        try:
-            if os.path.exists(_LOCAL_RELATIONS_FILE):
-                with open(_LOCAL_RELATIONS_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                for node in data.get("nodes", []):
-                    G.add_node(node.get("name", ""), type=node.get("type", ""))
-                for edge in data.get("edges", []):
-                    G.add_edge(edge["source"], edge["target"], type=edge.get("type", ""))
-                return G
-        except Exception:
-            pass
-
-        # 最终降级: 从 kg_seeder 预置数据构建
-        self._build_from_seed_data(G)
+        """仅消费本次显式证据快照；正式视图没有外部库或种子回退。"""
+        G = nx.Graph()
+        for node in (graph_data or {}).get('nodes', []):
+            identity = node.get('id') or node.get('name')
+            if identity:
+                G.add_node(identity, **node)
+        for edge in (graph_data or {}).get('edges', []):
+            left, right = edge.get('source'), edge.get('target')
+            if left in G and right in G and left != right:
+                G.add_edge(left, right, **{k: v for k, v in edge.items() if k not in {'source', 'target'}})
         return G
 
     def _build_from_seed_data(self, G):
@@ -192,7 +249,7 @@ class NetworkAnalyzer:
             partition = nx.community.louvain_communities(undirected, seed=42)
 
             for i, community_set in enumerate(partition):
-                members = sorted(list(community_set))[:8]  # 限制每社区显示数
+                members = sorted(G.nodes[n].get('name', n) for n in community_set)[:8]  # 限制每社区显示数
                 communities.append({
                     "id": i,
                     "size": len(community_set),
@@ -211,7 +268,7 @@ class NetworkAnalyzer:
                         communities.append({
                             "id": i,
                             "size": len(component),
-                            "members": sorted(list(component))[:8],
+                            "members": sorted(G.nodes[n].get('name', n) for n in component)[:8],
                         })
             except Exception:
                 pass

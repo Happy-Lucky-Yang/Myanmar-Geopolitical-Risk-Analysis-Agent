@@ -37,6 +37,8 @@ class SourceHealthTracker:
     def __init__(self, persist_path: str = None):
         self._lock = threading.Lock()
         self._records: Dict[str, deque] = {}
+        from storage.repository import get_repository
+        self._repo = get_repository()
         if persist_path is None:
             from utils.config import get_data_paths
             persist_path = os.path.join(
@@ -59,19 +61,25 @@ class SourceHealthTracker:
         :param count: 本轮新增条数
         :param error: 失败原因（截断保存，避免文件膨胀）
         """
+        from utils.data_contract import utc_now
         entry = {
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": utc_now().isoformat(timespec="seconds"),
             "ok": bool(ok),
             "count": int(count),
             "error": (str(error)[:150] if error else None),
         }
         with self._lock:
+            if self._repo is not None:
+                self._repo.save_source_run(source, entry)
+                return
             self._records.setdefault(source, deque(maxlen=MAX_RECORDS)).append(entry)
             self._save()
 
     def get_health(self) -> Dict:
         """汇总所有数据源的健康状态"""
         with self._lock:
+            if self._repo is not None:
+                self._records = self._repo.load_source_runs(MAX_RECORDS)
             result = {}
             for source, dq in self._records.items():
                 records = list(dq)
@@ -114,6 +122,9 @@ class SourceHealthTracker:
     # ============================================================
 
     def _load(self):
+        if self._repo is not None:
+            self._records = self._repo.load_source_runs(MAX_RECORDS)
+            return
         try:
             if os.path.exists(self._file):
                 with open(self._file, "r", encoding="utf-8") as f:

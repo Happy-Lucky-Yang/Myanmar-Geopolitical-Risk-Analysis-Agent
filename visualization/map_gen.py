@@ -10,6 +10,8 @@ visualization.map_gen - Folium 地图生成（暗色主题）
 渲染用 HTML 体积约为原始 GeoJSON 的 1/5，显著加快前端加载。
 """
 import copy
+from html import escape
+from utils.data_contract import finite_number
 import math
 import base64
 import threading
@@ -102,6 +104,86 @@ def _localize_cdn(html: str) -> str:
     for cdn_url, local_path in _CDN_TO_LOCAL.items():
         html = html.replace(cdn_url, local_path)
     return html
+
+
+# ============================================================
+# 底图容错：双通道瓦片 + Leaflet 韧性选项（修复缩放空白板块）
+# ============================================================
+# 兜底源：Esri Dark Gray Canvas（暗色调，与主底图视觉一致，
+# CartoDB 超时露出的不是白色空白而是暗色底图）
+_TILE_FALLBACK_URL = (
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"
+    "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+)
+_TILE_FALLBACK_ATTR = "Tiles \u00a9 Esri \u2014 Source: Esri, GEBCO, NOAA"
+# 双通道均失败时的本地暗色占位瓦（与 dark_matter 背景色一致）
+_TILE_ERROR_URL = "/static/images/tile-fallback-dark.png"
+
+
+def _add_basemap(m: folium.Map) -> None:
+    """
+    为地图添加容错底图：CartoDB dark_matter 主通道 + Esri 暗灰兜底通道。
+
+    三项 Leaflet 韧性选项修复"放大缩小出现大量空白板块"：
+      - updateWhenZooming=False: 缩放动画期间不清空瓦片网格，
+        已加载瓦片临时拉伸显示，动画结束再按需请求新级别
+      - updateWhenIdle=True: 连续拖拽停止后才批量加载，
+        避免中间位置瓦片请求挤占带宽
+      - keepBuffer=6: 屏幕外保留 6 圈瓦片缓存（默认 2），
+        缩小后再放大立即回填，无需等待网络
+
+    降级链：CartoDB 超时 → 露出下层 Esri 暗灰底图 →
+    两者均失败 → errorTileUrl 本地暗色占位图（全程无纯白空白）。
+    """
+    # 兜底通道（垫底，不进图层控制面板）
+    fallback = folium.TileLayer(
+        tiles=_TILE_FALLBACK_URL, attr=_TILE_FALLBACK_ATTR,
+        max_zoom=20, max_native_zoom=16, control=False,
+        updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
+        errorTileUrl=_TILE_ERROR_URL,
+    ).add_to(m)
+    # 主暗色底图（不透明瓦片，正常加载时完全覆盖兜底层）
+    primary = folium.TileLayer(
+        tiles="CartoDB dark_matter",
+        max_zoom=20, max_native_zoom=20, control=False,
+        keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
+        # 不使用 Leaflet 的 emptyImageUrl：内部将它视为取消加载，不能完成瓦片状态。
+        errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==",
+    ).add_to(m)
+    from branca.element import MacroElement, Template
+    status = MacroElement()
+    status._template = Template("""
+        {% macro script(this, kwargs) %}
+        (function () {
+            var map = {{this._parent.get_name()}};
+            var control = L.control({position: 'bottomleft'});
+            var box;
+            control.onAdd = function () {
+                box = L.DomUtil.create('div', 'basemap-status');
+                box.style.cssText = 'background:#18202be8;color:#eee;padding:6px;font-size:12px;';
+                box.textContent = '底图加载中；分析图层不依赖底图成功';
+                return box;
+            };
+            control.addTo(map);
+            var failed = {primary: false, fallback: false};
+            function bind(layer, name) {
+                layer.on('loading', function () { failed[name] = false; });
+                layer.on('tileerror', function () {
+                    failed[name] = true;
+                    box.textContent = failed.primary && failed.fallback ? '底图不可用：仍显示本地边界和分析图层' : '部分瓦片失败，正在显示可用备用底图';
+                });
+                layer.on('load', function () {
+                    if (!failed.primary && !failed.fallback) box.textContent = '底图已加载';
+                });
+            }
+            bind({{this.primary}}, 'primary');
+            bind({{this.fallback}}, 'fallback');
+        })();
+        {% endmacro %}
+    """)
+    status.primary = primary.get_name()
+    status.fallback = fallback.get_name()
+    m.add_child(status)
 
 
 def risk_color_continuous(score_norm: float) -> str:
@@ -249,13 +331,15 @@ def _source_note_html(text: str) -> str:
     )
 
 
-def _kde_legend_html() -> str:
+def _kde_legend_html(density=None) -> str:
     """事件密度色标图例（左下角，避免与风险色阶重叠）"""
     return (
         '<div style="position:fixed;bottom:10px;left:10px;z-index:999;'
         'background:rgba(0,0,0,0.75);padding:8px 12px;border-radius:6px;'
         'color:#ccc;font-size:11px;width:200px;">'
-        '<div style="margin-bottom:4px;font-weight:600">事件密度 (KDE)</div>'
+        '<div style="margin-bottom:4px;font-weight:600">加权事件密度 (KDE)</div>'
+        f'<div>共同带宽 {(density or {}).get("bandwidth_km", "--")} km；'
+        f'色标上限 {(density or {}).get("color_max_per_km2_day", "--")} /km²/天（以上饱和）</div>'
         '<div style="height:10px;border-radius:3px;background:'
         'linear-gradient(to right,#1e90ff,#ffa502,#ff6348,#ff4757)"></div>'
         '<div style="display:flex;margin-top:3px">'
@@ -321,11 +405,10 @@ class RiskMapGenerator:
         from data.admin_boundaries import PROVINCE_EN2CN
         from folium.features import GeoJsonPopup, GeoJsonTooltip
 
-        m = folium.Map(
-            location=MYANMAR_CENTER, zoom_start=6,
-            tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=6, tiles=None)
+        _add_basemap(m)
 
+        risk_data = [item for item in risk_data if finite_number(item.get('risk_score'))]
         by_prov = {item.get("province", ""): item for item in risk_data}
         gj = copy.deepcopy(_simplified_boundaries(1))
 
@@ -338,7 +421,7 @@ class RiskMapGenerator:
             if item:
                 norm = self._normalize_score(item.get("risk_score", 50))
                 feat["properties"]["score_text"] = (
-                    f"{risk_level_name(norm)} · {norm * 100:.1f} 分"
+                    self._score_text(item)
                 )
             else:
                 feat["properties"]["score_text"] = "暂无数据"
@@ -393,7 +476,7 @@ class RiskMapGenerator:
         folium.LayerControl(collapsed=False).add_to(m)
         m.get_root().html.add_child(folium.Element(_legend_html()))
         m.get_root().html.add_child(folium.Element(_source_note_html(
-            "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1 · "
+            "数据源详见各省样本；已定位事件规则烈度均值（非全国风险/概率）· GADM 4.1 · "
             "点击省份查看详情"
         )))
         return _localize_cdn(m._repr_html_())
@@ -415,11 +498,10 @@ class RiskMapGenerator:
         from data.admin_boundaries import PROVINCE_EN2CN, province_centroids
         from folium.features import GeoJsonPopup, GeoJsonTooltip
 
-        m = folium.Map(
-            location=MYANMAR_CENTER, zoom_start=6,
-            tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=6, tiles=None)
+        _add_basemap(m)
 
+        risk_data = [item for item in risk_data if finite_number(item.get('risk_score'))]
         by_prov = {item.get("province", ""): item for item in risk_data}
         centroids = province_centroids()  # 真实几何质心，替代手写坐标
         # 预计算各省质心坐标（光晕/圆点共用）
@@ -464,7 +546,7 @@ class RiskMapGenerator:
             if item:
                 norm = self._normalize_score(item.get("risk_score", 50))
                 feat["properties"]["score_text"] = (
-                    f"{risk_level_name(norm)} · {norm * 100:.1f} 分"
+                    self._score_text(item)
                 )
                 feat["properties"]["_risk_color"] = risk_color_continuous(norm)
             else:
@@ -518,13 +600,13 @@ class RiskMapGenerator:
             if not latlon:
                 continue
             color = risk_color_continuous(score_norm)
-            trend_dir = "↑" if score_norm > 0.6 else "↓" if score_norm < 0.4 else "→"
+            trend_dir = "未计算（不能以分值高低推断趋势）"
             popup_html = (
                 f"<div style='min-width:150px'>"
                 f"<b style='font-size:14px'>{province}</b><br>"
                 f"<hr style='border:1px solid #ddd;margin:4px 0'>"
                 f"风险分: <b>{score_norm * 100:.1f}</b><br>"
-                f"风险等级: <b>{risk_level}</b><br>"
+                f"{self._score_text(item)}<br>"
                 f"趋势: {trend_dir}<br>"
                 f"<span style='font-size:11px;color:#666'>"
                 f"经纬度: ({latlon[0]:.2f}, {latlon[1]:.2f})"
@@ -554,7 +636,7 @@ class RiskMapGenerator:
         folium.LayerControl(collapsed=False).add_to(m)
         m.get_root().html.add_child(folium.Element(_legend_html()))
         m.get_root().html.add_child(folium.Element(_source_note_html(
-            "数据源: 新闻文本 + GDELT + 夜光/经济(WB) · 边界: GADM 4.1 · "
+            "数据源详见各省样本；已定位事件规则烈度均值（非全国风险/概率）· GADM 4.1 · "
             "悬停省份高亮，点击查看详情"
         )))
         return _localize_cdn(m._repr_html_())
@@ -587,11 +669,10 @@ class RiskMapGenerator:
         from data.admin_boundaries import PROVINCE_EN2CN, province_centroids
         from folium.features import GeoJsonPopup, GeoJsonTooltip
 
-        m = folium.Map(
-            location=MYANMAR_CENTER, zoom_start=6,
-            tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=6, tiles=None)
+        _add_basemap(m)
 
+        risk_data = [item for item in risk_data if finite_number(item.get('risk_score'))]
         by_prov = {item.get("province", ""): item for item in risk_data}
         centroids = province_centroids()
         prov_points = {
@@ -614,9 +695,7 @@ class RiskMapGenerator:
                     feat["properties"]["_risk_color"] = (
                         risk_color_continuous(norm))
                     feat["properties"]["_risk_level"] = risk_level_name(norm)
-                    feat["properties"]["_trend"] = (
-                        "↑" if norm > 0.6
-                        else "↓" if norm < 0.4 else "→")
+                    feat["properties"]["_trend"] = "需等长前后期观测，当前未计算"
                 else:
                     feat["properties"]["score_text"] = "暂无数据"
                     feat["properties"]["_risk_color"] = "#3a3f47"
@@ -672,7 +751,7 @@ class RiskMapGenerator:
         if (density and not density.get("degraded")
                 and density.get("z_matrix") is not None):
             data_uri = render_density_png(
-                density["z_matrix"], density["bbox"])
+                density.get("comparable_z_matrix", density["z_matrix"]), density["bbox"])
             kde_layer = folium.raster_layers.ImageOverlay(
                 image=data_uri,
                 bounds=density["bbox"],
@@ -706,14 +785,13 @@ class RiskMapGenerator:
             if not latlon:
                 continue
             color = risk_color_continuous(score_norm)
-            trend_dir = ("↑" if score_norm > 0.6
-                         else "↓" if score_norm < 0.4 else "→")
+            trend_dir = "未计算（不能以分值高低推断趋势）"
             popup_html = (
                 f"<div style='min-width:150px'>"
                 f"<b style='font-size:14px'>{province}</b><br>"
                 f"<hr style='border:1px solid #ddd;margin:4px 0'>"
                 f"风险分: <b>{score_norm * 100:.1f}</b><br>"
-                f"风险等级: <b>{risk_level}</b><br>"
+                f"{self._score_text(item)}<br>"
                 f"趋势: {trend_dir}<br>"
                 f"<span style='font-size:11px;color:#666'>"
                 f"经纬度: ({latlon[0]:.2f}, {latlon[1]:.2f})"
@@ -800,7 +878,7 @@ class RiskMapGenerator:
         # 图例（保留可视化辅助；底部文字说明已移除，保持页面干净）
         m.get_root().html.add_child(folium.Element(_legend_html()))
         if kde_layer is not None:
-            m.get_root().html.add_child(folium.Element(_kde_legend_html()))
+            m.get_root().html.add_child(folium.Element(_kde_legend_html(density)))
 
         # 图层注册表：供前端自定义面板控制。
         # 注意：① script 段的子元素已处在外层 <script> 块内，
@@ -841,10 +919,8 @@ class RiskMapGenerator:
 
     def generate_default_map(self) -> str:
         """生成默认地图（无历史数据时展示灰色行政区划）"""
-        m = folium.Map(
-            location=MYANMAR_CENTER, zoom_start=6,
-            tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=6, tiles=None)
+        _add_basemap(m)
         try:
             folium.GeoJson(
                 _simplified_boundaries(1),
@@ -879,10 +955,8 @@ class RiskMapGenerator:
         :param days: 统计窗口（展示用）
         :return: HTML 字符串
         """
-        m = folium.Map(
-            location=MYANMAR_CENTER, zoom_start=6,
-            tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=6, tiles=None)
+        _add_basemap(m)
 
         # 国界（简化版，加速渲染）
         folium.GeoJson(
@@ -909,7 +983,7 @@ class RiskMapGenerator:
         ).add_to(m)
 
         # KDE 密度栅格层（matplotlib PNG 叠加，缩放无圆点伪影）
-        z = density.get("z_matrix")
+        z = density.get("comparable_z_matrix", density.get("z_matrix"))
         if z is not None and density.get("bbox"):
             data_uri = render_density_png(z, density["bbox"])
             folium.raster_layers.ImageOverlay(
@@ -944,12 +1018,12 @@ class RiskMapGenerator:
             ).add_to(m)
 
         folium.LayerControl(collapsed=False).add_to(m)
-        m.get_root().html.add_child(folium.Element(_kde_legend_html()))
+        m.get_root().html.add_child(folium.Element(_kde_legend_html(density)))
         m.get_root().html.add_child(folium.Element(_source_note_html(
             f"事件密度(KDE): GDELT 近{days}天 "
             f"{density.get('event_count', 0)} 条事件 / "
             f"参与计算 {density.get('located_count', 0)} 条 / "
-            f"多信源互证 {density.get('verified_count', 0)} 条 · "
+            f"多来源报道 {density.get('reported_multi_source_count', 0)} 条（不代表独立互证）· "
             "边界: GADM 4.1"
         )))
         return _localize_cdn(m._repr_html_())
@@ -960,10 +1034,8 @@ class RiskMapGenerator:
 
     def generate_notice_map(self, message: str) -> str:
         """生成带提示信息的默认地图（数据不足等降级场景）"""
-        m = folium.Map(
-            location=MYANMAR_CENTER, zoom_start=6,
-            tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=6, tiles=None)
+        _add_basemap(m)
         try:
             folium.GeoJson(
                 _simplified_boundaries(0),
@@ -978,7 +1050,7 @@ class RiskMapGenerator:
             'translateX(-50%);z-index:999;background:rgba(30,33,40,0.95);'
             'border:1px solid #ffa502;padding:10px 18px;border-radius:6px;'
             'color:#e0e0e0;font-size:13px;max-width:80%;">'
-            f'⚠️ {message}</div>'
+            f'⚠️ {escape(str(message))}</div>'
         )
         m.get_root().html.add_child(folium.Element(notice_html))
         return _localize_cdn(m._repr_html_())
@@ -987,6 +1059,17 @@ class RiskMapGenerator:
     # 工具方法
     # ============================================================
 
+    @staticmethod
+    def _score_text(item):
+        label = escape(str(item.get('metric_label', '风险分')))
+        sources = escape('、'.join(map(str, item.get('sources', []))) or '未标明')
+        methods = escape('、'.join(item.get('location_methods', [])) or '未标明')
+        events = item.get('events', [])
+        evidence = '<br>'.join(escape(f"{e.get('date', '')} | {e.get('event_id', '--')} | {e.get('source', 'gdelt')} | {e.get('source_url', '')}") for e in events[:5])
+        return (f"{label} · {item['risk_score']:.1f} /100；样本 {item.get('sample_count', '--')}；"
+                f"来源 {sources}；定位 {methods}；有效日 {item.get('valid_days', '--')}/{item.get('requested_days', '--')}"
+                f"<br>事件证据（最多5条）：{evidence or '无'}")
+
     def _normalize_score(self, score: float) -> float:
         """
         风险分归一化到 0~1（兼容 0~100 分制与 0~1 比例两种输入）
@@ -994,12 +1077,9 @@ class RiskMapGenerator:
         app.py 传入的是 0~100 分制；若上游改为比例值也能正确渲染，
         避免颜色/半径计算因量纲错误失真。
         """
-        try:
-            score = float(score)
-        except (TypeError, ValueError):
-            return 0.5
-        norm = score / 100.0 if score > 1.0 else score
-        return max(0.0, min(1.0, norm))
+        if not finite_number(score):
+            raise ValueError('缺失或非有限风险分不能着色')
+        return max(0.0, min(1.0, score / 100.0))
 
     def _risk_color(self, score: float) -> str:
         """3 档离散色（兼容保留；新渲染请使用 risk_color_continuous）"""

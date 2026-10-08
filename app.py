@@ -23,7 +23,9 @@ import threading
 # 确保项目根目录在 sys.path 中，以便各模块相互导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, request, jsonify, Response, render_template
+from flask import Flask, request, jsonify, Response, render_template, g
+from flask.json.provider import DefaultJSONProvider
+from utils.data_contract import RISK_VERSION, business_date, calendar_series, coverage_metadata, json_safe, time_window, utc_now
 try:
     from flask_cors import CORS
 except ImportError:
@@ -42,7 +44,7 @@ from analyzer.trend import get_trend_analyzer
 from analyzer.prompts import NEWS_ANALYSIS_PROMPT, build_analysis_prompt
 from analyzer.data_loader import get_data_loader
 from analyzer.knowledge_graph import get_knowledge_graph
-from analyzer.report_generator import get_report_generator
+from analyzer.report_generator import get_report_generator, SnapshotChanged
 from visualization.chart_gen import get_chart_generator
 from data.scheduler import get_scheduler
 
@@ -50,6 +52,12 @@ from data.scheduler import get_scheduler
 # Flask 应用初始化
 # ============================================================
 app = Flask(__name__)
+class FiniteJSONProvider(DefaultJSONProvider):
+    def dumps(self, obj, **kwargs):
+        kwargs['allow_nan'] = False
+        return super().dumps(json_safe(obj), **kwargs)
+app.json = FiniteJSONProvider(app)
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
 _flask_runtime_cfg = get_flask_config()
 CORS(
     app,
@@ -58,6 +66,46 @@ CORS(
     )}},
 )
 logger = logging.getLogger(__name__)
+from utils.security import init_security
+init_security(app)
+
+
+def enqueue_request(kind, payload):
+    from utils.security import repository
+    from storage.jobs import JobQueue
+    job_id = JobQueue(repository()).enqueue(kind, payload, owner_id=g.user['id'],
+                                            idempotency_key=request.headers.get('Idempotency-Key'))
+    return jsonify(success=True, data={"job_id": job_id, "status": "queued"}), 202
+
+
+@app.before_request
+def validate_query_window():
+    if "days" in request.args or "end_date" in request.args:
+        try:
+            days = int(request.args.get("days", "30"))
+            time_window(days, request.args.get("end_date"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "days 须为1～3660整数，end_date 须为有效日期"}), 400
+    if request.method == 'GET' and request.path.startswith('/api/') and request.args.get('revision'):
+        try:
+            if get_data_loader().revision() != request.args['revision']:
+                return jsonify(success=False, error='数据版本已更新，请刷新页面'), 409
+            g.requested_revision = request.args['revision']
+        except Exception:
+            return jsonify(success=False, error='数据版本不可读取，未使用旧快照回填'), 503
+
+
+@app.after_request
+def verify_requested_revision(response):
+    expected = getattr(g, 'requested_revision', None)
+    if expected and response.status_code < 400:
+        try:
+            if get_data_loader().revision() != expected:
+                return app.make_response((jsonify(success=False, error='读取期间数据已更新，请刷新页面'), 409))
+        except Exception:
+            return app.make_response((jsonify(success=False, error='无法校验数据版本，请重试'), 503))
+        response.headers['X-Data-Revision'] = expected
+    return response
 
 
 def get_map_generator():
@@ -211,6 +259,9 @@ def analyze():
                 "error": f"instruction 过长，最大支持 {MAX_INSTRUCTION_LENGTH} 字符",
             }), 400
 
+        if app.config['SHARED_MODE'] and not getattr(g, 'task_execution', False):
+            return enqueue_request('manual', {'text': text, 'instruction': instruction, 'model': model_id})
+
         # 1. 文本预处理
         loader = get_data_loader()
         cleaned_text = loader.clean_text(text)
@@ -222,7 +273,7 @@ def analyze():
         except Exception as e:
             entities = {"locations": [], "organizations": [], "persons": [], "events": []}
             warnings.append(f"NER 降级: {e}")
-            logger.warning("NER 降级: %s", e)
+            logger.warning("NER 降级: %s", type(e).__name__)
 
         # 3. 情感分析（双语感知：中文 SnowNLP / 英文 VADER）
         try:
@@ -236,7 +287,7 @@ def analyze():
                 "source": "fallback",
             }
             warnings.append(f"情感分析降级: {e}")
-            logger.warning("情感分析降级: %s", e)
+            logger.warning("情感分析降级: %s", type(e).__name__)
 
         # 4. 大模型分析（使用 prompts.py 模板）
         llm_result = None
@@ -262,76 +313,13 @@ def analyze():
             or any(kw in text_lower for kw in conflict_keywords_en)
         )
 
-        # 尝试从 GDELT 获取事件指标（增强冲突频次和严重程度）
         gdelt_metrics = None
-        try:
-            from data.gdelt_crawler import get_gdelt_crawler
-            gdelt = get_gdelt_crawler()
-            gdelt_metrics = gdelt.get_risk_metrics(timespan_days=7)
-        except Exception as e:
-            warnings.append(f"GDELT 指标不可用: {e}")
-            logger.warning("GDELT 指标不可用: %s", e)
-
-        # 构建外部数据
-        external_data = {}
-        if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0:
-            external_data = {
-                "gdelt_conflict_frequency": gdelt_metrics["conflict_frequency"],
-                "gdelt_avg_tone_risk": gdelt_metrics["avg_tone_risk"],
-                "gdelt_avg_severity": gdelt_metrics["avg_severity"],
-                "gdelt_max_severity": gdelt_metrics["max_severity"],
-            }
-
-        # 尝试获取夜光遥感指标
-        nightlight_change = 0.0
-        try:
-            from data.nightlight_crawler import get_nightlight_crawler
-            nl = get_nightlight_crawler()
-            nightlight_change = nl.get_nightlight_change()
-        except Exception as e:
-            warnings.append(f"夜光指标不可用: {e}")
-            logger.warning("夜光指标不可用: %s", e)
-
-        # 尝试获取经济指标
-        refugee_change = 0.0
-        try:
-            from data.economic_crawler import get_economic_crawler
-            econ = get_economic_crawler()
-            refugee_change = econ.get_refugee_change()
-        except Exception as e:
-            warnings.append(f"经济指标不可用: {e}")
-            logger.warning("经济指标不可用: %s", e)
-
-        # 使用 compute_daily_risk 进行融合评分
-        indicators = {
-            "conflict_frequency": 1.0 if has_conflict else 0.2,
-            "sentiment_avg": sentiment_result["risk_score"],
-            "nightlight_change": nightlight_change,
-            "refugee_change": refugee_change,
-            "event_severity": 0.8 if has_conflict else 0.3
-        }
-        # 如果有 GDELT 数据，融合到指标中
-        if gdelt_metrics and gdelt_metrics.get("article_count", 0) > 0:
-            text_freq = indicators["conflict_frequency"]
-            gdelt_freq = gdelt_metrics["conflict_frequency"]
-            indicators["conflict_frequency"] = 0.6 * text_freq + 0.4 * gdelt_freq
-            # GDELT 事件严重程度替代关键词估计
-            indicators["event_severity"] = gdelt_metrics["avg_severity"]
-
+        indicators = {"conflict_frequency": 1.0 if has_conflict else 0.0,
+                      "sentiment_avg": sentiment_result.get("risk_score"),
+                      "nightlight_change": None, "refugee_change": None, "event_severity": None}
         risk_result = scorer.calculate_risk_score(indicators)
-        risk_result["gdelt_used"] = gdelt_metrics is not None and gdelt_metrics.get("article_count", 0) > 0
-
-        # 6. 写入知识图谱（如果 Neo4j 启用）
-        try:
-            kg = get_knowledge_graph()
-            kg.add_news_analysis(
-                news_item={"title": cleaned_text[:100], "date": datetime.now().strftime("%Y-%m-%d"), "source": "user_input"},
-                entities=entities,
-                llm_result=llm_result
-            )
-        except Exception as e:
-            warnings.append(f"Neo4j 写入已跳过: {e}")
-            logger.warning("Neo4j 写入已跳过: %s", e)
+        risk_result.update(run_kind="manual", gdelt_used=False,
+                           scope="仅用户输入的文本，不代表全国当日风险")
 
         # 7. 保存分析结果
         analysis_record = {
@@ -340,31 +328,22 @@ def analyze():
             "sentiment": sentiment_result,
             "llm_analysis": llm_result,
             "risk_score": risk_result,
-            "analyzed_at": datetime.now().isoformat()
+            "analyzed_at": utc_now().isoformat(),
+            "run_kind": "manual", "algorithm_version": RISK_VERSION,
+            "owner_id": getattr(g, "user", {}).get("id"), "shared": False,
+            "run_id": getattr(g, "job_id", None)
         }
         try:
-            loader.save_analysis_result(analysis_record)
-            # 追加风险分记录
-            today = datetime.now().strftime("%Y-%m-%d")
-            loader.append_risk_score(
-                date=today,
-                risk_score=risk_result["risk_score"],
-                risk_level=risk_result["risk_level"],
-                details=indicators
-            )
+            analysis_id = loader.save_analysis_result(analysis_record)
+            # 手工文本只保存独立分析快照，不写正式日风险。
         except Exception as e:
             warnings.append(f"分析结果持久化失败: {e}")
-            logger.warning("分析结果持久化失败: %s", e)
+            logger.warning("分析结果持久化失败: %s", type(e).__name__)
+            if app.config['SHARED_MODE']:
+                return jsonify(success=False, error="分析结果保存失败，可重试任务"), 503
+            analysis_id = None
 
-        # 8. 预警检查
         alert = None
-        try:
-            from analyzer.alert_monitor import get_alert_monitor
-            monitor = get_alert_monitor()
-            alert = monitor.check_risk_score(risk_result["risk_score"], details=indicators)
-        except Exception as e:
-            warnings.append(f"预警检查不可用: {e}")
-            logger.warning("预警检查不可用: %s", e)
 
         # 9. 诊断性归因分析
         diagnostic = None
@@ -374,11 +353,12 @@ def analyze():
             diagnostic = diag.diagnose(risk_result)
         except Exception as e:
             warnings.append(f"诊断分析不可用: {e}")
-            logger.warning("诊断分析不可用: %s", e)
+            logger.warning("诊断分析不可用: %s", type(e).__name__)
 
         return jsonify({
             "success": True,
             "data": {
+                "analysis_id": analysis_id,
                 "entities": entities,
                 "sentiment": sentiment_result,
                 "llm_analysis": llm_result,
@@ -391,7 +371,7 @@ def analyze():
         })
 
     except Exception as e:
-        logger.exception("/api/analyze 处理失败")
+        logger.error('/api/analyze 处理失败: %s', type(e).__name__)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -403,17 +383,25 @@ def chain_analysis():
     请求体: {"text": "...", "chain_depth": 2}  # depth: 1-4
     """
     try:
-        req_data = request.get_json()
+        req_data = request.get_json(silent=True)
+        if not isinstance(req_data, dict):
+            return jsonify({"success": False, "error": "请求体必须为对象"}), 400
         text = req_data.get("text", "")
         depth = req_data.get("chain_depth", 2)
-
-        if not text.strip():
+        if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= 4:
+            return jsonify({"success": False, "error": "chain_depth 必须为1～4整数"}), 400
+        if not isinstance(text, str) or not text.strip() or len(text) > 20000:
             return jsonify({"success": False, "error": "缺少 text 字段"}), 400
 
+        if app.config['SHARED_MODE'] and not getattr(g, 'task_execution', False):
+            return enqueue_request('chain', req_data)
         from analyzer.chain_reasoner import get_chain_reasoner
         reasoner = get_chain_reasoner()
         model_id = req_data.get("model")
         result = reasoner.run_chain(text, depth=int(depth), model=model_id)
+        if app.config['SHARED_MODE']:
+            get_data_loader().save_analysis_result({**result, 'run_kind': 'manual',
+                'owner_id': g.user['id'], 'run_id': getattr(g, 'job_id', None), 'shared': False})
 
         return jsonify({"success": True, "data": result})
     except Exception as e:
@@ -462,18 +450,41 @@ def multimodal_alignment():
     try:
         from analyzer.multimodal_aligner import get_multimodal_aligner
         aligner = get_multimodal_aligner()
-        months = request.args.get("months", 12, type=int)
-
-        aligned = aligner.align_monthly(months=months)
+        try:
+            if 'days' in request.args and 'months' in request.args:
+                raise ValueError('days 与 months 只能选择一种窗口')
+            end = business_date(request.args['end_date']) if 'end_date' in request.args else business_date()
+            if 'days' in request.args:
+                days = int(request.args['days'])
+                start, _ = time_window(days, end)
+                months = 12
+            else:
+                months = int(request.args.get('months', '12'))
+                start = business_date(aligner.month_keys(months, end)[0] + '-01')
+                days = (end - start).days + 1
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, error=str(exc)), 400
+        filters = {'days': days, 'end_date': end.isoformat(),
+                   'region': request.args.get('region', 'MMR'), 'source': request.args.get('source') or None}
+        observations = aligner.observations()
+        aligned = aligner.align_monthly(months=months, end_date=end, start_date=start,
+                                        region=filters['region'], source=filters['source'], observations=observations)
+        annual = aligner.align_annual(**filters, observations=observations)
         correlations = aligner.compute_correlations(aligned)
-        province_data = aligner.get_province_alignment()
+        province_data = aligner.get_province_alignment(**filters)
 
         return jsonify({
             "success": True,
             "data": {
                 "aligned": aligned,
+                "annual": annual,
                 "correlations": correlations,
-                "province_alignment": province_data
+                "province_alignment": province_data,
+                "filters": filters,
+                "metadata": {"requested_start": start.isoformat(), "requested_end": end.isoformat(),
+                             "complete_months": len(aligned), "timezone": "Asia/Yangon",
+                             "period_end_exclusive": True, "algorithm_version": "multimodal-v3",
+                             "note": "只比较窗口内完整月；边缘残缺月及未结束月份不参与，年度观测不展开"}
             }
         })
     except Exception as e:
@@ -490,7 +501,9 @@ def geo_potential():
     try:
         from analyzer.geo_potential import get_geo_potential_analyzer
         analyzer = get_geo_potential_analyzer()
-        result = analyzer.full_analysis()
+        provinces = _build_province_risk_data()
+        result = analyzer.full_analysis({r['province']: r['risk_score'] for r in provinces})
+        result['observation_metadata'] = [{k: v for k, v in r.items() if k != 'events'} for r in provinces]
         return jsonify({"success": True, "data": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -524,10 +537,16 @@ def diagnostic_analysis():
     try:
         from analyzer.diagnostic import get_diagnostic_analyzer
         diag = get_diagnostic_analyzer()
-        days = request.args.get("days", 14, type=int)
-        ahead = request.args.get("ahead", 7, type=int)
-        result = diag.explain_and_forecast(days=days, days_ahead=ahead)
+        days = int(request.args.get('days', '14'))
+        ahead = int(request.args.get('ahead', '7'))
+        if request.args.get('source'):
+            return jsonify(success=False, error='贡献比较使用已保存的综合日指标，不支持将单来源子集当综合评分'), 400
+        result = diag.explain_and_forecast(days=days, days_ahead=ahead,
+                                          end_date=request.args.get('end_date'), region=request.args.get('region', 'MMR'))
+        result['revision'] = get_data_loader().revision()
         return jsonify({"success": True, "data": result})
+    except ValueError as e:
+        return jsonify(success=False, error=str(e)), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -543,8 +562,12 @@ def alert_status():
         from analyzer.alert_monitor import get_alert_monitor
         monitor = get_alert_monitor()
 
-        status = monitor.get_current_status()
-        history = monitor.get_alert_history(limit=20)
+        end_date = request.args.get('end_date')
+        region = request.args.get('region', 'MMR')
+        if request.args.get('source'):
+            return jsonify(success=False, error='正式预警按区域综合指标计算，不支持单来源预警'), 400
+        status = monitor.get_current_status(end_date=end_date, region=region)
+        history = monitor.get_alert_history(limit=20, end_date=end_date, region=region)
         thresholds = monitor.get_threshold_lines()
 
         return jsonify({
@@ -565,11 +588,11 @@ def acknowledge_alert():
     try:
         from analyzer.alert_monitor import get_alert_monitor
         monitor = get_alert_monitor()
-        body = request.get_json() or {}
-        alert_id = body.get("alert_id", "")
-
-        success = monitor.acknowledge_alert(alert_id)
-        return jsonify({"success": success})
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get('alert_id'), str) or not body['alert_id']:
+            return jsonify(success=False, error='alert_id 必须是非空字符串'), 400
+        success = monitor.acknowledge_alert(body['alert_id'], user_id=getattr(g, 'user', {}).get('id'))
+        return jsonify({"success": success}), 200 if success else 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -600,14 +623,24 @@ def gdelt_events():
     try:
         days = request.args.get("days", 7, type=int)
 
-        from data.gdelt_crawler import get_gdelt_crawler
-        gdelt = get_gdelt_crawler()
-        metrics = gdelt.get_risk_metrics(timespan_days=days)
-
-        return jsonify({
-            "success": True,
-            "data": metrics
-        })
+        from data.gdelt_files import compute_metrics_from_events
+        loader = get_data_loader()
+        revision = loader.revision()
+        events = [e for e in _query_events(days) if e.get('source', 'gdelt') == 'gdelt']
+        metrics = compute_metrics_from_events(events)
+        start, end = time_window(days, request.args.get('end_date'))
+        dates = sorted({e['date'] for e in events})
+        metrics['metadata'] = {
+            'requested_start': start.isoformat(), 'requested_end': end.isoformat(),
+            'end_exclusive': True, 'actual_start': dates[0] if dates else None,
+            'actual_end': dates[-1] if dates else None, 'valid_days': len(dates),
+            'coverage': len(dates) / days, 'coverage_note': '有事件记录日占比，不是采集完整率',
+            'sources': ['gdelt'] if events else [], 'timezone': 'Asia/Yangon',
+            'latest_observation': dates[-1] if dates else None, 'revision': revision,
+            'quality': '事件规则派生指标，未做独立事件核验', 'unit': '比例/规则烈度（0～1）'}
+        if loader.revision() != revision:
+            return jsonify(success=False, error='读取期间数据已更新，请重试'), 409
+        return jsonify(success=True, data=metrics)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -622,6 +655,16 @@ def scheduler_control():
         Body: {"action": "crawl" | "gdelt" | "analysis" | "status"}
     """
     try:
+        if app.config['SHARED_MODE']:
+            if request.method == "GET":
+                return jsonify(success=True, data={"mode": "independent_worker", "embedded": False})
+            body = request.get_json(silent=True) or {}
+            action = body.get("action") if isinstance(body, dict) else None
+            if action in {"crawl", "analysis"}:
+                return enqueue_request('pipeline', {'source_mode': 'live' if action == 'crawl' else 'existing', 'include_llm': False})
+            if action in {"gdelt", "nightlight", "economic"}:
+                return enqueue_request(action, {})
+            return jsonify(success=False, error="未知任务"), 400
         scheduler = get_scheduler()
 
         if request.method == "GET":
@@ -675,19 +718,17 @@ def risk_map():
         mode = request.args.get("mode", "choropleth")
 
         def _build():
-            loader = get_data_loader()
-            history = loader.load_risk_history(days=days)
+            risk_data = _build_province_risk_data()
             map_gen = get_map_generator()
-            if history:
-                risk_data = _build_province_risk_data(history)
-                if mode == "hybrid":
-                    return map_gen.generate_risk_hybrid_map(risk_data)
-                return map_gen.generate_heatmap(risk_data)
-            return map_gen.generate_default_map()
+            if mode == "hybrid":
+                return map_gen.generate_risk_hybrid_map(risk_data)
+            return map_gen.generate_heatmap(risk_data)
 
         html = _cached_map_html(f"risk:{mode}:{days}", 300, _build)
-        return Response(html, mimetype="text/html")
+        return Response(html, mimetype="text/html", headers={'X-Data-Revision': g.map_revision})
 
+    except SnapshotChanged as e:
+        return jsonify(success=False, error=str(e)), 409
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -713,29 +754,17 @@ def unified_map():
             map_gen = get_map_generator()
 
             # 省级风险数据
-            loader = get_data_loader()
-            history = loader.load_risk_history(days=days)
-            risk_data = (_build_province_risk_data(history)
-                         if history else [])
+            risk_data = _build_province_risk_data()
 
             # KDE 密度（来自事件累积库，库空时尝试首次填充）
             density = None
             try:
-                from data.event_store import get_event_store
-                store = get_event_store()
-                events = store.load(days=days)
-                if not events:
-                    try:
-                        get_gdelt_crawler().get_risk_metrics(
-                            timespan_days=days)
-                    except Exception as e:
-                        logger.warning(f"[Map] 事件库首次填充失败: {e}")
-                    events = store.load(days=days)
+                events = _query_events(days)
                 if events:
                     from analyzer.event_density import (
                         get_event_density_analyzer)
                     cand = get_event_density_analyzer().compute(
-                        events, days=days)
+                        events, days=days, end_date=request.args.get('end_date'))
                     if not cand.get("degraded"):
                         density = cand
             except Exception as e:
@@ -747,8 +776,10 @@ def unified_map():
                 risk_data, density, days=days)
 
         html = _cached_map_html(f"unified:{days}", 300, _build)
-        return Response(html, mimetype="text/html")
+        return Response(html, mimetype="text/html", headers={'X-Data-Revision': g.map_revision})
 
+    except SnapshotChanged as e:
+        return jsonify(success=False, error=str(e)), 409
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -770,36 +801,22 @@ def event_density_map():
     try:
         days = request.args.get("days", 7, type=int)
 
-        from data.event_store import get_event_store
-        store = get_event_store()
-        events = store.load(days=days)
-
-        if not events:
-            # 累积库为空（首次运行）：触发 CSV 管线同步填充
-            try:
-                get_gdelt_crawler().get_risk_metrics(timespan_days=days)
-            except Exception as e:
-                logger.warning(f"[Map] 事件库首次填充失败: {e}")
-            events = store.load(days=days)
-
-        map_gen = get_map_generator()
-        if not events:
-            html = map_gen.generate_notice_map(
-                "GDELT 事件累积库暂无数据，无法生成事件密度地图"
-            )
-            return Response(html, mimetype="text/html")
-
-        from analyzer.event_density import get_event_density_analyzer
-        density = get_event_density_analyzer().compute(events, days=days)
-
         def _build():
+            events = _query_events(days)
+            map_gen = get_map_generator()
+            if not events:
+                return map_gen.generate_notice_map("所选窗口暂无事件记录，未回填旧数据")
+            from analyzer.event_density import get_event_density_analyzer
+            density = get_event_density_analyzer().compute(events, days=days, end_date=request.args.get('end_date'))
             if density.get("degraded"):
                 return map_gen.generate_notice_map(density["degraded"])
             return map_gen.generate_event_density_map(density, days=days)
 
         html = _cached_map_html(f"events:{days}", 600, _build)
-        return Response(html, mimetype="text/html")
+        return Response(html, mimetype="text/html", headers={'X-Data-Revision': g.map_revision})
 
+    except SnapshotChanged as e:
+        return jsonify(success=False, error=str(e)), 409
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -826,43 +843,46 @@ def trend():
         warnings = []
 
         loader = get_data_loader()
-        history = loader.load_risk_history(days=days)
-
-        if not history:
-            return jsonify({
-                "success": True,
-                "data": {
-                    "dates": [],
-                    "history": [],
-                    "forecast": [],
-                    "trend_analysis": {"trend": "无数据", "data_points": 0},
-                    "chart_data": None
-                }
-            })
-
-        # 提取日期和分数序列
-        dates = [record["date"] for record in history]
-        scores = [record["risk_score"] for record in history]
+        revision = loader.revision()
+        end_date = (business_date(request.args['end_date']) if 'end_date' in request.args else business_date()).isoformat()
+        region = request.args.get("region", "MMR")
+        source = request.args.get('source') or None
+        domain = request.args.get('domain', 'observed')
+        if domain not in {'observed', 'legacy'}:
+            return jsonify(success=False, error='domain 须为 observed 或 legacy'), 400
+        legacy = domain == 'legacy'
+        history = loader.load_risk_history(days=days, end_date=end_date, region=region, include_legacy=legacy) if not source else []
+        if source:
+            warnings.append('来源子集尚未重算日风险，综合风险留空；报告仅列出该来源的事件。')
+        dates, scores = calendar_series(history, days, end_date)
+        metadata = coverage_metadata(history, days, end_date, region=region,
+                                     data_domain="legacy" if legacy else "observed",
+                                     algorithm_version="legacy" if legacy else RISK_VERSION,
+                                     read_errors=getattr(loader, "last_read_errors", []))
 
         # 趋势分析
         trend_analyzer = get_trend_analyzer()
-        trend_result = trend_analyzer.full_analysis(scores)
+        trend_result = trend_analyzer.full_analysis(scores, dates=dates)
 
         # 预测（使用 trend.py 的完整线性回归外推，取代 _simple_forecast）
-        forecast_result = trend_analyzer.forecast(scores, days_ahead=7)
+        forecast_result = trend_analyzer.forecast(scores, days_ahead=7, dates=dates)
+        if legacy:
+            forecast_result.update(forecast=[], interval=None, backtest=None, status="legacy", reason="旧版快照不作正式预测")
 
         # 异常检测
-        anomalies = trend_analyzer.detect_anomalies(scores)
+        anomalies = trend_analyzer.detect_anomalies(scores) if not legacy else []
+        for anomaly in anomalies:
+            anomaly["date"] = dates[anomaly["index"]]
 
         result = {
             "dates": dates,
             "history": scores,
             "forecast": forecast_result["forecast"],
-            "forecast_meta": {
-                "slope": forecast_result["slope"],
-                "confidence": forecast_result["confidence"],
-                "r_squared": forecast_result.get("r_squared", 0.0)
-            },
+            "forecast_meta": {k: v for k, v in forecast_result.items() if k != "forecast"},
+            "metadata": metadata,
+            "revision": revision,
+            "filters": {"days": days, "end_date": end_date, "region": region, "source": source, "domain": domain},
+            "report_available": not legacy,
             "trend_analysis": trend_result,
             "anomalies": anomalies
         }
@@ -880,7 +900,8 @@ def trend():
         try:
             from data.historical_events import get_historical_events
             he = get_historical_events()
-            result["event_markers"] = he.get_markers_for_chart()
+            result["event_markers"] = [marker for marker in he.get_markers_for_chart()
+                                       if marker.get('coord', [None])[0] in dates] if region == 'MMR' and not source else []
         except Exception as e:
             warnings.append(f"历史事件标注不可用: {e}")
             logger.warning("历史事件标注不可用: %s", e)
@@ -900,8 +921,12 @@ def trend():
             result["chart_data"] = chart_data
 
         result["warnings"] = warnings
+        if loader.revision() != revision:
+            raise SnapshotChanged('读取趋势期间数据已更新，请刷新后重试')
         return jsonify({"success": True, "data": result})
 
+    except SnapshotChanged as e:
+        return jsonify(success=False, error=str(e)), 409
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -921,11 +946,18 @@ def kg_query():
         entity = request.args.get("entity", None)
         max_nodes = request.args.get("max_nodes", 30, type=int)
 
+        if request.args.get('region', 'MMR') != 'MMR':
+            return jsonify(success=False, error='图谱提及关系尚未关联明确事件区域，不能按任意提及地名筛选'), 400
+        filters = {'max_nodes': max_nodes, 'days': request.args.get('days', 30, type=int),
+                   'end_date': request.args.get('end_date'), 'source': request.args.get('source') or None,
+                   'domain': request.args.get('domain', 'observed')}
+        if not 1 <= max_nodes <= 500 or filters['domain'] not in {'observed', 'demo', 'legacy'}:
+            return jsonify(success=False, error='无效图谱节点上限或数据域'), 400
         kg = get_knowledge_graph()
         if entity:
-            data = kg.query_entities(entity)
+            data = kg.query_entities(entity, **filters)
         else:
-            data = kg.get_graph_data_for_vis(max_nodes=max_nodes)
+            data = kg.get_graph_data_for_vis(**filters)
 
         return jsonify({"success": True, "data": data})
     except Exception as e:
@@ -954,7 +986,17 @@ def network_analysis():
     try:
         from analyzer.network_analyzer import get_network_analyzer
         analyzer = get_network_analyzer()
-        result = analyzer.analyze()
+        loader = get_data_loader()
+        revision = loader.revision()
+        domain = request.args.get('domain', 'observed')
+        if domain not in {'observed', 'demo'}:
+            return jsonify(success=False, error='网络数据域须为 observed 或 demo'), 400
+        result = analyzer.analyze(days=request.args.get('days', 30, type=int),
+            end_date=request.args.get('end_date'), region=request.args.get('region', 'MMR'),
+            source=request.args.get('source') or None, domain=domain)
+        if loader.revision() != revision:
+            return jsonify(success=False, error='读取网络期间数据已更新，请重试'), 409
+        result['revision'] = revision
         return jsonify({"success": True, "data": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -981,19 +1023,30 @@ def generate_report():
         fmt = request.args.get("format", "html").lower()
         days = request.args.get("days", 30, type=int)
 
+        if request.args.get('domain', 'observed') != 'observed':
+            return jsonify(success=False, error='正式报告不支持旧版或演示数据域'), 400
+        if fmt not in {'html', 'docx', 'json'}:
+            return jsonify(success=False, error='format 须为 html、docx 或 json'), 400
         generator = get_report_generator()
-
+        snapshot = generator.build_snapshot(days=days, end_date=request.args.get('end_date'),
+            region=request.args.get('region', 'MMR'), source=request.args.get('source') or None,
+            expected_revision=request.args.get('revision'))
+        if fmt == 'json':
+            return jsonify(success=True, data=snapshot)
         if fmt == "docx":
-            docx_bytes = generator.generate_docx_report(days=days)
+            docx_bytes = generator.generate_docx_report(snapshot=snapshot)
             return Response(
                 docx_bytes,
                 mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                headers={"Content-Disposition": f"attachment; filename=myanmar_risk_report_{days}d.docx"}
+                headers={"Content-Disposition": f"attachment; filename=myanmar_risk_report_{days}d.docx",
+                         "X-Snapshot-ID": snapshot['snapshot_id']}
             )
         else:
-            html = generator.generate_html_report(days=days)
-            return Response(html, mimetype="text/html")
+            html = generator.generate_html_report(snapshot=snapshot)
+            return Response(html, mimetype="text/html", headers={'X-Snapshot-ID': snapshot['snapshot_id']})
 
+    except SnapshotChanged as e:
+        return jsonify(success=False, error=str(e)), 409
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -1017,12 +1070,20 @@ def _cached_map_html(key: str, ttl: int, builder) -> str:
     :return: HTML 字符串
     """
     import time as _time
+    loader = get_data_loader()
+    revision = loader.revision()
+    if request.args.get('revision') and request.args['revision'] != revision:
+        raise SnapshotChanged('地图数据已更新，请刷新后重试')
+    g.map_revision = revision
+    key = (key, revision, request.args.get('end_date') or business_date().isoformat(), tuple(sorted(request.args.items())))
     now = _time.time()
     with _map_cache_lock:
         hit = _MAP_HTML_CACHE.get(key)
         if hit and now - hit[0] < ttl:
             return hit[1]
     html = builder()  # 生成在锁外，避免阻塞其他请求
+    if loader.revision() != revision:
+        raise SnapshotChanged('地图生成期间数据已更新，请重试')
     with _map_cache_lock:
         _MAP_HTML_CACHE[key] = (now, html)
         # 限制缓存条目数（不同 days 参数组合有限，简单清理即可）
@@ -1032,33 +1093,30 @@ def _cached_map_html(key: str, ttl: int, builder) -> str:
     return html
 
 
-def _build_province_risk_data(history: list) -> list:
-    """
-    从历史数据构建省级风险数据（用于地图渲染）
-    TODO: 实际应根据 NER 提取的地名关联到省份
-    """
-    from visualization.map_gen import MYANMAR_PROVINCES
+def _query_events(days=30):
+    from data.event_store import get_event_store
+    from analyzer.spatial_analysis import unique_events, locate_event
+    end_date = request.args.get('end_date')
+    events = unique_events(get_event_store().load(days=days, end_date=end_date), days, end_date,
+                           source=request.args.get('source') or None)
+    region = request.args.get('region', 'MMR')
+    return events if region == 'MMR' else [e for e in events if locate_event(e)[0] == region]
 
-    avg_score = sum(r["risk_score"] for r in history) / len(history) if history else 50
 
-    risk_data = []
-    for province, (lat, lon) in MYANMAR_PROVINCES.items():
-        # 边境省份风险更高（简化逻辑）
-        border_provinces = ["掸邦", "克钦邦", "克伦邦", "若开邦", "钦邦"]
-        if province in border_provinces:
-            score = min(avg_score * 1.3, 100)
-        else:
-            score = avg_score * 0.8
+def _build_province_risk_data(history=None) -> list:
+    """保留兼容入口；全国历史分不得投射成省级观测。"""
+    from analyzer.spatial_analysis import aggregate_provinces
+    days = request.args.get('days', 7, type=int)
+    return aggregate_provinces(_query_events(days), days, request.args.get('end_date'))
 
-        risk_data.append({
-            "province": province,
-            "risk_score": round(score, 2),
-            "risk_level": "高风险" if score >= 70 else "中风险" if score >= 40 else "低风险",
-            "lat": lat,
-            "lon": lon
-        })
 
-    return risk_data
+@app.get('/api/regions')
+def region_observations():
+    from analyzer.spatial_analysis import morans_i
+    data = _build_province_risk_data()
+    return jsonify(success=True, data={'regions': data, 'spatial_statistics': morans_i(data),
+                   'metric': '已定位事件规则烈度均值；非全国日风险、非发生概率',
+                   'filters': dict(request.args), 'revision': get_data_loader().revision()})
 
 
 # ============================================================
@@ -1075,8 +1133,11 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # debug 模式仅在 reloader 子进程启动；非 debug 模式直接启动。
-    if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        _start_scheduler()
+    if os.environ.get("ENABLE_EMBEDDED_SCHEDULER", "false").lower() == "true":
+        if os.environ.get("APP_SHARED_MODE", "false").lower() == "true":
+            raise RuntimeError("共享部署仅允许独立 worker 调度")
+        if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            _start_scheduler()
 
     app.run(
         host=flask_cfg.get("host", "127.0.0.1"),

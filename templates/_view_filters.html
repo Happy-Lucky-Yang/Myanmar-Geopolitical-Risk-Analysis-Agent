@@ -1,0 +1,15 @@
+<div class="controls view-filters" aria-label="数据视图筛选">
+    <label>时间窗口
+        <select id="days-select">
+            <option value="7">近7天</option>
+            <option value="14">近14天</option>
+            <option value="30" selected>近30天</option>
+            <option value="60">近60天</option>
+            <option value="90">近90天</option>
+            <option value="365">近365天</option>
+        </select>
+    </label>
+    <label>截止业务日 <input id="end_date-filter" type="date" aria-label="截止业务日"></label>
+    <label>区域代码 <input id="region-filter" value="MMR" placeholder="MMR 或省级行政代码" aria-label="区域代码"></label>
+    <label>来源 <input id="source-filter" placeholder="全部来源" aria-label="来源名称"></label>
+</div>

@@ -4,7 +4,8 @@
 
 # ---------- 敏感信息（绝不提交） ----------
 .env
-*.docx                      # 申报书/内部文档（.env.example 模板保留提交）
+# 申报书/内部文档（.env.example 模板保留提交）
+*.docx
 
 # ---------- Python ----------
 __pycache__/
@@ -50,7 +51,12 @@ desktop.ini
 node_modules/
 
 # ---------- 临时文件 ----------
+# 治理清单包含本地文件路径，仅保存在对应授权目录
+inventory-*.json
 *.tmp
+.test-run*/
+.test-runs/
+.pytest_cache/
 *_temp.*
 docs/_proposal_temp.txt
 # 临时验证脚本

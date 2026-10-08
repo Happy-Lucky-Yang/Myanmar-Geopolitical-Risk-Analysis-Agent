@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 风险地图</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808c">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
 </head>
 <body>
     <nav class="navbar">
@@ -23,17 +23,12 @@
             <h2>缅甸风险地图</h2>
 
             <div class="sidebar-section">
-                <div class="sidebar-label">时间窗口</div>
-                <select id="days-select" class="sidebar-select">
-                    <option value="7">7 天</option>
-                    <option value="14">14 天</option>
-                    <option value="30" selected>30 天</option>
-                    <option value="90">90 天</option>
-                </select>
+                {% include '_view_filters.html' %}
+                <p id="map-query-status" class="muted-note" aria-live="polite"></p>
                 <button type="button" class="btn btn-primary sidebar-btn" onclick="loadMap()">刷新地图</button>
             </div>
 
-            <div class="sidebar-section">
+            <div class="sidebar-section" id="layer-panel">
                 <div class="lp-title">图层控制</div>
                 <div class="lp-group">风险渲染方式</div>
                 <label class="lp-item"><input type="radio" name="risk-style" value="hybrid" checked> 风险散点</label>
@@ -48,6 +43,8 @@
                 <label class="lp-item"><input type="checkbox" id="lyr-borders" checked> 省级行政界</label>
                 <label class="lp-item"><input type="checkbox" id="lyr-country" checked> 国界</label>
             </div>
+            <p class="muted-note">省级事件规则烈度不等同于全国风险分；灰色为无有效观测。底图故障不影响本地边界。</p>
+            <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-secondary">导出当前筛选报告</a>
         </aside>
 
         <!-- 地图主区域 -->
@@ -64,43 +61,75 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808c"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
     <script>
+        var mapSequence = 0;
+        var layerBindTimer = null;
+        var mapController = null;
         async function loadMap() {
-            var days = document.getElementById('days-select').value;
+            var sequence = ++mapSequence;
+            if (mapController) mapController.abort();
+            var controller = mapController = new AbortController();
+            var timeout = setTimeout(() => controller.abort(), 30000);
+            var filters = readViewFilters();
             var container = document.getElementById('map-container');
+            var status = document.getElementById('map-query-status');
+            clearInterval(layerBindTimer);
+            window._mmMap = window._mmLayers = null;
+            document.querySelectorAll('#layer-panel input').forEach(el => { el.disabled = true; });
+            status.textContent = '正在加载所选窗口，旧图已清除';
+            setViewReport(null);
             renderLoading(container);
 
             try {
-                var resp = await fetch('/api/map/unified?days=' + encodeURIComponent(days));
+                var resp = await fetch('/api/map/unified?' + viewQuery({}, filters), {signal:controller.signal});
+                if (sequence !== mapSequence) return;
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 var html = await resp.text();
+                if (sequence !== mapSequence) return;
 
                 if (!html || html.length < 50) {
                     throw new Error('地图数据为空');
                 }
                 container.innerHTML = html;
-                bindLayerPanel();
+                bindLayerPanel(sequence);
+                var revision = resp.headers.get('X-Data-Revision');
+                setViewReport({revision:revision, filters:filters});
+                syncViewNavigation(filters);
+                window.history.replaceState(null, '', '/map?' + viewQuery({}, filters));
+                status.textContent = '截至 ' + filters.end_date + ' · ' + filters.days + '个日历日 · 区域 ' + filters.region
+                    + ' · 来源 ' + (filters.source || '全部') + ' · 数据版本 ' + (revision || '未提供');
             } catch (e) {
+                if (sequence !== mapSequence) return;
+                status.textContent = '请求失败，当前筛选无可用地图；导出已禁用';
                 container.innerHTML = '<div class="error-card">'
                     + '<div class="error-icon">🗺️</div>'
                     + '<div class="error-msg">' + escapeHtml('地图加载失败: ' + e.message) + '</div>'
                     + '<button class="btn btn-secondary" style="margin-top:1rem" onclick="loadMap()">重试</button>'
                     + '</div>';
+            } finally {
+                clearTimeout(timeout);
             }
         }
 
         /* 图层面板绑定：依赖地图内注入的 window._mmMap / window._mmLayers。
            地图包在 iframe(srcdoc) 内异步加载，轮询等待注册就绪后再绑定 */
-        function bindLayerPanel() {
+        function bindLayerPanel(sequence) {
             var tries = 0;
-            var timer = setInterval(function () {
+            layerBindTimer = setInterval(function () {
+                if (sequence !== mapSequence) { clearInterval(layerBindTimer); return; }
                 tries++;
-                if (window._mmLayers && window._mmMap) {
-                    clearInterval(timer);
+                var frame = document.querySelector('#map-container iframe');
+                var target = frame && frame.contentWindow;
+                if (target && target._mmLayers && target._mmMap) {
+                    window._mmLayers = target._mmLayers;
+                    window._mmMap = target._mmMap;
+                    clearInterval(layerBindTimer);
+                    document.querySelectorAll('#layer-panel input').forEach(el => { el.disabled = false; });
                     doPanelBind();
                 } else if (tries > 50) {
-                    clearInterval(timer);
+                    clearInterval(layerBindTimer);
+                    document.getElementById('map-query-status').textContent += '；图层未就绪或当前为无数据底图';
                 }
             }, 200);
         }
@@ -127,6 +156,8 @@
 
             var kdeBox = document.getElementById('lyr-kde');
             var kdeSlider = document.getElementById('kde-opacity');
+            kdeBox.disabled = kdeSlider.disabled = !layers.kde;
+            kdeBox.title = layers.kde ? '所选窗口事件密度' : '所选窗口暂无有效事件密度';
             if (!layers.kde) {
                 kdeBox.checked = false;
                 kdeBox.disabled = true;
@@ -140,6 +171,10 @@
                 }
             };
 
+            kdeSlider.oninput();
+            setOn(layers.kde, kdeBox.checked);
+            setOn(layers.borders, document.getElementById('lyr-borders').checked);
+            setOn(layers.country, document.getElementById('lyr-country').checked);
             document.getElementById('lyr-borders').onchange = function () {
                 setOn(layers.borders, this.checked);
             };
@@ -148,6 +183,7 @@
             };
         }
 
+        initViewFilters(loadMap);
         loadMap();
     </script>
 </body>

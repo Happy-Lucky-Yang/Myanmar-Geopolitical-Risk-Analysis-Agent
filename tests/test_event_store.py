@@ -69,15 +69,17 @@ def test_load_filters_by_days(store_path):
     assert len(store.load()) == 2  # 无窗口=全部
 
 
-def test_prune_removes_old_events(store_path):
+def test_history_retained_and_window_filters_old_events(store_path):
     store = EventStore(persist_path=store_path, keep_days=30)
     today = datetime.now()
     store.append([
         _ev("1", today.strftime("%Y%m%d")),
         _ev("2", (today - timedelta(days=60)).strftime("%Y%m%d")),
     ])
-    # 修剪在 append 时触发
-    assert store.stats()["total"] == 1
+    # 保留原始历史，查询窗口不能改变持久化资料。
+    assert store.stats()["total"] == 2
+    assert len(store.load(days=30)) == 1
+    assert EventStore(persist_path=store_path).stats()["total"] == 2
 
 
 def test_persistence_roundtrip(store_path):

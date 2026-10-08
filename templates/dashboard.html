@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>缅甸地缘风险分析 - 综合态势</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260808c">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 </head>
 <body>
@@ -21,14 +21,22 @@
 
     <main class="container console-page">
         <h2>综合地缘态势仪表盘</h2>
-        <p class="subtitle">Multi-Source Fusion · Geopolitical Potential · Network · Early Warning</p>
+        <p class="subtitle">当前风险 · 重点事件 · 实际贡献 · 数据覆盖（风险分不是发生概率）</p>
+        {% include '_view_filters.html' %}
 
         <div class="controls">
             <button class="btn btn-primary" onclick="loadAll()">刷新全部</button>
-            <a href="/api/report?format=html&days=30" target="_blank" class="btn btn-secondary" style="text-decoration:none">导出 HTML 报告</a>
-            <a href="/api/report?format=docx&days=30" target="_blank" class="btn btn-secondary" style="text-decoration:none">导出 DOCX 报告</a>
+            <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-secondary">导出 HTML 报告</a>
+            <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-secondary">导出 DOCX 报告</a>
         </div>
 
+        <div class="console-grid">
+            <section class="card span-6"><h3>风险、变化与数据覆盖</h3><div id="overview-body" aria-live="polite"></div></section>
+            <section class="card span-6"><h3>窗口内最近事件与证据</h3><div id="focus-events"></div></section>
+        </div>
+        <p class="muted-note">报告导出首屏观测快照及其趋势与贡献分析；下方全局健康和独立历史资料不混入报告。</p>
+        <details id="research-details">
+            <summary>展开研究详情：预警、贡献比较、空间统计、共现网络及多模态</summary>
         <div class="console-grid">
             <!-- 预警面板 -->
             <div class="card span-4">
@@ -38,7 +46,7 @@
 
             <!-- 数据源健康 -->
             <div class="card span-8">
-                <div class="card-title"><span class="icon">📡</span> 数据源健康 <span class="tag-hint">成功率 · 自动降级监控</span></div>
+                <div class="card-title"><span class="icon">📡</span> 数据源健康 <span class="tag-hint">全局运行状态，不随事件时间窗口裁剪</span></div>
                 <div id="source-health-body"></div>
             </div>
 
@@ -62,26 +70,27 @@
 
             <!-- 诊断归因 -->
             <div class="card span-3">
-                <div class="card-title"><span class="icon">🔬</span> 诊断性归因 <span class="tag-hint">驱动机制</span></div>
+                <div class="card-title"><span class="icon">🔬</span> 贡献分析 <span class="tag-hint">等长前后期，不作因果解释</span></div>
                 <div id="diagnostic-body"></div>
             </div>
 
             <!-- 多源融合视图 -->
             <div class="card span-12">
-                <div class="card-title"><span class="icon">📊</span> 多源数据融合视图 <span class="tag-hint">夜光 × 冲突 × 情感</span></div>
+                <div class="card-title"><span class="icon">📊</span> 多源数据融合视图 <span class="tag-hint">所选窗口内完整月份 · 不同量纲分面展示</span></div>
                 <div id="multimodal-chart" style="width:100%;height:440px"></div>
                 <div id="correlation-body"></div>
             </div>
 
             <!-- 历史事件时间线 -->
             <div class="card span-12">
-                <div class="card-title"><span class="icon">📅</span> 历史事件时间线 <span class="tag-hint">2020-2025 重大事件</span></div>
+                <div class="card-title"><span class="icon">📅</span> 历史事件时间线 <span class="tag-hint">独立历史参考库，不代表当前窗口观测</span></div>
                 <div id="history-body"></div>
             </div>
         </div>
+        </details>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=20260808c"></script>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=views-v3"></script>
 </body>
 </html>

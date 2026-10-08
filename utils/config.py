@@ -39,10 +39,7 @@ def _load_env_file():
     _env_loaded = True
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    candidates = [
-        os.environ.get("ENV_FILE", ""),          # 优先: 显式指定（可指向项目外私密目录）
-        os.path.join(project_root, ".env"),       # 其次: 项目根目录
-    ]
+    candidates = [os.environ["ENV_FILE"]] if "ENV_FILE" in os.environ else [os.path.join(project_root, ".env")]
 
     for path in candidates:
         if not path or not os.path.exists(path):
@@ -109,8 +106,9 @@ def load_config(config_path: str = None) -> dict:
 
 def reset_config():
     """重置配置缓存（用于热重载或测试）"""
-    global _config_cache
+    global _config_cache, _env_loaded
     _config_cache = None
+    _env_loaded = False
 
 
 def get_llm_config() -> dict:
@@ -171,10 +169,7 @@ def get_data_paths() -> dict:
         "external": os.path.join(root, "external"),
     }
     for p in (paths["raw"], paths["processed"], paths["external"]):
-        try:
-            os.makedirs(p, exist_ok=True)
-        except Exception:
-            pass
+        os.makedirs(p, exist_ok=True)
 
     _data_paths_cache = paths
     return paths

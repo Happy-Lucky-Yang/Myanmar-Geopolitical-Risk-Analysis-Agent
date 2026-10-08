@@ -770,7 +770,8 @@ textarea::placeholder {
     gap: 0.4rem;
 }
 
-.controls select {
+.controls select,
+.controls input {
     padding: 0.4rem 0.7rem;
     border: 1px solid var(--border-default);
     border-radius: 6px;
@@ -782,10 +783,23 @@ textarea::placeholder {
     transition: border-color 0.25s;
 }
 
-.controls select:focus {
-    outline: none;
+.controls select:focus,
+.controls input:focus {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
     border-color: var(--accent-blue);
 }
+
+.view-filters input { min-width: 0; max-width: 12rem; }
+.map-sidebar .view-filters { margin: 0; gap: 0.6rem; }
+.map-sidebar .view-filters label { width: 100%; flex-direction: column; align-items: stretch; }
+.map-sidebar .view-filters input, .map-sidebar .view-filters select { width: 100%; max-width: none; }
+#research-details > summary { cursor: pointer; padding: 1rem 0; color: var(--text-heading); }
+.observation-table { overflow-x: auto; }
+.observation-table table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.observation-table th, .observation-table td { padding: 0.5rem; border-bottom: 1px solid var(--border-default); text-align: left; }
+[aria-disabled="true"] { cursor: not-allowed; }
+.console-grid > .card { min-width: 0; }
 
 /* ---------- 地图容器 ---------- */
 .map-wrap {
@@ -1343,6 +1357,7 @@ textarea::placeholder {
     margin-left: 6px;
 }
 .muted-note {
+    overflow-wrap: anywhere;
     font-size: 0.78rem;
     color: var(--text-muted);
     margin: 0.4rem 0;

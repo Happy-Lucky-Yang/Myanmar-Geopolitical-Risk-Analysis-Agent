@@ -23,7 +23,7 @@ def test_llm_runtime_controls_are_configured():
 
 def test_readme_documents_python_and_nlp_resources():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Python 3.10" in readme
+    assert "Python 3.12" in readme
     assert "python -m spacy download en_core_web_sm" in readme
     assert 'nltk.download("vader_lexicon")' in readme
 
@@ -39,9 +39,12 @@ def test_environment_checker_distinguishes_required_and_optional_dependencies():
     assert result["required"]["pytest"] is False
     assert result["optional"]["neo4j"] is False
     assert result["optional"]["openai"] is False
+    assert result["optional"]["LAC"] is False
+    assert 'LAC' not in result['required']
+    assert 'jieba' in result['required']
 
 
-def test_environment_checker_requires_python_310_and_nlp_resources():
+def test_environment_checker_requires_python_312_and_nlp_resources():
     from scripts.check_environment import check_dependencies, main
 
     always_installed = lambda name: object()

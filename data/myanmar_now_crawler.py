@@ -88,6 +88,9 @@ class EnglishNewsCrawler:
     # ============================================================
 
     def _load_urls_seen(self) -> set:
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return set()
         if not os.path.exists(self._urls_seen_file):
             return set()
         with open(self._urls_seen_file, "r", encoding="utf-8") as f:
@@ -95,6 +98,9 @@ class EnglishNewsCrawler:
 
     def _save_urls_seen(self):
         """持久化已处理 URL 集合（上限 10000）"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return
         urls = sorted(self._urls_seen)
         if len(urls) > 10000:
             urls = urls[-10000:]
@@ -104,6 +110,9 @@ class EnglishNewsCrawler:
                 f.write(url + "\n")
 
     def _is_new_url(self, url: str) -> bool:
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return True
         normalized = url.rstrip("/")
         if normalized in self._urls_seen:
             return False
@@ -324,6 +333,11 @@ class EnglishNewsCrawler:
 
     def save_news(self, news_list: List[Dict], filename: str = None) -> Optional[str]:
         """保存英文新闻数据"""
+        from storage.repository import get_repository
+        repo = get_repository()
+        if repo is not None:
+            repo.save_collected_articles(news_list)
+            return 'postgres:articles'
         if not news_list:
             return None
 

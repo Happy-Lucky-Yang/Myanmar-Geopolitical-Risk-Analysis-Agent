@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, List, Literal, TypedDict
 
 from utils.config import get_data_paths, load_config
+from utils.data_contract import RISK_VERSION, business_date, calendar_series, fingerprint, json_safe
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -187,20 +189,13 @@ def _write_artifacts(result: PipelineResult, run_dir: Path):
     run_dir.mkdir(parents=True, exist_ok=True)
 
     trend_path = run_dir / "trend.json"
-    trend_path.write_text(json.dumps(result["trend"], ensure_ascii=False, indent=2), encoding="utf-8")
+    trend_path.write_text(json.dumps(json_safe(result["trend"]), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     result["artifacts"]["trend"] = str(trend_path)
 
     map_path = run_dir / "map.html"
     try:
         from visualization.map_gen import get_map_generator
-        score = float(result["risk"].get("risk_score", 0))
-        map_html = get_map_generator().generate_heatmap([{
-            "province": "缅甸全国",
-            "lat": 19.76,
-            "lon": 96.07,
-            "risk_score": score,
-            "risk_level": result["risk"].get("risk_level", "未知"),
-        }])
+        map_html = get_map_generator().generate_heatmap([])
         result["stages"]["visualization"] = _stage("ok", "已生成风险地图与趋势数据")
     except Exception as exc:
         map_html = (
@@ -228,22 +223,19 @@ def _write_artifacts(result: PipelineResult, run_dir: Path):
         report_html = basic_report + "<p>离线演示报告，不含外部经济指标。</p></body></html>"
         result["stages"]["report"] = _stage("ok", "已生成严格离线 HTML 研判报告")
     else:
-        try:
-            from analyzer.report_generator import get_report_generator
-            report_html = get_report_generator().generate_html_report(days=30)
-            result["stages"]["report"] = _stage("ok", "已生成 HTML 研判报告")
-        except Exception as exc:
-            report_html = basic_report + (
-                f"<p>完整报告组件不可用：{html.escape(str(exc))}</p></body></html>"
-            )
-            result["stages"]["report"] = _stage("degraded", f"报告降级为基础 HTML: {exc}")
-            _add_warning(result, "report", str(exc))
+        report_html = basic_report + (
+            f"<p>运行域：{html.escape(result['source_mode'])}；版本：{RISK_VERSION}</p>"
+            f"<p>观测业务日：{html.escape(str(result['risk'].get('date')))}</p>"
+            f"<p>实际来源：{html.escape('、'.join(result['risk'].get('sources', [])))}</p>"
+            "<p>基于本次快照生成；缺少事件坐标时地图不推测省级风险。</p></body></html>"
+        )
+        result["stages"]["report"] = _stage("ok", "已生成同版本、同来源的离线快照报告")
     report_path.write_text(report_html, encoding="utf-8")
     result["artifacts"]["report"] = str(report_path)
 
     summary_path = run_dir / "summary.json"
     result["artifacts"]["summary"] = str(summary_path)
-    summary_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(json_safe(result), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
 
 def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
@@ -265,11 +257,15 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
         _add_warning(result, "storage", str(exc))
         return result
     news = _load_source(source_mode, result)
+    if source_mode == "live":
+        news += loader.load_raw_news()
     if not news:
         result["stages"].setdefault("source", _stage("failed", "无数据可处理"))
         return result
 
     try:
+        if source_mode != 'demo':
+            news = [row for row in news if isinstance(row, dict) and row.get('run_kind', 'existing') in {'live', 'existing'}]
         news = loader.preprocess(news)
         if not news:
             result["stages"]["preprocess"] = _stage("failed", "清洗后无有效新闻")
@@ -285,6 +281,8 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
     sentiment = get_sentiment_analyzer()
     nlp_errors = 0
     for item in news:
+        from utils.data_contract import utc_now
+        item.update(run_kind=source_mode, analyzed_at=utc_now().isoformat(), ner_version='ner-existing-v1')
         text = item.get("content", "") or item.get("title", "")
         try:
             item["entities"] = ner.extract_entities(text)
@@ -303,7 +301,7 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
             item["sentiment_source"] = sent["source"]
         except Exception as exc:
             nlp_errors += 1
-            item["sentiment_score"] = 0.5
+            item["sentiment_score"] = None
             item["risk_sentiment"] = "unknown"
             _add_warning(result, "nlp", f"情感分析降级: {exc}")
     result["stages"]["nlp"] = _stage(
@@ -344,9 +342,29 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
 
     try:
         from analyzer.risk_scorer import get_risk_scorer
-        external = _collect_external_metrics(result) if source_mode == "live" else {}
-        result["risk"] = get_risk_scorer().compute_daily_risk(news, external_data=external)
-        result["stages"]["risk"] = _stage("ok", "综合风险评分完成")
+        grouped = defaultdict(list)
+        for item in news:
+            day = business_date(item.get("pub_time"))
+            if day is not None and day <= business_date():
+                grouped[day.isoformat()].append(item)
+        if not grouped:
+            result["stages"]["risk"] = _stage("failed", "没有有效发布业务日，不能生成正式日指标")
+            return result
+        invalid_count = len(news) - sum(map(len, grouped.values()))
+        if invalid_count:
+            _add_warning(result, "risk", f"{invalid_count} 条缺少有效日期或日期在未来，未计入日指标")
+        daily_results = []
+        scorer = get_risk_scorer()
+        for day, items in sorted(grouped.items()):
+            risk = scorer.compute_daily_risk(items)
+            risk.update(date=day, run_kind=source_mode,
+                        sources=sorted({s for item in items for s in item.get('sources', [item.get('source', 'unknown')]) if s}),
+                        input_hash=fingerprint({"version": RISK_VERSION, "date": day,
+                                               "articles": sorted(item["content_hash"] for item in items),
+                                               "indicators": risk.get("raw_indicators"), "weights": risk.get("weights_used")}))
+            daily_results.append(risk)
+        result["risk"] = daily_results[-1]
+        result["stages"]["risk"] = _stage("ok", f"按发布业务日重算 {len(daily_results)} 个日指标，返回最新观测而非今日推测")
     except Exception as exc:
         result["stages"]["risk"] = _stage("failed", str(exc))
         return result
@@ -354,12 +372,14 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
     result["processed_count"] = len(news)
     if persist:
         try:
-            loader.append_risk_score(
-                date=datetime.now().strftime("%Y-%m-%d"),
-                risk_score=result["risk"]["risk_score"],
-                risk_level=result["risk"]["risk_level"],
-                details=result["risk"].get("raw_indicators", {}),
-            )
+            if source_mode != "demo":
+                loader.save_articles(news)
+            for risk in daily_results:
+                loader.append_risk_score(
+                    date=risk["date"], risk_score=risk["risk_score"], risk_level=risk["risk_level"],
+                    details=risk, run_kind=source_mode, algorithm_version=RISK_VERSION,
+                    sample_count=risk["news_count"], sources=risk["sources"], input_hash=risk["input_hash"],
+                )
             result["stages"]["persist"] = _stage("ok", "风险记录已持久化")
         except Exception as exc:
             result["stages"]["persist"] = _stage("failed", str(exc))
@@ -368,19 +388,34 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
     else:
         result["stages"]["persist"] = _stage("skipped", "persist=False")
 
+    if persist and source_mode != "demo":
+        try:
+            from analyzer.alert_monitor import get_alert_monitor
+            alerts = get_alert_monitor().check_history()
+            result["stages"]["alerts"] = _stage("ok", f"正式日指标检查完成，新增 {len(alerts)} 条状态转换")
+        except Exception as exc:
+            result["stages"]["alerts"] = _stage("degraded", str(exc))
+            _add_warning(result, "alerts", str(exc))
+    else:
+        result["stages"]["alerts"] = _stage("skipped", "演示或未持久化运行不产生正式预警")
+
     try:
-        history = loader.load_risk_history(days=90) if persist else []
-        scores = [row["risk_score"] for row in history] or [result["risk"]["risk_score"]]
+        history = loader.load_risk_history(days=90) if persist and source_mode != "demo" else daily_results
+        dates, scores = calendar_series(history, 90)
         from analyzer.trend import get_trend_analyzer
-        result["trend"] = get_trend_analyzer().full_analysis(scores)
+        result["trend"] = get_trend_analyzer().full_analysis(scores, dates=dates)
         result["stages"]["trend"] = _stage("ok", f"使用 {len(scores)} 个风险点完成趋势分析")
     except Exception as exc:
         result["trend"] = {"trend": "数据不足", "error": str(exc)}
         result["stages"]["trend"] = _stage("degraded", str(exc))
         _add_warning(result, "trend", str(exc))
 
+    from storage.repository import current_task
+    queued = current_task() is not None
     neo4j_cfg = load_config().get("neo4j", {})
-    if source_mode == "demo" or not neo4j_cfg.get("enabled", False):
+    if queued:
+        result['stages']['knowledge_graph'] = _stage('skipped', '队列仅写关系库证据；Neo4j 不在任务事务内同步发布')
+    elif source_mode == "demo" or not neo4j_cfg.get("enabled", False):
         result["stages"]["knowledge_graph"] = _stage("skipped", "Neo4j 未启用或处于 demo 模式")
     else:
         try:
@@ -393,9 +428,14 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
             result["stages"]["knowledge_graph"] = _stage("degraded", str(exc))
             _add_warning(result, "knowledge_graph", str(exc))
 
-    if persist:
+    if queued:
+        result['stages']['visualization'] = _stage('skipped', '地图由筛选查询按需生成')
+        result['stages']['report'] = _stage('skipped', '报告由已提交数据的修订快照按需导出')
+        result['stages']['artifacts'] = _stage('ok', '任务结果由租约令牌确认后保存，不覆盖共享文件')
+        result['success'] = True
+    elif persist:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        run_dir = Path(get_data_paths()["processed"]) / "runs" / timestamp
+        run_dir = Path(get_data_paths()["processed"]) / source_mode / "runs" / timestamp
         # summary.json 由 _write_artifacts 最后写入，因此先放入最终成功状态，
         # 确保磁盘摘要与返回给 CLI/调度器的 PipelineResult 一致。
         result["stages"]["artifacts"] = _stage("ok", "运行产物写入完成")

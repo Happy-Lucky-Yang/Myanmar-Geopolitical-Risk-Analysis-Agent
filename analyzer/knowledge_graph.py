@@ -6,12 +6,31 @@ import logging
 import threading
 from typing import Dict, List, Optional
 from utils.config import get_neo4j_config
+from utils.data_contract import (FORMAL_MODES, article_identity, business_date, fingerprint,
+                                 source_evidence, time_window, json_safe)
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraph:
     """Neo4j 知识图谱操作类"""
+
+    ENTITY_TYPES = frozenset({'Country', 'Organization', 'Person', 'Event', 'Location', 'NewsEvent', 'EventType'})
+    EVIDENCE_TYPES = frozenset({'MENTIONS_LOCATION', 'MENTIONS_ORGANIZATION', 'MENTIONS_PERSON',
+                                'CLASSIFIED_AS', 'CO_OCCURS_IN_ARTICLE'})
+    DEMO_TYPES = frozenset({'CONFLICT_WITH', 'COOPERATE_WITH', 'AFFILIATED_WITH', 'MEMBER_OF',
+        'ECONOMIC_PARTNER', 'INVESTS_IN', 'SANCTIONS', 'MONITORS', 'DIPLOMATIC_PRESSURE',
+        'REFUGEE_HOST', 'BORDER_RELATION', 'AID_PROVIDER', 'LEADS', 'BASED_IN', 'SYMBOLIC_LEADER',
+        'PERPETRATED', 'TRIGGERED', 'CAUSES', 'OPERATES_IN', 'AFFECTS', 'TRADE_PARTNER',
+        'LOCATED_IN', 'INVOLVED_IN'})
+
+    @classmethod
+    def entity_id(cls, name, entity_type, domain='legacy', article_id=None):
+        if entity_type not in cls.ENTITY_TYPES or domain not in {'observed', 'legacy', 'demo'}:
+            raise ValueError('无效实体类型或数据域')
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError('实体名不能为空')
+        return fingerprint([domain, entity_type, article_id or ' '.join(name.split()).casefold()])
 
     def __init__(self):
         cfg = get_neo4j_config()
@@ -59,25 +78,17 @@ class KnowledgeGraph:
         if not self._enabled:
             return
 
-        props = properties or {}
-        props["name"] = name
-
-        # 构建属性字符串
-        prop_str = ", ".join(f'{k}: "${k}"' for k in props)
-
-        query = f"""
-        MERGE (n:{entity_type} {{name: $name}})
-        SET n += {{{prop_str}}}
-        """
-
-        try:
-            with self._driver.session() as session:
-                session.run(query, **props)
-        except Exception as e:
-            logger.error(f"[KnowledgeGraph] 添加实体失败: {e}")
+        props = dict(properties or {})
+        domain = props.get('data_domain', 'legacy')
+        identity = self.entity_id(name, entity_type, domain, props.get('article_id'))
+        props.update(id=identity, name=name, data_domain=domain)
+        query = f'MERGE (n:Entity:{entity_type} {{id: $id}}) SET n += $props'
+        with self._driver.session() as session:
+            session.run(query, id=identity, props=json_safe(props)).consume()
+        return identity
 
     def add_relationship(self, source: str, target: str,
-                          relation_type: str, properties: Dict = None):
+                          relation_type: str, properties: Dict = None, *, source_id=None, target_id=None):
         """
         添加实体间关系
 
@@ -89,21 +100,27 @@ class KnowledgeGraph:
         if not self._enabled:
             return
 
-        props = properties or {}
-        prop_str = ", ".join(f'{k}: "${k}"' for k in props) if props else ""
-        prop_clause = f" SET r += {{{prop_str}}}" if prop_str else ""
-
-        query = f"""
-        MATCH (a {{name: $source}}), (b {{name: $target}})
-        MERGE (a)-[r:{relation_type}]->(b)
-        {prop_clause}
-        """
-
-        try:
-            with self._driver.session() as session:
-                session.run(query, source=source, target=target, **props)
-        except Exception as e:
-            logger.error(f"[KnowledgeGraph] 添加关系失败: {e}")
+        props = dict(properties or {})
+        domain = props.get('data_domain', 'legacy')
+        if domain not in {'observed', 'demo', 'legacy'} or relation_type not in self.EVIDENCE_TYPES | self.DEMO_TYPES:
+            raise ValueError('无效关系类型或数据域')
+        if domain == 'observed':
+            if (relation_type not in self.EVIDENCE_TYPES or not props.get('evidence_id')
+                    or not business_date(props.get('date')) or not props.get('sources')
+                    or not source_id or not target_id):
+                raise ValueError('正式关系需要明确实体ID、日期、来源与证据，不自动推断合作/冲突/因果')
+            props['date'] = business_date(props['date']).isoformat()
+        identity = fingerprint([source_id or source, target_id or target, relation_type, domain, props.get('evidence_id')])
+        props.update(id=identity, data_domain=domain)
+        query = f'''MATCH (a:Entity), (b:Entity)
+            WHERE a.data_domain = $domain AND b.data_domain = $domain
+              AND (($source_id IS NOT NULL AND a.id = $source_id) OR ($source_id IS NULL AND a.name = $source))
+              AND (($target_id IS NOT NULL AND b.id = $target_id) OR ($target_id IS NULL AND b.name = $target))
+            MERGE (a)-[r:{relation_type} {{id: $id}}]->(b) SET r += $props'''
+        with self._driver.session() as session:
+            session.run(query, source=source, target=target, source_id=source_id, target_id=target_id,
+                        domain=domain, id=identity, props=json_safe(props)).consume()
+        return identity
 
     def add_news_analysis(self, news_item: Dict, entities: Dict,
                             llm_result: Dict = None):
@@ -117,48 +134,40 @@ class KnowledgeGraph:
         if not self._enabled:
             return
 
-        # 1. 创建新闻节点
-        self.add_entity(
-            name=news_item.get("title", "Unknown"),
-            entity_type="NewsEvent",
-            properties={
-                "date": news_item.get("date", ""),
-                "source": news_item.get("source", ""),
-            }
-        )
+        if news_item.get('run_kind') not in FORMAL_MODES:
+            return 0
+        day = business_date(news_item.get('published_at') or news_item.get('pub_time') or news_item.get('date'))
+        evidence = source_evidence(news_item)
+        if day is None or not evidence or not isinstance(entities, dict):
+            return 0
+        aid = article_identity(news_item)
+        title = news_item.get('title') or aid
+        props = {'article_id': aid, 'evidence_id': aid, 'date': day.isoformat(),
+                 'data_domain': 'observed', 'run_kind': news_item['run_kind'],
+                 'sources': sorted({entry['source'] for entry in evidence}),
+                 'source_evidence': __import__('json').dumps(evidence, ensure_ascii=False),
+                 'method': 'article_entity_mention', 'algorithm_version': news_item.get('ner_version', 'unknown')}
+        news_id = self.add_entity(title, 'NewsEvent', props)
+        count = 0
+        for field, kind, relationship in (('locations', 'Location', 'MENTIONS_LOCATION'),
+                ('organizations', 'Organization', 'MENTIONS_ORGANIZATION'), ('persons', 'Person', 'MENTIONS_PERSON')):
+            values = entities.get(field, [])
+            if not isinstance(values, list):
+                continue
+            for name in sorted({v.strip() for v in values if isinstance(v, str) and v.strip()}):
+                entity_id = self.add_entity(name, kind, {'data_domain': 'observed'})
+                self.add_relationship(title, name, relationship, props, source_id=news_id, target_id=entity_id)
+                count += 1
+        if (isinstance(llm_result, dict) and llm_result.get('analysis_status') == 'ok'
+                and isinstance(llm_result.get('event_type'), str) and llm_result['event_type'] != '未知'):
+            name = llm_result['event_type']
+            entity_id = self.add_entity(name, 'EventType', {'data_domain': 'observed'})
+            self.add_relationship(title, name, 'CLASSIFIED_AS', {**props, 'method': 'llm_classification'},
+                                  source_id=news_id, target_id=entity_id)
+            count += 1
+        return count
 
-        # 2. 创建实体节点并建立关系
-        for loc in entities.get("locations", []):
-            self.add_entity(loc, "Location")
-            self.add_relationship(
-                news_item.get("title", ""),
-                loc, "MENTIONS_LOCATION"
-            )
-
-        for org in entities.get("organizations", []):
-            self.add_entity(org, "Organization")
-            self.add_relationship(
-                news_item.get("title", ""),
-                org, "MENTIONS_ORGANIZATION"
-            )
-
-        for person in entities.get("persons", []):
-            self.add_entity(person, "Person")
-            self.add_relationship(
-                news_item.get("title", ""),
-                person, "MENTIONS_PERSON"
-            )
-
-        # 3. 如果大模型识别了事件类型，添加事件节点
-        if llm_result and llm_result.get("event_type"):
-            event_type = llm_result["event_type"]
-            self.add_entity(event_type, "EventType")
-            self.add_relationship(
-                news_item.get("title", ""),
-                event_type, "CLASSIFIED_AS"
-            )
-
-    def query_entities(self, entity_name: str) -> List[Dict]:
+    def query_entities(self, entity_name: str, **filters) -> List[Dict]:
         """
         查询实体及其直接关联
 
@@ -168,29 +177,10 @@ class KnowledgeGraph:
         if not self._enabled:
             return []
 
-        query = """
-        MATCH (n {name: $name})-[r]-(m)
-        RETURN n, type(r) as relation, m
-        LIMIT 50
-        """
-
-        try:
-            with self._driver.session() as session:
-                result = session.run(query, name=entity_name)
-                return [
-                    {
-                        "source": entity_name,
-                        "relation": record["relation"],
-                        "target": record["m"]["name"]
-                    }
-                    for record in result
-                ]
-        except Exception as e:
-            logger.error(f"[KnowledgeGraph] 查询失败: {e}")
-            return []
+        return self.get_graph_data_for_vis(center_entity=entity_name, **filters)['edges']
 
     def get_graph_data_for_vis(self, center_entity: str = None,
-                                 max_nodes: int = 30) -> Dict:
+                                 max_nodes: int = 30, days=30, end_date=None, source=None, domain='observed') -> Dict:
         """
         获取知识图谱数据用于前端可视化
 
@@ -201,45 +191,34 @@ class KnowledgeGraph:
         if not self._enabled:
             return {"nodes": [], "edges": []}
 
-        if center_entity:
-            query = """
-            MATCH (n {name: $center})-[r]-(m)
-            WITH n, r, m LIMIT $max
-            RETURN n, r, m
-            """
-            params = {"center": center_entity, "max": max_nodes}
-        else:
-            query = """
-            MATCH (n)-[r]->(m)
-            RETURN n, r, m
-            LIMIT $max
-            """
-            params = {"max": max_nodes}
+        if domain not in {'observed', 'demo', 'legacy'} or not isinstance(max_nodes, int) or not 1 <= max_nodes <= 500:
+            raise ValueError('无效图谱数据域或节点上限（1～500）')
+        start, end = time_window(days, end_date)
+        query = '''MATCH (n:Entity)-[r]->(m:Entity)
+            WHERE n.data_domain = $domain AND m.data_domain = $domain AND r.data_domain = $domain
+              AND ($domain <> 'observed' OR (r.date >= $start AND r.date < $end AND r.evidence_id IS NOT NULL))
+              AND ($center IS NULL OR n.name = $center OR m.name = $center)
+              AND ($source IS NULL OR $source IN r.sources)
+            RETURN n, r, m ORDER BY r.id LIMIT $max'''
+        params = {'domain': domain, 'start': start.isoformat(), 'end': end.isoformat(),
+                  'source': source, 'center': center_entity, 'max': max_nodes * 10}
 
         try:
             with self._driver.session() as session:
                 result = session.run(query, **params)
-                nodes = set()
-                edges = []
-
+                nodes, edges = {}, []
                 for record in result:
-                    n_name = record["n"]["name"]
-                    m_name = record["m"]["name"]
-                    nodes.add(n_name)
-                    nodes.add(m_name)
-                    edges.append({
-                        "source": n_name,
-                        "target": m_name,
-                        "type": record["r"].type
-                    })
-
-                return {
-                    "nodes": [{"name": name} for name in nodes],
-                    "edges": edges
-                }
+                    left, right = dict(record['n']), dict(record['m'])
+                    if len(nodes.keys() | {left['id'], right['id']}) > max_nodes:
+                        continue
+                    nodes[left['id']], nodes[right['id']] = left, right
+                    edges.append({**dict(record['r']), 'source': left['id'], 'target': right['id'],
+                                  'type': record['r'].type})
+                return {'nodes': list(nodes.values()), 'edges': edges, 'data_domain': domain,
+                        'limit': max_nodes, 'warning': '关系表示报道证据或显式演示，不代表已验证因果'}
         except Exception as e:
-            logger.error(f"[KnowledgeGraph] 获取可视化数据失败: {e}")
-            return {"nodes": [], "edges": []}
+            logger.error('[KnowledgeGraph] 获取可视化数据失败')
+            raise RuntimeError('图谱查询失败，未使用种子回填') from e
 
     def close(self):
         """关闭 Neo4j 连接"""

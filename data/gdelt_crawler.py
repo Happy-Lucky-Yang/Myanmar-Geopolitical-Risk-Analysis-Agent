@@ -63,6 +63,9 @@ class GDELTCrawler:
 
     def _load_urls_seen(self) -> set:
         """加载已处理 URL 集合"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return set()
         if not os.path.exists(self._urls_seen_file):
             return set()
         with open(self._urls_seen_file, "r", encoding="utf-8") as f:
@@ -70,6 +73,9 @@ class GDELTCrawler:
 
     def _save_urls_seen(self):
         """持久化已处理 URL 集合（上限 10000，持锁保护）"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return
         with self._operation_lock:
             urls = sorted(self._urls_seen)
             if len(urls) > 10000:
@@ -81,6 +87,9 @@ class GDELTCrawler:
 
     def _is_new_url(self, url: str) -> bool:
         """检查 URL 是否为新链接（线程安全）"""
+        from storage.repository import get_repository
+        if get_repository() is not None:
+            return True
         normalized = url.rstrip("/")
         with self._operation_lock:
             if normalized in self._urls_seen:
@@ -238,6 +247,11 @@ class GDELTCrawler:
         :param filename: 文件名（默认按日期生成）
         :return: 保存的文件路径
         """
+        from storage.repository import get_repository
+        repo = get_repository()
+        if repo is not None:
+            repo.save_collected_articles(news_list)
+            return 'postgres:articles'
         if not news_list:
             logger.info("[GDELT Crawler] 无数据可保存")
             return None
@@ -315,7 +329,8 @@ class GDELTCrawler:
         from data.event_store import get_event_store
 
         store = get_event_store()
-        since_ts = self._load_watermark()
+        checkpoint = store.checkpoint()
+        since_ts = datetime.strptime(checkpoint, "%Y%m%d%H%M%S") if checkpoint else None
 
         if since_ts is None:
             # 全量首拉（多日窗口积累样本）
@@ -332,10 +347,8 @@ class GDELTCrawler:
                 since_ts=since_ts,
             )
 
-        if events:
-            store.append(events)
-        if newest_ts is not None:
-            self._save_watermark(newest_ts)
+        if events or newest_ts is not None:
+            store.append(events, watermark=newest_ts.strftime("%Y%m%d%H%M%S") if newest_ts else None)
 
         window_events = store.load(days=timespan_days)
         if not window_events:
@@ -348,7 +361,7 @@ class GDELTCrawler:
             self._metrics_cache_time = time.time()
         logger.info(
             f"[GDELT Crawler] CSV 管线指标: 窗口 {timespan_days} 天 "
-            f"{result['article_count']} 事件（本轮增量 +{len(events)}，"
+            f"{result['event_count']} 事件记录（本轮增量 +{len(events)}，"
             f"库内累计 {store.stats()['total']}），"
             f"冲突 {result['conflict_count']} 条"
         )

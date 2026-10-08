@@ -13,8 +13,9 @@ logger = logging.getLogger(__name__)
 # 中文 NER：百度 LAC（首选，需 paddlepaddle）
 try:
     from LAC import LAC
-except ImportError:
+except Exception as exc:
     LAC = None
+    logger.warning('[NER] 可选LAC加载失败: %s', type(exc).__name__)
 
 # 中文 NER 回退：jieba 词性标注（纯 Python，全版本可用）
 try:
@@ -76,6 +77,11 @@ class NERExtractor:
         """懒加载模型"""
         self._lac = None
         self._nlp_en = None
+        self._backend_state = threading.local()
+
+    @property
+    def last_backend(self):
+        return getattr(self._backend_state, 'name', 'not_run')
 
     def _ensure_lac_loaded(self):
         """确保 LAC 中文模型已加载"""
@@ -113,7 +119,9 @@ class NERExtractor:
             "events": ["武装冲突", ...]
         }
         """
+        self._backend_state.name = 'failed'
         if not text or not text.strip():
+            self._backend_state.name = 'empty_input'
             return {
                 "locations": [],
                 "organizations": [],
@@ -171,13 +179,19 @@ class NERExtractor:
         """中文 NER：优先 LAC，回退 jieba 词性标注"""
         if LAC is not None:
             try:
-                return self._extract_zh_lac(text)
+                result = self._extract_zh_lac(text)
+                self._backend_state.name = 'lac'
+                return result
             except Exception as e:
-                logger.warning(f"[NER] LAC 不可用，回退 jieba: {e}")
+                logger.warning('[NER] LAC不可用，回退jieba: %s', type(e).__name__)
         if pseg is not None:
-            return self._extract_zh_jieba(text)
+            result = self._extract_zh_jieba(text)
+            self._backend_state.name = 'jieba_posseg'
+            return result
         # 最后回退：正则
-        return self._extract_zh_regex(text)
+        result = self._extract_zh_regex(text)
+        self._backend_state.name = 'dictionary_regex'
+        return result
 
     def _extract_zh_lac(self, text: str) -> Dict[str, List[str]]:
         """中文 NER：使用 LAC"""
@@ -233,6 +247,7 @@ class NERExtractor:
         self._ensure_spacy_loaded()
 
         doc = self._nlp_en(text)
+        self._backend_state.name = 'spacy:en_core_web_sm'
         entities = {"locations": [], "organizations": [], "persons": []}
 
         for ent in doc.ents:
