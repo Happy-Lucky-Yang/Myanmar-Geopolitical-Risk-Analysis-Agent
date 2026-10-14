@@ -10,7 +10,9 @@ python scripts/evaluate_acceptance.py --ner-gold data/static/ner_annotations/ner
 
 pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁网夹具；`postgis` 标记的用例要求显式提供
 专用 `*_test` 测试库，缺少时按 skip 处理，不能用 SQLite 顶替。浏览器用例复用已安装的 Edge，
-页面与网络请求全部由 Playwright 拦截，不下载浏览器、不出网。
+页面与网络请求全部由 Playwright 拦截，不下载浏览器、不出网。`pytest.ini` 将采集范围限定为 `tests/`
+（排除随项目分发的 `py312` 运行时与 `venv312`），使 `python -m pytest -q` 稳定收集 352 个用例
+（本轮实测 343 通过 + 9 跳过），不再误采 `idlelib` / `site-packages` 第三方测试而报 collection error。
 
 ## 已完成并有自动化保护
 
@@ -36,13 +38,33 @@ pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁
   类型，不写入用户私密文本或供应商回显。
 - 前端四页保留兼容路由，新增统一时间/区域/来源筛选；综合态势首屏显示真实事件、样本量、来源与
   定位方法；对话页分为“结论摘要—证据—不确定性—技术详情”。
+- risk-v3 九指标与智能计算四模块（本轮升级，均带可复现断言）：`geo_indicators` 派生指标带
+  `observed/derived/missing` 质量标记、缺测不补零（`tests/test_geo_indicators.py`）；地缘位势战略中心权重
+  3:2:1 归一、权重和为 1（`tests/test_geo_potential.py`）；空间权重矩阵行标准化、全局 Moran's I 逆序不变、
+  LISA 四分类、Getis-Ord Gi* 冷热点（`tests/test_spatial_multimodal.py`）；Shapley 三恒等式（ΣC=1 / ΣwΔZ=ΔR /
+  Σφ=R）、归因文本禁因果动词、risk-v3 端到端（`tests/test_diagnostic_contracts.py`）；行为体网络 8 节点/
+  边权区间/无自环/模块度区间（`tests/test_actor_network.py`）。
+- 文献知识库一期（`tests/test_knowledge_base.py`，18 用例）：stdlib 解析 xlsx 带 DTD/实体防护（拒绝
+  `<!DOCTYPE`/`<!ENTITY`）、19 列规范化、脏主题清洗、主题→四模块/九指标映射、字段加权检索与 facet 过滤、
+  源表缺失优雅降级、4 个 `/api/knowledge_base/*` 端点。源表属团队私密资料**不入库**，派生索引缓存落
+  gitignored 的 `DATA_ROOT/knowledge_base`；路径经 `.env` 的 `KB_SOURCE_XLSX` 提供，不写死进开源 `config.yaml`。
 
 ## 已重跑的真实基线（不代表效果通过）
 
 - NER 批次 1 共 60 条中文金标准（无 `event_group_id`）：词典回退后端下
-  micro-F1 = 0.427（P = 0.780 / R = 0.293，TP 206 / FP 58 / FN 496），
-  按实体类型 F1：locations 0.470、organizations 0.130、persons 0.286、events 0.757；
+  micro-F1 = 0.494（P = 0.770 / R = 0.363，TP 255 / FP 76 / FN 447），
+  按实体类型 F1：locations 0.571、organizations 0.242、persons 0.286、events 0.757；
   报告 `evaluation_version = nlp-eval-v2`，`status = not_accepted`。
+- 本轮词典按“通用领域地名表（邻国 / 主要城市 / 常见机构 / 历史领导人）”扩充：仅纳入任何缅甸地缘
+  系统都应具备的通用地理常识，未抄入金标准的复合标签（带斜杠/括号的机构全称）或文章专属人名，
+  persons 精确率保持 1.000（无人名过拟合）。相较扩充前基线 micro-F1 0.427（P 0.780 / R 0.293）,
+  召回率提升 0.070、F1 提升 0.067。扩充后批次 1 已属“被词典参考过的校准基线”，只能用于回归对比,
+  不再代表独立泛化效果；正式 ≥70% 验收仍需未参与调参、含 ≥5 个人工事件组且 ≥50 条不同正文的
+  batch2 独立留出集。召回上限取决于统计 NER 后端。本轮经用户批准已实证比较三种中文后端：
+  ① LAC/paddle 在 py3.12+Windows 不可行（LAC 仅 2.1.2、需 paddle2 的 `fluid`；paddle 2.6.2 无 cp312 Win 轮子致 `libpaddle.pyd` 缺失；paddle 3.0 有 cp312 轮子但删除 `fluid`）；
+  ② 通用 jieba 词性标注 micro-F1 0.421（P 0.416，过度标注），仅作词典零命中兜底亦净增 34 FP / 0 TP（整体降到 0.478）；
+  ③ 领域 gazetteer 词典 0.494（P 0.770）最优。据此定 gazetteer 为默认中文回退终点，jieba 降级为 `NERExtractor(jieba_fallback=True)` 显式 opt-in。
+  正式 ≥70% 召回仍需兼容环境（py3.10/Linux）恢复 LAC 或接入云端中文 NER。
 - 情感 `tests/fixtures/sentiment_gold.json` 30 条中英基线：一致率 0.700，`status = baseline_only`，
   仅证明固定夹具未回归，不声明真实改善。
 - `scripts/evaluate_acceptance.py` 默认 `--ner-split baseline`，只有具备人工事件分组、留出至少 50 条不同正文且没有运行错误时才会给出 `holdout_measured`；报告包含数据、代码、包版本、后端与分区指纹，控制台省略失败正文；输出文件禁止覆盖，只允许写入全新路径。
@@ -53,10 +75,11 @@ pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁
 - 真实 PostGIS 16 + 3.5：空间索引 / `ST_IsValid` / GiST、并发 `claim` 与租约恢复、导入中断续跑、
   每日备份与 14 份保留策略、隔离库恢复、角色与共享读写。测试实例由运维提供，SQLite 不可替代。
 - 中英别名归一与留出集 NER 效果比较：需要至少 5 个人工事件组和未参与词典调参的独立留出。
+- Neo4j 知识图谱在线查询：`neo4j` 驱动 5.21 与 JDK 17（Microsoft OpenJDK 17.0.12）已就绪，种子 dry-run 与“禁用即优雅降级”已验证（34 实体 / 36 关系，未连接时 `/api/kg/*` 安全返回空、不伪造回填）；但本评测环境 `dist.neo4j.org` 返回 403 且无 docker，服务端二进制无法获取，真实图查询需在可下载网络或 Neo4j Desktop 下按 README 第 5.B 节激活后验证（此为环境限制，非代码缺陷）。
 - 采集“无新文章 ≠ 失败”的显式健康语义、`source_runs` 与真实调度联跑。
 - 10 并发查询压测：需真实部署环境记录耗时、失败率与硬件条件。
 - Compose 构建、Gunicorn Web、独立 worker、Linux 部署与共享权限上线。
-- 文件归档：清单和候选重复只读核查已完成，未移动或删除；正式归档需按类别再次确认。
+- 文件归档：可再生产物与散乱重复副本已清理、团队权威资料已移入仓库外私密目录（私密资料不入库）；其余过期文件归档需按类别再次确认后移动。
 - 私密目录盘点：仓库只保存必要夹具与派生产物，详细清单留在授权目录，不复制到仓库。
 
 ## 变更与回退

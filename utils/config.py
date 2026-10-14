@@ -198,6 +198,12 @@ def get_risk_weights() -> dict:
     return cfg.get("risk_weights", {})
 
 
+def get_risk_weights_v3() -> dict:
+    """获取九指标三层体系（risk-v3）全局权重；未配置时由调用方回退默认值。"""
+    cfg = load_config()
+    return cfg.get("risk_weights_v3", {})
+
+
 def get_trend_config() -> dict:
     """获取趋势分析配置"""
     cfg = load_config()
@@ -220,6 +226,29 @@ def get_neo4j_config() -> dict:
     """获取 Neo4j 配置"""
     cfg = load_config()
     return cfg.get("neo4j", {})
+
+
+def get_knowledge_base_config() -> dict:
+    """文献知识库（一期元数据层）配置。
+
+    字段：enabled / source_xlsx（文献总表源表路径）/ index_path（索引缓存路径）。
+    源表属团队私密资料，位于仓库外，路径**不写入开源的 config.yaml**，改由环境变量
+    KB_SOURCE_XLSX（可写在 gitignored 的 .env）提供；索引缓存默认落在
+    DATA_ROOT/knowledge_base/literature_index.json（该目录已 gitignore，不入版本控制）。
+    """
+    cfg = load_config()
+    kb = dict(cfg.get("knowledge_base", {}) or {})
+    env_src = os.environ.get("KB_SOURCE_XLSX", "").strip()
+    if env_src:
+        kb["source_xlsx"] = env_src
+    env_idx = os.environ.get("KB_INDEX_PATH", "").strip()
+    if env_idx:
+        kb["index_path"] = env_idx
+    if not kb.get("index_path"):
+        kb["index_path"] = os.path.join(get_data_paths()["root"], "knowledge_base", "literature_index.json")
+    kb.setdefault("enabled", True)
+    kb.setdefault("source_xlsx", "")
+    return kb
 
 
 def get_proxy() -> dict:

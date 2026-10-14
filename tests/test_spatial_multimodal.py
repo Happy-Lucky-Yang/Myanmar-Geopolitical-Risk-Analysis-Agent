@@ -2,7 +2,9 @@
 import numpy as np
 import pytest
 from shapely.geometry import box
-from analyzer.spatial_analysis import aggregate_provinces, locate_event, morans_i
+from analyzer.spatial_analysis import (aggregate_provinces, getis_ord_gi_star, lisa,
+                                       locate_event, morans_i,
+                                       spatial_autocorrelation_report, spatial_weights)
 from analyzer.multimodal_aligner import MultimodalAligner
 
 
@@ -35,6 +37,61 @@ def test_moran_permutation_reproducible_and_zero_variance_guarded():
     assert first['permutations'] == 999 and 0 < first['p_value'] <= 1
     zero = morans_i([{'region': str(i), 'risk_score': 0} for i in range(9)], regions())
     assert zero['moran_i'] is None and zero['p_value'] is None
+
+
+def test_spatial_weights_row_standardized_all_kinds():
+    """验收断言(1)：三种权重矩阵行标准化后非孤立行之和为 1（容差 1e-6）。"""
+    regs = regions()
+    for kind in ('queen', 'distance_threshold', 'distance_decay'):
+        W, _raw, row_sum = spatial_weights(regs, kind)
+        for i in range(len(regs)):
+            if row_sum[i] > 0:
+                assert abs(W[i].sum() - 1.0) < 1e-9
+            else:
+                assert W[i].sum() == 0.0
+    # queen 链式邻接：区域0 仅与区域1 相接
+    Wq, _, _ = spatial_weights(regs, 'queen')
+    assert Wq[0, 1] == 1.0 and Wq[0, 2] == 0.0
+
+
+def test_moran_reverse_invariance():
+    """验收断言(3)：输入整体逆序时全局 Moran's I 不变。"""
+    values = [{'region': str(i), 'risk_score': i * 10} for i in range(9)]
+    fwd = morans_i(values, regions(), permutations=99)
+    rev = morans_i(list(reversed(values)), regions(), permutations=99)
+    assert fwd['status'] == 'ok' and abs(fwd['moran_i'] - rev['moran_i']) < 1e-9
+
+
+def test_lisa_four_class_on_gradient():
+    """LISA 四分类：单调梯度下高端 HH、低端 LL。"""
+    values = [{'region': str(i), 'risk_score': i * 10} for i in range(9)]
+    res = lisa(values, regions(), permutations=199)
+    assert res['status'] == 'ok' and len(res['units']) == 9
+    by = {u['region']: u for u in res['units']}
+    assert by['8']['cluster'] == 'HH' and by['0']['cluster'] == 'LL'
+    assert all(u['color'] in {'HH', 'LL', 'HL', 'LH', 'gray'} for u in res['units'])
+
+
+def test_gi_star_sign_on_gradient():
+    """Gi*：单调梯度下高端为正、低端为负。"""
+    values = [{'region': str(i), 'risk_score': i * 10} for i in range(9)]
+    res = getis_ord_gi_star(values, regions())
+    assert res['status'] == 'ok'
+    by = {u['region']: u for u in res['units']}
+    assert by['8']['gi_star'] > 0 > by['0']['gi_star']
+    assert by['8']['gi_star'] > by['0']['gi_star']
+
+
+def test_spatial_report_three_matrices_and_local():
+    """三矩阵敏感性报告：queen 为主口径，携带 LISA/Gi*，方向一致性为布尔值。"""
+    values = [{'region': str(i), 'risk_score': i * 10} for i in range(9)]
+    rep = spatial_autocorrelation_report(values, regions(), permutations=199)
+    assert rep['status'] == 'ok'
+    assert set(rep['by_matrix']) == {'queen', 'distance_threshold', 'distance_decay'}
+    assert rep['primary_weight'] == 'queen'
+    assert rep['by_matrix']['queen']['moran_i'] > 0            # 梯度 → 正空间自相关
+    assert 'lisa' in rep and 'gi_star' in rep
+    assert isinstance(rep['direction_consistent'], bool)
 
 
 def test_multimodal_month_calendar_missing_and_annual_exclusion():

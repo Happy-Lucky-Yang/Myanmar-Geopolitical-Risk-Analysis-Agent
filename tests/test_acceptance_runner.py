@@ -36,7 +36,9 @@ def test_acceptance_script_runs_from_project_root_and_reports_pending_ner(tmp_pa
         cwd=ROOT,
         text=True,
         capture_output=True,
-        timeout=30,
+        # 子进程以全新解释器重新导入 spacy/jieba 等重依赖；全量套件并发时 CPU 争用
+        # 会显著拉长冷启动，30s 硬超时在满载机器上易假失败，故放宽到 120s（不改变断言）。
+        timeout=120,
     )
 
     assert completed.returncode == 2

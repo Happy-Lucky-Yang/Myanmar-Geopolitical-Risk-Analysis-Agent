@@ -5,15 +5,18 @@
 
 > **数据说明**：已有缅华网、GDELT CSV/DOC、Google News、Irrawaddy/Frontier 及 World Bank 等采集适配器；实际可用性以 `/api/sources/health` 和当次任务为准，不保证不限流或长期可达。WB 电力推导夜光、经济推导难民均为代理估算，不是真实遥感/难民观测，不进入正式风险或多模态序列。读接口不自动发起采集。
 
+> **答辩速览**：项目的差异化优势、与“大模型对话框”的本质区别、现场演示脚本与预期追问应答，见 [项目独特优势与中期答辩说明](docs/project_strengths.md)。
+
 ## 本轮治理状态（实施中）
 - 核心 Python 3.12；文件模式默认保留，PostgreSQL/PostGIS 为显式可选后端。
 - 正式日风险按去重文章的发布业务日计算；手工分析、demo、legacy 不混入正式历史。近 N 天使用 Asia/Yangon 连续日历窗口，缺测为 null。
 - 省级图使用真实事件发生地与 GADM 边界匹配；无样本灰显。省级事件规则烈度与全国日风险不是同一个指标。
 - KDE 使用本地等面积投影和固定公里带宽；地图公共色标按天归一。多模态不再合成夜光或把年度代理复制为月度观测。
-- `risk-v2` / `trend-v2` 与旧版基线并存。回测指标、模型字段完整率均不代表结论正确率。
+- `risk-v3`（九指标三层体系，全局权重和=1.0）为正式风险路径；`risk-v2` 五维、`trend-v2` 与旧版基线并存作历史对照。回测指标、模型字段完整率均不代表结论正确率。
+- 本轮依据组长团队权威材料完成 **risk-v3 九指标 + 智能计算四模块对齐 + 文献知识库一期**，技术细节见 [系统升级方案说明](docs/upgrade_v3.md)。
 - 已提供迁移、导入预演、任务队列、权限与 Compose 配置；真实 PostGIS、备份恢复、部署和算法留出集仍未验收，不能据此切换主库或上线。
 - 四页保留时间/区域/来源筛选；综合态势首屏展示当前风险、贡献、覆盖与事件证据，研究面板折叠。报告绑定筛选与数据修订，数据变化须刷新。多模态只用完整月份，并可查看原值、单位、来源和拒绝相关的原因。
-- 已完成阶段只读清单及候选重复核查，未移动或删除资料。最新回归范围与未验收项统一见 [验收说明](docs/acceptance.md)。
+- 已完成仓库治理：清理可再生产物与散乱重复副本、将团队权威资料归档至仓库外私密目录（私密资料不入库）。最新回归范围与未验收项统一见 [验收说明](docs/acceptance.md)。
 - 数据库操作与确认边界见 [数据库说明](docs/database_design.md)。不自动导入私密数据、安装系统服务、删除或归档活动运行资料。
 
 ## 团队分工
@@ -29,7 +32,7 @@
 | 交付物 | 负责人 | 规模 | 存放位置 | 验收结果 |
 |--------|--------|------|----------|----------|
 | 历史事件集 | 薛雨恬 | 482 条 | `data/raw/historical_events.json` | ✅ 入库 |
-| NER 金标准·批次1 | 薛雨恬 标注 / 舒媛媛 格式校对 | 60 条·705 实体 | `data/static/ner_annotations/ner_gold_batch1.json` | 已在 venv312 + 词典回退后端重跑基线：micro-F1 0.427（P 0.780 / R 0.293），`status = not_accepted`；金标准无人工 `event_group_id`，不当前独立留出验收 |
+| NER 金标准·批次1 | 薛雨恬 标注 / 舒媛媛 格式校对 | 60 条·705 实体 | `data/static/ner_annotations/ner_gold_batch1.json` | 已在 venv312 + 词典回退后端重跑基线：micro-F1 0.494（P 0.770 / R 0.363，通用词表扩充后），`status = not_accepted`；金标准无人工 `event_group_id`、且批次1已用于词典校准，不作独立留出验收 |
 
 复跑验收：`python scripts/evaluate_acceptance.py --ner-gold data/static/ner_annotations/ner_gold_batch1.json`（默认 `--ner-split baseline`，不写入报告；需真实留出验收时先人工补齐 `event_group_id` 后传 `--ner-split holdout --output 全新路径`）。
 
@@ -39,7 +42,7 @@
 |------|------|----------|
 | **一 数据采集** | 遥感/新闻/经济/历史文献 | ✅ 新闻(多源含健康监控) + 夜光(WB代理) + 经济(WB) + 历史事件(482条) |
 | **二 清洗结构化** | 质量检查/多模态对齐/NER/知识图谱 | ✅ 清洗去重 + 多模态时空对齐 + LAC + spaCy 双语 NER + Neo4j 图谱(可选) |
-| **三 智能计算** | LLM/轻量算法/地缘位势/链式推理 | ✅ LLM 封装 + NetworkX + **地缘位势(1/d²)** + **空间自相关(Moran's I)** + 链式推理 |
+| **三 智能计算** | LLM/轻量算法/地缘位势/链式推理 | ✅ LLM 封装 + **地缘位势(权重3:2:1·1/d²)** + **空间自相关(Moran's I / LISA / Gi\*)** + **行为体关系网络(8节点有向加权)** + **Shapley 诊断归因** + **九指标 risk-v3** + 链式推理 |
 | **四 态势分析** | 描述/探索/诊断/预测 | ✅ 描述性 + 异常探测 + **诊断归因** + 趋势预测 |
 | **五 输出可视化** | 态势图/智能报告/预警面板 | ✅ Folium 风险地图（省界分级填色 + 事件密度 KDE） + HTML/DOCX 报告 + 动态预警面板 |
 
@@ -59,12 +62,16 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 │   ├── sentiment.py              # 双语情感分析（SnowNLP + VADER + GDELT tone）
 │   ├── llm_client.py             # 大模型 API 封装
 │   ├── prompts.py                # 提示词模板库
-│   ├── risk_scorer.py            # 加权打分模型（0-100，动态权重归一化）
+│   ├── risk_scorer.py            # 加权打分模型（risk-v3 九指标，0-100，动态权重归一化）
+│   ├── geo_indicators.py         # 🆕 GDELT 派生九指标层（Goldstein 净值/CAMEO 分类/国家码归一）
 │   ├── trend.py                  # 趋势（移动平均/回归/异常/预测）
 │   ├── knowledge_graph.py        # Neo4j 知识图谱操作
-│   ├── network_analyzer.py       # NetworkX 关系网络分析（中心性/社区）
-│   ├── geo_potential.py          # 🆕 地缘位势评估（距离加权 1/d² + Moran's I）
-│   ├── diagnostic.py             # 🆕 诊断性归因分析（驱动机制解析）
+│   ├── knowledge_base.py         # 🆕 文献知识库（xlsx 题录解析/索引/主题→模块映射/检索）
+│   ├── network_analyzer.py       # NetworkX 关系网络（文章实体共现 + 🆕 8节点行为体网络）
+│   ├── geo_potential.py          # 地缘位势评估（potential-v3：权重3:2:1 + 1/d² + 距离敏感性）
+│   ├── spatial_analysis.py       # 🆕 空间自相关（Moran's I / LISA / Getis-Ord Gi*，三套权重矩阵）
+│   ├── diagnostic.py             # 诊断性归因（🆕 Shapley 精确分解 + 三恒等式断言）
+│   ├── evaluation.py             # NLP 验收评测（实体 micro-F1 / 情感一致率）
 │   ├── chain_reasoner.py         # 链式推理（4 步：识别→影响→趋势→建议）
 │   ├── multimodal_aligner.py     # 多模态时空对齐（夜光×冲突×情感）
 │   ├── alert_monitor.py          # 动态预警（红/橙/黄/绿四级）
@@ -102,9 +109,12 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── tests/                        # 单元测试
 ├── docs/                         # 文档
 │   ├── api_examples.md           # API 请求/响应示例
-│   ├── upgrade_plan.md           # 🆕 系统升级计划（遥感/双边/KDE 等，含数据获取清单）
+│   ├── upgrade_plan.md           # 系统升级计划（遥感/KDE 等；双边/五维已被 v3 取代）
+│   ├── upgrade_v3.md             # 🆕 risk-v3 九指标 + 四模块 + 知识库升级方案说明
 │   ├── database_design.md        # 数据库设计说明书
 │   ├── algorithm_details.md      # 算法实现细节（含数学公式）
+│   ├── acceptance.md             # 验收与交付状态（回归范围 + 未验收项）
+│   ├── project_strengths.md      # 🆕 项目独特优势与中期答辩说明（差异化叙述 + 演示脚本 + Q&A）
 │   └── research_report_outline.md# 综合研究报告框架
 ├── run_crawler_only.py           # 独立爬虫脚本
 └── run_full_pipeline.py          # 全流程集成脚本
@@ -114,8 +124,9 @@ Myanmar-Geopolitical-Risk-Analysis-Agent/
 
 ### 0. Python 版本
 
-项目核心环境统一使用 **Python 3.12**。LAC/Paddle 为可选中文 NLP 后端，
-不兼容时明确回退到 jieba，不阻止 Web 与数据库能力运行；不同后端的指标须重新评测。
+项目核心环境统一使用 **Python 3.12**。中文 NER 后端优先级为 **LAC 统计模型 > 领域 gazetteer 词典（默认终点）> jieba 词性兜底（显式 opt-in）**。
+经 batch1 金标准实测：gazetteer 词典 micro-F1 0.494（P 0.770）优于通用 jieba 0.421（P 0.416，过度标注），故 LAC 不可用时默认以 gazetteer 词典为准；
+jieba 兜底实测会净增假阳性，需构造 `NERExtractor(jieba_fallback=True)` 显式开启。LAC/Paddle 为可选后端，不阻止 Web 与数据库能力运行；不同后端的指标须重新评测。
 
 ### 1. 创建虚拟环境（推荐）
 ```bash
@@ -159,6 +170,32 @@ DATA_ROOT=C:\path\to\私密目录\运行数据
 系统会自动在该根目录下创建 `raw/processed/external` 子目录（优先级：`DATA_ROOT` 环境变量 > `config.yaml` 的 `storage.data_root` > 默认 `./data`）。
 > 例外：团队手工标注的 `data/raw/historical_events.json`（历史事件集）属项目成果，**固定存放项目内随 git 同步**，不受 `DATA_ROOT` 影响。
 
+### 5. 可选能力激活（LLM / Neo4j）——演示前必读
+系统在**无密钥、无 Neo4j** 时也能完整运行（对应接口返回可见降级状态）。若要在答辩现场演示这两项能力，按下列步骤显式激活（敏感值只写 `.env`，`config.yaml` 永远保持占位符）：
+
+**A. 大模型链式推理（LLM）**
+1. 在项目根目录 `.env` 写入真实密钥：
+   ```
+   LLM_API_KEY=你的智谱GLM密钥        # glm-4-flash 免费注册；也可用 LLM_API_URL / LLM_MODEL_NAME 覆盖端点
+   # 或 DEEPSEEK_API_KEY=你的DeepSeek密钥
+   ```
+2. 重启 `python app.py`，打开对话页 `/`，选择模型后触发“链式推理”；`POST /api/chain` 返回四步结论。
+3. 未配置密钥时接口不触网、返回 `degraded` 状态与原因，失败不进入成功缓存——这是设计而非 bug。
+
+**B. Neo4j 知识图谱可视化查询**
+> 就绪事实（本机已验证）：`neo4j` Python 驱动 5.21.0 已装；JDK 17（Microsoft OpenJDK 17.0.12，`C:\Program Files\Microsoft\jdk-17.0.12.7-hotspot`）满足 Neo4j 5 运行要求；KG 代码路径已通过 dry-run 与“禁用即优雅降级”验证（未连接时 `/api/kg/*` 安全返回空、绝不伪造种子回填）。
+1. 启动一个 Neo4j 5 服务端（三选一）：
+   - **Neo4j Desktop**（推荐，图形化）：新建项目 → 添加本地 DBMS → Start；
+   - **docker**（若已安装）：`docker run -p 7474:7474 -p 7687:7687 neo4j:5`；
+   - **独立 zip**（无 docker 时）：从 Neo4j Deployment Center 下载 `neo4j-community-<ver>-windows.zip`，解压后设 `JAVA_HOME` 指向上面的 JDK 17，执行 `bin\neo4j-admin dbms set-initial-password <密码>`，再 `bin\neo4j console` 启动。
+   > 注：本评测环境 `dist.neo4j.org` 返回 403、且无 docker，服务端二进制需在可下载网络或经 Neo4j Desktop 获取；此为环境限制，非代码缺陷。
+2. 将 `config.yaml` 的 `neo4j.enabled` 改为 `true`，并填入 `uri / user / password`（敏感值建议用 `.env` 的 `NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD` 覆盖，`config.yaml` 保持占位符）。
+3. 填充种子图谱：`python -m data.kg_seeder --apply`（**必须带 `--apply`**；不带时仅打印预演且**不连接**；正式写入 34 实体节点 + 36 关系边，标记 `data_domain=demo`）。
+4. 查询验证：`GET /api/kg/query?entity=缅甸`，或在 Neo4j Browser（http://localhost:7474）执行 Cypher。
+5. `enabled: false` 或服务端不可达时 `/api/kg/*` 返回未激活/降级状态；NetworkX 内存网络分析（`GET /api/network`，中心性/社区）仍独立可用，不依赖 Neo4j。
+
+> LLM 与 Neo4j 均为**运行时可选增强**；核心五层流水线（采集→清洗→计算→态势→可视化）在两者关闭时依然完整闭环。
+
 ## 运行方式
 
 ### Web 服务（默认不自动采集）
@@ -201,16 +238,16 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 |------|------|------|
 | POST | `/api/analyze` | 手工文本分析；共享模式排队202，不产生正式预警 |
 | POST | `/api/chain` | 链式推理（`chain_depth` 1-4） |
-| GET | `/api/gdelt` | GDELT 事件数据（`?days=7`） |
+| GET | `/api/gdelt` | GDELT 事件数据（`?days=7`），附 `metrics.geo_risk`（risk-v3 九指标评分） |
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
 | GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
 | GET | `/api/map` | 省级风险地图 HTML（`?mode=choropleth\|hybrid`） |
 | GET | `/api/map/unified` | 🆕 统一地图 HTML（五图层叠加，供前端图层面板控制） |
 | GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`，累积库支持 7~90 天窗口） |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
-| GET | `/api/geo_potential` | 🆕 地缘位势评估（距离加权 + Moran's I + 热点） |
-| GET | `/api/diagnostic` | 指标贡献及等长前后期比较（非因果归因） |
-| GET | `/api/network` | 关系网络分析（中心性/社区） |
+| GET | `/api/geo_potential` | 地缘位势评估（potential-v3：权重3:2:1 + 1/d² + 距离敏感性） |
+| GET | `/api/diagnostic` | 指标贡献 + Shapley 精确分解 + 等长前后期比较（非因果归因） |
+| GET | `/api/network` | 关系网络分析（文章实体共现中心性/社区 + 8节点行为体网络） |
 | GET | `/api/multimodal` | 多模态时空对齐（夜光×冲突×情感 + 相关性） |
 | GET | `/api/history` | 历史事件（`?event_type&severity_min&year`） |
 | GET | `/api/alert` | 预警状态 + 历史 + 阈值线 |
@@ -224,34 +261,41 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | GET | `/api/analyses/<run_id>` | 本人或主动共享的分析 |
 | POST | `/api/analyses/<run_id>/share` | 本人分析的显式共享/撤回 |
 | GET | `/api/regions` | 省级真实事件聚合与空间统计 |
+| GET | `/api/knowledge_base/status` | 🆕 文献知识库状态（源表/索引/篇数/facet 概览） |
+| GET | `/api/knowledge_base/search` | 🆕 文献检索（q + 主题/类别/模块/指标/相关性/年份 facet 过滤） |
+| GET | `/api/knowledge_base/relevant` | 🆕 按模块/指标/主题召回支撑文献 |
+| GET | `/api/knowledge_base/record/<id>` | 🆕 单篇文献题录详情（含摘要与判断理由） |
 
 详细请求/响应示例见 [docs/api_examples.md](docs/api_examples.md)。
 
 ## 核心算法说明
 
-### 风险评分模型（0-100）
-5 维加权：冲突频次(0.30) + 舆情负面度(0.25) + 夜光变化(0.20) + 难民变化(0.15) + 事件严重度(0.10)。支持**动态权重归一化**（占位指标缺失时权重按比例重分配）。
+### 风险评分模型（risk-v3 九指标，0-100）
+要素层按**地缘关系 0.6 / 地理环境 0.2 / 地缘结构 0.2**（比 3:1:1，胡志丁等 2013 三要素 + 2014 权力等级论，各层判断矩阵 CR=0）逐级归一到九项全局权重（和=1.0）：冲突频次(0.162) + 中缅关系(0.138) + 中美博弈(0.133) + 事件严重度(0.120) + 夜光变化(0.110) + 周边邻国关系(0.102) + 流离失所(0.090) + 西方关系(0.078) + 国际制裁(0.067)。其中五项双边/结构指标由 `analyzer/geo_indicators.py` 从 GDELT 派生（Goldstein 报道量加权净值 + CAMEO 分类 + 国家码归一），带 `observed/derived/missing` 质量标记。支持**动态权重归一化**（缺测指标不稀释、不补零）。旧 `risk-v2` 五维路径保留作历史对照。详见 [系统升级方案说明](docs/upgrade_v3.md)。
 
-### 地缘位势评估（process.html 第三层核心）
-距离加权模型：某省地缘位势 = Σ(战略中心权重 / 距离²) × 风险分。预置 5 个战略中心（中缅边境瑞丽、皎漂港、内比都、泰缅边境妙瓦底、仰光）。附带 **Moran's I 空间自相关**（衡量风险地理聚集）与**热点识别**（高-高聚集）。
+### 地缘位势评估（process.html 第三层核心，potential-v3）
+距离加权模型：某省地缘位势 = Σ(战略中心权重 / 距离²) × 风险分。5 个战略中心按 **3:2:1 归一**（皎漂港 0.30、瑞丽 0.30、内比都 0.20、妙瓦底 0.10、仰光 0.10，和=1.0，`validate_center_weights()` 断言）。距离用球面大圆 haversine、省邦取面积加权质心，附**距离敏感性**（Spearman ρ 比较基准/陆路排序，无路网数据时如实 `unavailable`）。空间自相关升级为 **Moran's I + LISA 局部 Moran（HH/LL/HL/LH）+ Getis-Ord Gi\***，三套权重矩阵（Queen/距离阈值/距离衰减）做敏感性，N=999 固定种子(42)单侧置换检验。
 
-### 指标贡献分析（process.html 第四层）
-使用已保存的实际指标贡献，比较等长前后期；缺测、版本不一致时明确降级。贡献不是因果关系，不把全国日指标投射成固定省级分数。
+### 诊断性归因（process.html 第四层，shapley-v1）
+在既有指标贡献比较之上，新增 **Shapley 精确分解**（n=9 枚举 2⁹ 子集，精确无近似），带三恒等式断言（ΣC(k)=1 / Σw·ΔZ=ΔR / Σφ(k)=R）。归因文本限“贡献份额为百分之几”，模板层过滤“导致/引起/造成”等因果动词——**是贡献分解，不是因果结论**。比较等长前后期，缺测/版本不一致明确降级，不把全国日指标投射成固定省级分数。
 
 ### 其他
 - **趋势预测**：真实日历、缺测断线、末值/EWMA/线性滚动回测、历史中位数/MAD异常；至少14有效日及80%覆盖才外推，至少56有效日和4个七日回测窗才报回测/经验区间（见 [算法说明](docs/algorithm_details.md)）
 - **链式推理**：事件识别 → 影响分析 → 趋势研判 → 建议生成，逐步注入前序结果
-- **关系网络**：度/介数/接近中心性 + Louvain 社区检测
+- **关系网络**：文章级实体共现（度/介数/接近中心性 + Louvain 社区）；另建 **8 节点行为体网络**（MMR/CHN/USA/EUU/THA/IND/BGD/LAO，有向加权=Goldstein 报道量净值，分合作/冲突层），输出**不进入风险合成**（避免与九指标关系类重复计量）
+- **文献知识库**：组长团队 645 篇文献总表 → 结构化索引（stdlib 解析 xlsx，DTD/实体防护）+ 主题→四模块/九指标映射 + 字段加权检索；源表私密不入库，索引缓存 gitignored
 
 ## 当前进度
 
 ### 已有实现（不等于验收通过）
 - **7 类数据源**：缅华网 + GDELT（CSV 直连主通道 + DOC API 备用） + Google News 双语聚合（代理） + Irrawaddy/Frontier（受限时自动降级） + 夜光(WB) + 经济(WB)，均接入数据源健康监控
 - 双语 NER（LAC + spaCy）+ 双语情感（SnowNLP/VADER/GDELT tone）
-- 风险评分5维接口与有效权重；真实夜光/难民仍缺测，不以代理补齐
+- 风险评分 **risk-v3 九指标**接口与有效权重（GDELT 派生五项双边/结构指标）；真实夜光/难民仍缺测，不以代理补齐
 - 趋势分析（移动平均/回归/异常/7 天预测）
-- **地缘位势评估**（距离加权 1/d² + Moran's I + 热点识别）
-- **诊断性归因分析**（贡献度分解 + 驱动机制解析）
+- **地缘位势评估**（potential-v3：权重3:2:1 + 距离加权 1/d² + 距离敏感性）
+- **空间自相关**（Moran's I + LISA + Getis-Ord Gi*，三套权重矩阵敏感性）
+- **诊断性归因分析**（Shapley 精确分解 + 三恒等式断言 + 贡献度分解）
+- **文献知识库一期**（组长团队 645 篇文献总表→结构化索引 + 主题/模块/指标映射 + 检索，源表私密不入库）
 - 链式推理、关系网络分析、多模态时空对齐
 - 动态预警（四级阈值）、自动化报告（HTML/DOCX）
 - 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（482 条）
@@ -271,7 +315,8 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 
 ### ❌ 后续工作建议（详见 [docs/upgrade_plan.md](docs/upgrade_plan.md)）
 - **遥感升级包**：VIIRS 夜光原始栅格接入（待老师提供数据） + 事件核密度分析 KDE（**已实施**：事件累积库增量积累 + 多信源互证加权 + 栅格渲染，`/api/map/events`） + 缅甸省级边界 GeoJSON（**已到位 GADM 4.1 四级**；MIMU 权威版备份存于外置 DATA_ROOT 不入 git）
-- **双边关系评估模块（已设计暂缓）**：GDELT 国家对合作/冲突指数 + 贸易依存 + 政策监测，六行为体关系雷达，先作独立面板不动五维权重
+- **双边关系评估模块（GDELT 部分已在 v3 落地）**：国家对合作/冲突指数已作为九指标关系类（中缅/周边/西方）+ 8 节点行为体网络实现；**贸易依存**（UN Comtrade/中国海关月度）与**政策监测**（Google News 政策查询组）仍待数据接入
+- **文献知识库二期**：PDF 全文到位后接入全文层（按 `kb_file` 关联 PDF → 切块/向量化 → 证据检索）；一期仅元数据（题录+摘要+关键词）
 - **省级定位验收**：已用事件坐标/明确发生地匹配边界，去掉全国分乘固定省系数；真实地名歧义与边界许可仍需人工核验
 - **知识图谱前端可视化页面**（当前为 API + Neo4j Browser，可增 ECharts 关系图页面）
 - 核验已有历史事件来源及独立事件分组，补齐 NER 校准/留出集，不以条目数量代替质量

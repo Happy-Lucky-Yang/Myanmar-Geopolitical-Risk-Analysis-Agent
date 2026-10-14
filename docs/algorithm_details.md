@@ -2,33 +2,57 @@
 
 本文描述正式数据域当前算法；`Legacy*` 类仅保留历史对照，不用于正式视图降级。固定夹具验证数学和数据边界，不代表真实预测准确率。年度观测分面已在 dashboard 接入；NER 人工事件分组留出集、真实 PostGIS 集成及部署验收尚未完成。
 
-## 1. 风险评分模型（risk-v2）
+## 1. 风险评分模型（risk-v3 九指标）
 
-### 1.1 指标定义
+> 本轮升级：正式风险路径由 `risk-v2` 五维改为 `risk-v3` 九指标三层体系（`algorithm_version="risk-v3"`）。
+> 旧五维（`config.yaml` `risk_weights`）与 `Legacy*` 类保留作历史对照，不用于正式视图。权威依据与前后对比见
+> [系统升级方案说明](upgrade_v3.md)。
 
-| 指标 | 权重 | 范围 | 说明 |
-|------|------|------|------|
-| conflict_frequency | 0.30 | 0-1 | 去重报道中冲突关键词命中比例，不是独立现实事件频次 |
-| sentiment_avg | 0.25 | 0-1 | 文本情感分析风险分 (负面程度) |
-| nightlight_change | 0.20 | 0-1 | 真实夜光下降量，未接入时缺测；WB 电力代理不参与正式评分 |
-| refugee_change | 0.15 | 0-1 | 真实难民变化观测；经济推断不作为正式观测 |
-| event_severity | 0.10 | 0-1 | 须明确声明质量的事件烈度观测；文章默认不推造 |
+### 1.1 三层权重结构
 
-### 1.2 动态权重归一化
+要素层按**地缘关系 0.6 / 地理环境 0.2 / 地缘结构 0.2**（比 3:1:1，源自胡志丁等 2013 三要素框架 + 2014
+权力等级论，各层判断矩阵一致性比率 CR=0）逐级归一到九项全局权重（`config.yaml` `risk_weights_v3`，和=1.0）：
 
-`null`、非有限值及非正式质量指标不参与评分；真实 `0` 仍是有效值。有效指标权重归一化：
+| 指标（键） | 中文 | 全局权重 | 方向 | 测度来源 |
+|-----------|------|---------|------|---------|
+| conflict_frequency | 冲突频次 | 0.162 | 正向 | CAMEO 18/19/20 类事件占比 |
+| china_myanmar_relation | 中缅关系 | 0.138 | 负向 | GDELT Goldstein 按报道量加权净值 |
+| china_us_rivalry | 中美博弈 | 0.133 | 正向 | 中美同现的冲突型强度 |
+| event_severity | 事件严重度 | 0.120 | 正向 | CAMEO 烈度代理（非死亡人数口径） |
+| nightlight_change | 夜光变化 | 0.110 | 负向 | World Bank 电力代理（非 VIIRS） |
+| neighbor_relation | 周边邻国关系 | 0.102 | 负向 | 缅-泰/印/孟/老 Goldstein 净值 |
+| displacement | 流离失所 | 0.090 | 正向 | IDMC/IDP（当前占位） |
+| western_relation | 西方(美缅)关系 | 0.078 | 负向 | 缅-美/欧 Goldstein 净值 |
+| intl_sanction | 国际制裁 | 0.067 | 正向 | CAMEO 17 且对方为大国/国际组织 |
 
-$$w'_i = \frac{w_i}{\sum_{j \in valid} w_j}$$
+“正向”= 值越大风险越高；“负向”= 关系越敌对（Goldstein 净值越低）风险越高。派生时已统一方向，使九指标对风险分**同向单调**，可直接加权合成。
 
-其中 $valid$ 为具有有限数值且质量合格的指标集合，包括零值。返回 `indicator_coverage`（原始有效权重之和）、实际权重、质量和各指标贡献；它不是新闻采集完整率。
+### 1.2 GDELT 派生指标层（`analyzer/geo_indicators.py`）
 
-### 1.3 综合评分公式
+五项双边/结构指标从 GDELT 事件派生（解析器捕获 **Goldstein / NumMentions / Actor1CountryCode / Actor2CountryCode** 四列）：
 
-$$RiskScore = 100 \times \sum_{i=1}^{5} w'_i \cdot v_i$$
+- **关系类净值**：对某国家对的全部共同事件，按报道量加权求 Goldstein 净值
+  $R = \frac{\sum_i g_i m_i}{\sum_i m_i} \in [-10,10]$，再线性映射到 [0,1] 风险贡献（越敌对越高）。中缅 / 周边邻国（泰印孟老）/ 西方（美欧）三类同口径。
+- **中美博弈**：中美同现事件的冲突型强度（CAMEO 冲突码占比 × 烈度）。
+- **冲突频次 / 事件严重度 / 国际制裁**：由 CAMEO 事件码分类聚合。
+- **国家码归一**：`canon_country()` 统一 FIPS/ISO 别名（BM→MMR、CH→CHN、US→USA、EU→EUU…）。
+- `to_scorer_input()` 输出 `(values, quality)`：每个指标带 `observed / derived / missing` 质量标记，稀疏缺测（如某窗口无制裁事件）标记为 missing，**不补零**。
 
-结果为 [0,100] 风险分，不是发生概率；无任何有效指标则为 null，不能报零风险。正式日指标按去重文章最早发布业务日统一重算，手工输入不更新共享日指标。
+### 1.3 动态权重归一化
 
-### 1.4 风险等级划分
+`null`、非有限值及 `quality==missing` 的指标不参与评分；真实 `0` 仍是有效值。有效指标权重归一化：
+
+$$w'_i = \frac{w_i}{\sum_{j \in available} w_j}$$
+
+其中 $available$ 为值有限且 `quality ∈ {observed, derived}` 的指标集合（含零值）。`coverage = Σ available` 即原始有效权重之和，随结果返回；它不是新闻采集完整率。缺测指标 contribution=None，不计入、不补零。
+
+### 1.4 综合评分公式
+
+$$RiskScore = \mathrm{round}\left(100 \times \sum_{i \in available} w'_i \cdot v_i,\ 2\right)$$
+
+$v_i$ 已 clamp 到 [0,1]。结果为 [0,100] 风险分，不是发生概率；无任何有效指标则为 null，不能报零风险。正式日指标按去重文章最早发布业务日统一重算，手工输入不更新共享日指标。返回体附带 `indicator_model`、`geo_indicators`、`event_count`、`coverage`、`status`；`/api/gdelt` 已挂载 `metrics['geo_risk']`。
+
+### 1.5 风险等级划分
 
 | 分数范围 | 等级 | 颜色 |
 |----------|------|------|
@@ -186,6 +210,16 @@ $$refugee\_change = 0.6 + 0.4 \times economic\_distress$$
 - 优化模块度 Q
 - 降级方案: 连通分量
 
+### 7.3 行为体关系网络（actor-network-v1）
+
+在文章级实体共现网络之外，`build_actor_network()` 另建**八节点国家行为体网络**（与九指标关系类同口径，但**不复用同一节点表**，语义不同：共现 ≠ 合作/冲突）：
+
+- **固定八节点**：MMR（案例国）/ CHN（主要外部行为体→中缅关系）/ USA（域外大国→西方关系）/ EUU（欧盟，单一集体行为体→西方关系）/ THA / IND / BGD / LAO（陆上邻国→周边邻国关系），ISO 3166 三字母编码。
+- **有向加权**：对每一有序对 (Actor1→Actor2)，取共同 GDELT 事件按报道量加权 Goldstein 净值 $R = \frac{\sum g m}{\sum m} \in [-10,10]$。
+- **分层多层网络**：合作层（R>0）/ 冲突层（R<0）；重点指标介数中心性（枢纽地位）+ 社区模块度。
+- **四断言**：节点数为 8 且编码一致；边权 ∈ [-10,10]；无自环；模块度 ∈ [-0.5,1]。
+- **输出不进入风险指数合成**：关系层五项指标已以双边配对进入九指标合成，行为体网络再入将重复计量（元数据 `enters_risk_synthesis=False`）。
+
 ---
 
 ## 8. 多模态时空对齐
@@ -208,7 +242,14 @@ $$r = \frac{\sum(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum(x_i - \bar{x})^2 \cdo
 
 KDE 使用本地等面积投影、公里带宽；绝对密度以加权事件/平方公里计，跨窗口比较按天归一并用共同带宽/色标。相对密度只用于窗口内位置对比，不能以每帧峰值归一后的颜色比较时间强弱。
 
-Moran’s I 使用省界 queen 邻接、行归一权重，999次固定种子42置换；至少8个有效区域，零方差或无邻接不报告显著性。战略中心权重与空间相关均不是因果结论。
+**空间自相关（`analyzer/spatial_analysis.py`，moran-v3 / lisa-v1 / gistar-v1）**：提供三套行标准化空间权重矩阵（Queen 邻接含共点 / 距离阈值 ≤ 最近邻距离中位数 / 距离衰减 w=1/d²），每行和为 1（容差 1e-6）。
+
+- **全局 Moran’s I**：$I = \frac{n}{\sum_i\sum_j w_{ij}} \cdot \frac{\sum_i\sum_j w_{ij} z_i z_j}{\sum_i z_i^2}$，N=999 固定种子（42）**单侧**置换检验（正空间自相关假设），报 I / 期望 $-1/(n-1)$ / p 值；至少 8 个有效区域才报显著性，零方差或无邻接不报。**输入整体逆序时 I 不变**（自检断言，容差 1e-9）。
+- **LISA 局部 Moran**：$I(i) = z_i \sum_j w_{ij} z_j$，四分类 HH（热点）/ LL（冷点）/ HL（孤立高值）/ LH（低值包围高值），置换 p 值 + 显著性着色（不显著灰显）。
+- **Getis-Ord Gi\***：标准化后 >1.96 显著热点、<−1.96 显著冷点。
+- **三矩阵敏感性**：`spatial_autocorrelation_report()` primary=queen，报告三矩阵方向是否一致（direction_consistent）。
+
+战略中心权重与空间相关均不是因果结论。
 
 ### 8.3 预警与贡献分析
 
@@ -228,3 +269,38 @@ Moran’s I 使用省界 queen 邻接、行归一权重，999次固定种子42�
 ### 9.2 字段完整率与失败边界
 
 每一步按对应 schema 检查字段及类型，返回 `schema_completeness`，不是正确率。调用/解析/字段校验失败时显式标记失败并停止后续步骤。统一使用 LLM 提供商配置、超时和重试；占位密钥不触网，失败不进入成功缓存。缓存隔离提供商、模型、提示词/schema 版本与输入，结论仍须人工依据证据复核。
+
+---
+
+## 10. 地缘位势与诊断归因
+
+### 10.1 地缘位势（`analyzer/geo_potential.py`，potential-v3）
+
+某省地缘位势 $P_i = \left(\sum_{c} \frac{w_c}{d_{ic}^2}\right) \times R_i$，其中 $w_c$ 为战略中心权重、$d_{ic}$ 为省邦质心到中心的球面大圆距离（haversine，R=6371km）、$R_i$ 为风险分。5 个战略中心按 **3:2:1 归一**：皎漂港 0.30、瑞丽 0.30、内比都 0.20、妙瓦底 0.10、仰光 0.10（和=1.0，`validate_center_weights()` 断言，容差 1e-6）。
+
+- **距离敏感性**：`distance_sensitivity()` 比较基准（大圆）与对照（陆路通行距离）两套排序的 Spearman ρ；ρ≥0.8 判“不敏感”只报基准；无路网数据时返回 `status="unavailable"`，**不臆造对照距离**。
+- **三断言**：权重和为 1；位势非负且风险为 0 时位势为 0；等风险下靠中国边境通道/印度洋出海口省邦位势高于内陆。
+
+### 10.2 诊断性归因（`analyzer/diagnostic.py`，shapley-v1）
+
+**Shapley 精确分解**：$v(S) = \frac{\sum_{k \in S} w_k Z_k}{\sum_{k \in S} w_k}$，$\varphi(k) = \sum_{S \subseteq N\setminus\{k\}} \frac{|S|!\,(n-|S|-1)!}{n!}\,[v(S\cup\{k\}) - v(S)]$。n=9 时枚举 $2^9=512$ 子集（≤2304 次求值，**精确无近似**）。
+
+**三恒等式断言**（容差 1e-6）：
+- **A1** $\sum_k C(k) = 1$（贡献份额归一，`shapley_attribution()` 校验）；
+- **A2** $\sum_k w_k \Delta Z_k = \Delta R$（变化分解残差为零，`change_identity()` 校验）；
+- **A3** $\sum_k \varphi(k) = R = v(N)$（Shapley 有效性）。
+
+**措辞约束**：归因文本限“贡献份额为百分之几”，`assert_no_causal_verbs()` 过滤因果动词“导致/引起/造成”，命中即报错——诊断输出是**贡献分解，不是因果结论**。`diagnose()` / `diagnose_change()` 以追加式挂载 shapley / change_identity，不改既有键。
+
+---
+
+## 11. 文献知识库（`analyzer/knowledge_base.py`，kb-index-v1）
+
+一期为**元数据索引层**（题录 + 摘要 + 关键词），源表为组长团队《缅甸地缘文献库·文献总表.xlsx》（645 篇去重题录，19 列；另有候选核心 84 篇）。
+
+- **stdlib 解析**：环境无 openpyxl，`read_xlsx()` 用 `zipfile` + `ElementTree` 解析（合并 sharedStrings 富文本与 inlineStr），并带 **DTD/实体防护**（`_safe_fromstring` 拒绝含 `<!DOCTYPE`/`<!ENTITY` 的 XML，防 XXE/实体膨胀）。
+- **清洗与派生**：19 列规范化；作者/关键词/主题按分号切分；脏主题标签去编号前缀（`^\s*\d+\s*`）合并为 15 个规范主题；年份正则提取；`is_core` 派生。
+- **主题→四模块/九指标映射**：源表“研究主题类别”与智能计算四模块**精确 1:1**（地缘位势与影响力测算→模块一、空间统计与空间自相关→模块二、地缘关系网络分析→模块三、地缘风险·脆弱性与归因→模块四），其余主题映射到九指标。
+- **检索**：字段加权 TF（题名5/译名4/关键词4/主题2.5/摘要2/作者2/期刊1）+ jieba 分词（缺失则 CJK 二字 gram 兜底）+ facet 过滤；`relevant_literature(module|indicator|topic)` 按 relevance_rank + year 召回支撑文献。
+- **合规**：源表属团队私密资料**不入库**；路径经 `.env` 的 `KB_SOURCE_XLSX` 提供，不写死进开源 `config.yaml`；派生索引缓存落 gitignored 的 `DATA_ROOT/knowledge_base`；源表缺失时优雅降级（空索引 + status，不 500）。
+- **二期展望**：PDF 全文到位后按 `kb_file` 关联 → 全文切块/向量化 → 证据检索。

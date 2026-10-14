@@ -95,6 +95,116 @@ def build_article_graph(records, days=30, end_date=None, region='MMR', source=No
                 'sources': sorted({e['source'] for a in articles.values() for e in a['evidence']}),
                 'relation_semantics': '文章级实体共现，不表示合作、冲突或因果；中心性不代表现实影响力'}}
 
+
+# ============================================================
+# 行为体关系网络（组长《四模块实施说明》模块三）
+# 职责边界（代码写定）：
+#   1) 本网络输出不进入风险指数合成——关系层五项指标已以双边配对进入合成，再入将重复计量；
+#   2) 与知识图谱实体网络（build_article_graph）分属两个用途，不复用同一节点表；
+#   3) 归因文本不得使用因果动词（见 analyzer.diagnostic.assert_no_causal_verbs）。
+# 节点集固定为八者，与九项指标体系的关系层指标一一对应；编码用 ISO 3166 三字母，欧盟作单一集体行为体。
+# ============================================================
+ACTOR_NODES = {
+    "MMR": {"name": "缅甸", "role": "案例国", "indicator": None},
+    "CHN": {"name": "中国", "role": "主要外部行为体", "indicator": "中缅关系"},
+    "USA": {"name": "美国", "role": "域外大国", "indicator": "西方(美缅)关系"},
+    "EUU": {"name": "欧盟", "role": "集体行为体", "indicator": "西方(美缅)关系", "label": "EU"},
+    "THA": {"name": "泰国", "role": "陆上邻国", "indicator": "周边邻国关系"},
+    "IND": {"name": "印度", "role": "陆上邻国", "indicator": "周边邻国关系"},
+    "BGD": {"name": "孟加拉国", "role": "陆上邻国", "indicator": "周边邻国关系"},
+    "LAO": {"name": "老挝", "role": "陆上邻国", "indicator": "周边邻国关系"},
+}
+
+
+def build_actor_network(events, include_centrality=True):
+    """构建固定八节点有向行为体关系网络。
+
+    边权：对每一有序对 (Actor1→Actor2)，取双方共同出现的 GDELT 事件，按报道量加权求
+    Goldstein 净值 R=Σ(g×m)/Σm（与九项指标关系类指标口径一致），R∈[-10,10]。
+    分层：按 R 正负拆为合作层（R>0）与冲突层（R<0）。
+    验收断言：(1) 节点数为 8；(2) 边权∈[-10,10]；(3) 无自环；(4) 模块度∈[-0.5,1]。
+    输出不进入风险合成，仅作结构解释与预警支撑。
+    """
+    from analyzer.geo_indicators import canon_country
+    from utils.data_contract import finite_number
+    agg = {}
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        a1 = canon_country(e.get('actor1_country'))
+        a2 = canon_country(e.get('actor2_country'))
+        if a1 not in ACTOR_NODES or a2 not in ACTOR_NODES or a1 == a2:  # 断言(3)：无自环
+            continue
+        g = e.get('goldstein')
+        if not finite_number(g):
+            continue
+        m = e.get('num_mentions')
+        m = float(m) if finite_number(m) and m > 0 else 1.0
+        slot = agg.setdefault((a1, a2), [0.0, 0.0, 0])
+        slot[0] += float(g) * m
+        slot[1] += m
+        slot[2] += 1
+    edges = []
+    for (a1, a2), (sgm, sm, cnt) in sorted(agg.items()):
+        net = sgm / sm if sm > 0 else None
+        if net is None:
+            continue
+        assert -10.0 - 1e-9 <= net <= 10.0 + 1e-9, f"边权越界[-10,10]: {a1}->{a2}={net}"  # 断言(2)
+        edges.append({'source': a1, 'target': a2, 'weight': round(net, 6), 'mentions': int(sm),
+                      'event_count': cnt, 'layer': 'cooperation' if net > 0 else 'conflict' if net < 0 else 'neutral',
+                      'source_name': ACTOR_NODES[a1]['name'], 'target_name': ACTOR_NODES[a2]['name']})
+    nodes = [{'id': code, 'code': meta.get('label', code), 'name': meta['name'],
+              'role': meta['role'], 'indicator': meta['indicator']} for code, meta in ACTOR_NODES.items()]
+    assert len(nodes) == 8, f"行为体网络须为8节点，当前{len(nodes)}"  # 断言(1)
+    result = {'nodes': nodes, 'edges': edges, 'node_count': len(nodes), 'edge_count': len(edges),
+              'layers': {'cooperation': [e for e in edges if e['layer'] == 'cooperation'],
+                         'conflict': [e for e in edges if e['layer'] == 'conflict']},
+              'metadata': {'algorithm_version': 'actor-network-v1', 'directed': True,
+                           'edge_weight': 'Goldstein 净值（按 NumMentions 加权），∈[-10,10]',
+                           'enters_risk_synthesis': False,
+                           'relation_semantics': '行为体关系网络，用于结构解释与预警；关系层五项指标已以双边配对进入风险合成，本网络不重复计量',
+                           'boundary': '与知识图谱实体网络（build_article_graph）分属两个用途，不复用同一节点表'}}
+    if include_centrality:
+        result['centrality'] = _actor_centrality(nodes, edges)
+    return result
+
+
+def _actor_centrality(nodes, edges):
+    """分层中介中心性与社区模块度（组长模块三(二)重点指标：枢纽地位）。"""
+    try:
+        import networkx as nx
+    except ImportError:
+        return {'status': 'networkx_unavailable', 'layers': {}}
+    node_ids = [n['id'] for n in nodes]
+    out = {'status': 'ok', 'layers': {}}
+    for layer in ('cooperation', 'conflict'):
+        G = nx.DiGraph()
+        G.add_nodes_from(node_ids)
+        for e in edges:
+            if e['layer'] == layer:
+                G.add_edge(e['source'], e['target'], weight=abs(e['weight']))
+        btwn = nx.betweenness_centrality(G)
+        und = G.to_undirected()
+        mod, parts = None, []
+        if und.number_of_edges() > 0:
+            try:
+                parts_sets = nx.community.greedy_modularity_communities(und)
+                mod = nx.community.modularity(und, parts_sets)
+                assert -0.5 - 1e-9 <= mod <= 1.0 + 1e-9, f"模块度越界[-0.5,1]: {mod}"  # 断言(4)
+                parts = [sorted(c) for c in parts_sets]
+            except AssertionError:
+                raise
+            except Exception:
+                mod, parts = None, []
+        out['layers'][layer] = {'betweenness': {k: round(v, 6) for k, v in btwn.items()},
+                                'modularity': round(mod, 6) if mod is not None else None,
+                                'communities': parts, 'edge_count': G.number_of_edges()}
+    coop = out['layers']['cooperation']['betweenness'].get('MMR', 0.0)
+    conf = out['layers']['conflict']['betweenness'].get('MMR', 0.0)
+    out['mmr_betweenness'] = {'cooperation': coop, 'conflict': conf, 'more_conflict_hub': conf > coop}
+    return out
+
+
 logger = logging.getLogger(__name__)
 
 # 本地关系数据缓存 (Neo4j 不可用时的降级方案)

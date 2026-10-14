@@ -29,6 +29,8 @@ data/raw/*.csv
 data/raw/*.txt
 data/processed/
 data/external/
+# 文献知识库索引缓存（由私密源表派生，不入版本控制）
+data/knowledge_base/
 # 例外：自建历史事件数据集属团队成果，允许开源
 !data/raw/historical_events.json
 

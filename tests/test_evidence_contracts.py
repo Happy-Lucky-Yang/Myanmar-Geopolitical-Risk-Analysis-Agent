@@ -27,6 +27,31 @@ def test_event_metrics_missing_zero_unknown_and_duplicates():
     assert event_severity_weight(unknown) is None and event_category(unknown) == 'unknown'
 
 
+def test_parse_csv_rows_captures_bilateral_fields():
+    """P0 契约：GDELT 解析器须捕获 Goldstein/NumMentions/Actor1国/Actor2国，
+    供九指标体系的双边关系类指标按报道量加权求净值；空值/脏值降级为 None。"""
+    from data.gdelt_files import _parse_csv_rows
+    row = [''] * 61
+    row[0], row[1] = '999', '20260101'
+    row[7], row[17] = 'CH', 'BM'          # Actor1/Actor2 国家码
+    row[26], row[28], row[29] = '193', '19', '4'
+    row[30], row[31] = '-9.5', '12'       # GoldsteinScale, NumMentions
+    row[32], row[33], row[34] = '3', '5', '-6.2'
+    row[53] = 'BM'                        # ActionGeo_CountryCode（过滤键）
+    events = _parse_csv_rows('\t'.join(row), 'BM')
+    assert len(events) == 1
+    ev = events[0]
+    assert ev['actor1_country'] == 'CH' and ev['actor2_country'] == 'BM'
+    assert ev['goldstein'] == -9.5 and ev['num_mentions'] == 12
+    # 空 Actor 码 -> None；非法 Goldstein -> None（不得污染加权）
+    blank = [''] * 61
+    blank[0], blank[53], blank[7], blank[30] = '1', 'BM', '', 'not_a_number'
+    ev2 = _parse_csv_rows('\t'.join(blank), 'BM')[0]
+    assert ev2['goldstein'] is None and ev2['actor1_country'] is None
+    # 非缅甸 ActionGeo 行被过滤
+    assert _parse_csv_rows('\t'.join(row), 'TH') == []
+
+
 def test_gdelt_api_is_read_only_and_windowed(monkeypatch):
     import data.gdelt_crawler as crawler
     def forbidden(*args, **kwargs):

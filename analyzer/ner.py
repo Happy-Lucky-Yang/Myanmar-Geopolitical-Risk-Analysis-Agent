@@ -46,6 +46,20 @@ JIEBA_GEO_DICT = [
     ("缅甸民族民主同盟军", "nt"), ("民族团结政府", "nt"), ("国家管理委员会", "nt"),
     ("东盟", "nt"), ("联合国", "nt"), ("欧盟", "nt"), ("世界银行", "nt"),
     ("三兄弟联盟", "nt"), ("佤邦联合军", "nt"),
+    # —— 通用领域地名表（gazetteer）：邻国 / 主要城市 / 边境口岸 ——
+    # 仅收录任何缅甸地缘系统都应具备的通用地理常识，不含特定报道的复合标签
+    # （带斜杠/括号的机构全称、文章专属人名不纳入，避免过拟合与子串误报）
+    ("中国", "ns"), ("泰国", "ns"), ("印度", "ns"), ("孟加拉国", "ns"),
+    ("老挝", "ns"), ("越南", "ns"), ("柬埔寨", "ns"),
+    ("妙瓦底", "ns"), ("毛淡棉", "ns"), ("蒲甘", "ns"), ("密支那", "ns"),
+    ("皎漂", "ns"), ("大其力", "ns"), ("帕敢", "ns"), ("果敢", "ns"),
+    ("南坎", "ns"), ("贵概", "ns"), ("瑞丽", "ns"),
+    # —— 通用机构 / 政治组织 ——
+    ("军政府", "nt"), ("联邦议会", "nt"), ("缅甸中央银行", "nt"),
+    ("国际货币基金组织", "nt"),
+    # —— 通用人名（历史与国家领导人，避免与更长人名构成子串冲突）——
+    ("温敏", "nr"), ("奈温", "nr"), ("丹瑞", "nr"), ("吴努", "nr"),
+    ("敏瑞", "nr"), ("索温", "nr"),
 ]
 _jieba_dict_loaded = False
 
@@ -73,10 +87,17 @@ EVENT_KEYWORDS_EN = [
 class NERExtractor:
     """命名实体识别器，支持中英文文本"""
 
-    def __init__(self):
-        """懒加载模型"""
+    def __init__(self, jieba_fallback: bool = False):
+        """懒加载模型。
+
+        :param jieba_fallback: 是否在领域 gazetteer 词典对整段零命中时启用 jieba
+            词性标注做召回兜底。默认关闭——batch1 人工金标准实测该兜底在 4 段
+            零命中文本上净增 34 个假阳性、0 个真阳性，反把 micro-F1 从 0.494 拉低
+            到 0.478，故仅作为面向域外文本的显式可选项保留。
+        """
         self._lac = None
         self._nlp_en = None
+        self._jieba_fallback = jieba_fallback
         self._backend_state = threading.local()
 
     @property
@@ -176,22 +197,29 @@ class NERExtractor:
         return cleaned
 
     def _extract_zh(self, text: str) -> Dict[str, List[str]]:
-        """中文 NER：优先 LAC，回退 jieba 词性标注"""
+        """中文 NER 后端优先级：LAC 统计模型 > 领域 gazetteer 词典（默认终点）。
+
+        经 batch1 人工金标准实测：领域 gazetteer 词典 micro-F1 0.494（P 0.770）
+        优于通用 jieba 词性标注 0.421（P 0.416，过度标注致精确率崩塌）；即便仅
+        在词典零命中时用 jieba 兜底，也在 4 段文本上净增 34 FP / 0 TP，把整体
+        拉低到 0.478。故默认以 gazetteer 词典为中文回退终点，jieba 兜底改由构造
+        参数 jieba_fallback 显式开启，供域外文本的召回实验使用。
+        """
         if LAC is not None:
             try:
                 result = self._extract_zh_lac(text)
                 self._backend_state.name = 'lac'
                 return result
             except Exception as e:
-                logger.warning('[NER] LAC不可用，回退jieba: %s', type(e).__name__)
-        if pseg is not None:
-            result = self._extract_zh_jieba(text)
-            self._backend_state.name = 'jieba_posseg'
-            return result
-        # 最后回退：正则
+                logger.warning('[NER] LAC不可用，回退词典: %s', type(e).__name__)
         result = self._extract_zh_regex(text)
-        self._backend_state.name = 'dictionary_regex'
-        return result
+        # 默认：领域 gazetteer 词典即中文回退终点（实测 micro-F1 0.494，P 0.770）
+        if any(result.values()) or pseg is None or not self._jieba_fallback:
+            self._backend_state.name = 'dictionary_regex'
+            return result
+        # 仅当显式开启 jieba_fallback 且词典对整段零命中时，才用词性标注兜底召回
+        self._backend_state.name = 'jieba_posseg'
+        return self._extract_zh_jieba(text)
 
     def _extract_zh_lac(self, text: str) -> Dict[str, List[str]]:
         """中文 NER：使用 LAC"""

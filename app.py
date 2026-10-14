@@ -147,6 +147,12 @@ def page_dashboard():
     return render_template("dashboard.html")
 
 
+@app.route("/graph")
+def page_graph():
+    """关系网络图谱页面（ECharts 力导向图）"""
+    return render_template("graph.html")
+
+
 # ============================================================
 # API 接口
 # ============================================================
@@ -624,10 +630,13 @@ def gdelt_events():
         days = request.args.get("days", 7, type=int)
 
         from data.gdelt_files import compute_metrics_from_events
+        from analyzer.risk_scorer import get_geo_risk_scorer
         loader = get_data_loader()
         revision = loader.revision()
         events = [e for e in _query_events(days) if e.get('source', 'gdelt') == 'gdelt']
         metrics = compute_metrics_from_events(events)
+        # risk-v3：组长九指标三层体系加权风险分（稀疏双边指标缺测时按有效权重动态归一）
+        metrics['geo_risk'] = get_geo_risk_scorer().compute_event_risk(events)
         start, end = time_window(days, request.args.get('end_date'))
         dates = sorted({e['date'] for e in events})
         metrics['metadata'] = {
@@ -1002,6 +1011,23 @@ def network_analysis():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/network/actors", methods=["GET"])
+def network_actors():
+    """八节点国家行为体关系网络（actor-network-v1）。
+
+    有向加权（Goldstein 报道量加权净值），分合作/冲突层；输出不进入风险合成。
+    """
+    try:
+        from analyzer.network_analyzer import build_actor_network
+        days = request.args.get("days", 30, type=int)
+        events = [e for e in _query_events(days) if e.get('source', 'gdelt') == 'gdelt']
+        result = build_actor_network(events, include_centrality=True)
+        result['metadata']['event_count'] = len(events)
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # ============================================================
 # 报告生成接口
 # ============================================================
@@ -1117,6 +1143,86 @@ def region_observations():
     return jsonify(success=True, data={'regions': data, 'spatial_statistics': morans_i(data),
                    'metric': '已定位事件规则烈度均值；非全国日风险、非发生概率',
                    'filters': dict(request.args), 'revision': get_data_loader().revision()})
+
+
+# ============================================================
+# 文献知识库接口（一期：元数据检索；源表属私密资料，索引本地缓存）
+# ============================================================
+
+def _kb_limit(default=20, cap=200):
+    try:
+        n = int(request.args.get('limit', default))
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(n, cap))
+
+
+@app.route("/api/knowledge_base/status", methods=["GET"])
+def knowledge_base_status():
+    """知识库状态与 facet 概览（记录数/核心数/主题分布/四模块与九指标覆盖）。"""
+    try:
+        from analyzer.knowledge_base import get_knowledge_base
+        return jsonify(success=True, data=get_knowledge_base().status())
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/knowledge_base/search", methods=["GET"])
+def knowledge_base_search():
+    """文献检索：q + facet 过滤（topic/category/subcategory/module/indicator/min_relevance/core_only/year）。"""
+    try:
+        from analyzer.knowledge_base import get_knowledge_base
+        kbmod = get_knowledge_base()
+        core_only = str(request.args.get('core_only', '')).lower() in ('1', 'true', 'yes')
+        result = kbmod.search(
+            query=request.args.get('q', ''),
+            topics=request.args.getlist('topic') or None,
+            category=request.args.get('category') or None,
+            subcategory=request.args.get('subcategory') or None,
+            module=request.args.get('module') or None,
+            indicator=request.args.get('indicator') or None,
+            min_relevance=request.args.get('min_relevance') or None,
+            core_only=core_only,
+            year_from=request.args.get('year_from', type=int),
+            year_to=request.args.get('year_to', type=int),
+            limit=_kb_limit(),
+        )
+        result['kb_status'] = kbmod.index.get('status', 'ok')
+        return jsonify(success=True, data=result)
+    except ValueError as e:
+        return jsonify(success=False, error=str(e)), 400
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/knowledge_base/relevant", methods=["GET"])
+def knowledge_base_relevant():
+    """按模块/指标/主题召回支撑文献（把文科文献接到智能计算四模块与九指标）。"""
+    try:
+        from analyzer.knowledge_base import get_knowledge_base
+        result = get_knowledge_base().relevant_literature(
+            module=request.args.get('module') or None,
+            indicator=request.args.get('indicator') or None,
+            topic=request.args.get('topic') or None,
+            limit=_kb_limit(10, 100),
+            min_relevance=request.args.get('min_relevance') or '相关',
+        )
+        return jsonify(success=True, data=result)
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
+
+
+@app.route("/api/knowledge_base/record/<record_id>", methods=["GET"])
+def knowledge_base_record(record_id):
+    """按 id 取单篇完整题录（含摘要与判断理由）。"""
+    try:
+        from analyzer.knowledge_base import get_knowledge_base
+        rec = get_knowledge_base().get_record(record_id)
+        if rec is None:
+            return jsonify(success=False, error=f'未找到文献 {record_id}'), 404
+        return jsonify(success=True, data=rec)
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
 
 
 # ============================================================

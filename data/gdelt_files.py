@@ -11,12 +11,17 @@ GDELT 每 15 分钟发布的原始事件文件（data.gdeltproject.org/gdeltv2/�
 
 事件文件为制表符分隔 CSV（61 列），关键列（0 基索引）：
     0  GlobalEventID            1  SQLDATE(YYYYMMDD)
+    7  Actor1CountryCode(FIPS)  17 Actor2CountryCode(FIPS)
     26 EventCode(CAMEO)         28 EventRootCode
-    29 QuadClass(1~4)           32 NumSources(报道信源数)
+    29 QuadClass(1~4)           30 GoldsteinScale(-10~+10)
+    31 NumMentions              32 NumSources(报道信源数)
     33 NumArticles              34 AvgTone
     52 ActionGeo_FullName       53 ActionGeo_CountryCode
     56 ActionGeo_Lat            57 ActionGeo_Long
     60 SOURCEURL
+其中 Actor1/Actor2 国家码 + GoldsteinScale + NumMentions 是九指标体系中双边
+关系类指标（中缅/周边邻国/西方关系、中美博弈、国际制裁）按报道量加权求
+Goldstein 净值的核心输入（口径见组长《九项指标的测度与计算方法》《编码规则》）。
 """
 import io
 import csv
@@ -35,9 +40,13 @@ MYANMAR_FIPS = "BM"
 # events export CSV 列索引（0 基）
 COL_EVENTID = 0
 COL_SQLDATE = 1
+COL_ACTOR1_COUNTRY = 7        # Actor1CountryCode（FIPS 3 位，如 CH/BM/US）
+COL_ACTOR2_COUNTRY = 17       # Actor2CountryCode（FIPS 3 位）
 COL_EVENTCODE = 26
 COL_EVENTROOTCODE = 28
 COL_QUADCLASS = 29
+COL_GOLDSTEIN = 30            # GoldsteinScale（-10 最敌对 ~ +10 最友好）
+COL_NUMMENTIONS = 31          # NumMentions（报道量，加权以抑制孤报噪声）
 COL_NUMSOURCES = 32
 COL_NUMARTICLES = 33
 COL_AVGTONE = 34
@@ -122,6 +131,12 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
             tone = tone if finite_number(tone) else None
         except ValueError:
             tone = None
+        # Goldstein 冲突—合作分值（-10~+10），双边关系类指标的核心输入
+        try:
+            goldstein = float(row[COL_GOLDSTEIN]) if row[COL_GOLDSTEIN] else None
+            goldstein = goldstein if finite_number(goldstein) else None
+        except ValueError:
+            goldstein = None
         # 经纬度（可能为空或地理编码错误，越界置 None 供下游过滤）
         lat = lon = None
         try:
@@ -139,9 +154,13 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
             "event_code": row[COL_EVENTCODE],
             "root_code": row[COL_EVENTROOTCODE],
             "quad_class": row[COL_QUADCLASS],
+            "goldstein": goldstein,
+            "num_mentions": _to_int(row[COL_NUMMENTIONS]),
             "num_sources": _to_int(row[COL_NUMSOURCES]),
             "num_articles": _to_int(row[COL_NUMARTICLES]),
             "avg_tone": tone,
+            "actor1_country": (row[COL_ACTOR1_COUNTRY] or "").strip() or None,
+            "actor2_country": (row[COL_ACTOR2_COUNTRY] or "").strip() or None,
             "location": row[COL_ACTIONGEO_FULLNAME],
             "lat": lat,
             "lon": lon,

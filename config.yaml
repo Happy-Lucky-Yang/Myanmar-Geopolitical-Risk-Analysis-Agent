@@ -211,6 +211,22 @@ risk_weights:
   refugee_change: 0.15        # 难民变化 (经济推断)
   event_severity: 0.10        # 事件严重程度
 
+# ---------- 风险评分权重 v3（九指标三层体系） ----------
+# 组长《缅甸地缘环境风险评价·权重分配表》：要素层 地缘关系0.6/地理环境0.2/地缘结构0.2
+# （比 3:1:1；胡志丁等2013三要素框架 + 2014权力等级论导出，各层判断矩阵 CR=0），
+# 逐级归一到九项全局权重。由 analyzer/geo_indicators.py 从 GDELT 事件派生指标，
+# analyzer/risk_scorer.py 的 risk-v3 路径（get_geo_risk_scorer）加权合成。
+risk_weights_v3:
+  conflict_frequency: 0.162       # 冲突频次（正向，CAMEO 18/19/20 占比）
+  china_myanmar_relation: 0.138   # 中缅关系（负向，GDELT Goldstein 按报道量加权净值）
+  china_us_rivalry: 0.133         # 中美博弈（正向，中美同现冲突型强度）
+  event_severity: 0.120           # 事件严重度（正向，CAMEO 烈度代理，非死亡人数口径）
+  nightlight_change: 0.110        # 夜光变化（负向，World Bank 电力代理，非 VIIRS）
+  neighbor_relation: 0.102        # 周边邻国关系（负向，缅-泰/印/孟/老）
+  displacement: 0.090             # 流离失所（正向，IDMC/IDP，当前占位）
+  western_relation: 0.078         # 西方（美缅）关系（负向，缅-美/欧）
+  intl_sanction: 0.067            # 国际制裁（正向，CAMEO 17 且对方为大国/国际组织）
+
 # ---------- 趋势分析 ----------
 trend:
   # 移动平均窗口（天）
@@ -250,3 +266,15 @@ neo4j:
   uri: "bolt://localhost:7687"
   user: "neo4j"
   password: "your-neo4j-password"
+
+# ---------- 文献知识库（一期：元数据索引层） ----------
+# 源表《缅甸地缘文献库·文献总表.xlsx》属团队私密资料，位于仓库外，路径不写入本文件；
+# 请在 .env（已 gitignore）中设置 KB_SOURCE_XLSX 指向源表绝对路径，例如：
+#   KB_SOURCE_XLSX=C:\path\to\私密文件\（中期）理论部分材料\...文献总表.xlsx
+# 索引缓存由 scripts/build_knowledge_base.py 生成，落在 DATA_ROOT/knowledge_base/（已 gitignore）。
+# 一期仅元数据（题录+摘要+关键词），不含 PDF 全文；全文层待 PDF 到位后二期接入。
+knowledge_base:
+  enabled: true
+  source_xlsx: ""          # 留空；请用环境变量 KB_SOURCE_XLSX 覆盖（避免私密路径入开源仓库）
+  index_path: ""           # 留空=DATA_ROOT/knowledge_base/literature_index.json；可用 KB_INDEX_PATH 覆盖
+  default_page_size: 20    # /api/knowledge_base/search 默认返回条数

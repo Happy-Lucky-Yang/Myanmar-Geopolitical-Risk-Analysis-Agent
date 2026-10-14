@@ -18,14 +18,139 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# 指标中文名与影响方向说明
+# 指标中文名与影响方向说明（兼容 risk-v2 五维 + risk-v3 九指标三层体系）
 INDICATOR_META = {
     "conflict_frequency": {"name": "冲突频次", "desc": "武装冲突与暴力事件的发生密度"},
     "sentiment_avg": {"name": "舆情负面度", "desc": "媒体报道的负面情感强度"},
     "nightlight_change": {"name": "夜光变化", "desc": "夜间灯光衰减反映的经济活动萎缩"},
     "refugee_change": {"name": "难民变化", "desc": "人口流离失所的规模变化"},
     "event_severity": {"name": "事件严重度", "desc": "地缘事件的烈度与影响范围"},
+    # risk-v3 九指标新增（组长权重分配表）
+    "china_myanmar_relation": {"name": "中缅关系", "desc": "中缅双边事件 Goldstein 加权净值（负向）"},
+    "neighbor_relation": {"name": "周边邻国关系", "desc": "缅与泰印孟老双边事件净值（负向）"},
+    "western_relation": {"name": "西方(美缅)关系", "desc": "缅甸与美欧双边事件净值（负向）"},
+    "china_us_rivalry": {"name": "中美博弈", "desc": "中美在缅对抗性事件强度（正向）"},
+    "intl_sanction": {"name": "国际制裁", "desc": "大国/国际组织对缅制裁事件强度（正向）"},
+    "displacement": {"name": "流离失所", "desc": "人口流离失所规模（正向）"},
 }
+
+# 组长《四模块实施说明》模块四：归因文本不得出现因果动词，命中即报错。
+CAUSAL_VERBS = ("导致", "引起", "造成")
+SHAPLEY_TOLERANCE = 1e-6
+
+
+def assert_no_causal_verbs(text):
+    """措辞检查：归因文本不得含“导致/引起/造成”等因果动词，命中即中止（机制防线）。"""
+    if isinstance(text, str):
+        hit = [v for v in CAUSAL_VERBS if v in text]
+        if hit:
+            raise AssertionError(f"归因文本不得含因果动词 {hit}：{text}")
+    return text
+
+
+def shapley_values(weights, zvalues):
+    """精确 Shapley 值分解（组长模块四），n≤9 时枚举全部子集，无近似无抽样。
+
+    特征函数 v(S)=Σ_{k∈S}w(k)Z(k)/Σ_{k∈S}w(k)（与技术实现的动态权重归一一致），
+    φ(k)=Σ_{S⊆N∖{k}} |S|!(n−|S|−1)!/n! · [v(S∪{k})−v(S)]。
+    返回 (phi, v_full)，满足效率公理 Σφ(k)=v(N)。
+    """
+    from itertools import combinations
+    from math import factorial
+    from utils.data_contract import finite_number
+    keys = [k for k in weights if k in zvalues and finite_number(weights.get(k))
+            and finite_number(zvalues.get(k)) and weights[k] > 0]
+    n = len(keys)
+    if n == 0:
+        return {}, 0.0
+    w = {k: float(weights[k]) for k in keys}
+    z = {k: float(zvalues[k]) for k in keys}
+
+    def v(S):
+        sw = sum(w[k] for k in S)
+        return sum(w[k] * z[k] for k in S) / sw if sw > 0 else 0.0
+
+    phi = {k: 0.0 for k in keys}
+    nfact = factorial(n)
+    for k in keys:
+        others = [j for j in keys if j != k]
+        for size in range(n):
+            coeff = factorial(size) * factorial(n - size - 1) / nfact
+            for S in combinations(others, size):
+                sset = set(S)
+                phi[k] += coeff * (v(sset | {k}) - v(sset))
+    return phi, v(frozenset(keys))
+
+
+def shapley_attribution(risk_result, tol=SHAPLEY_TOLERANCE):
+    """从 risk_result（risk-v2/v3 通用）提取有效权重与标准化值，作 Shapley 分解并校验 A1/A3。
+
+    A1：Σ_k C(k)=1（C=贡献份额）；A3：Σ_k φ(k)=R（当期风险指数）。任一不成立即报错，不降级输出。
+    """
+    from utils.data_contract import finite_number
+    details = risk_result.get('indicator_scores') if isinstance(risk_result, dict) else None
+    details = details if isinstance(details, dict) else {}
+    weights, zvalues = {}, {}
+    for k, d in details.items():
+        if isinstance(d, dict) and d.get('contribution') is not None \
+                and finite_number(d.get('weight')) and finite_number(d.get('value')):
+            weights[k], zvalues[k] = float(d['weight']), float(d['value'])
+    phi, v_full = shapley_values(weights, zvalues)
+    if not phi:
+        return {'status': 'insufficient', 'algorithm_version': 'shapley-v1', 'shapley': {}, 'shares': {},
+                'reason': '缺少有效权重或标准化值，无法作 Shapley 分解（仅存贡献明细时退化为线性份额）'}
+    total = sum(phi.values())
+    # A3：Σφ = v(N) = R（效率公理）
+    assert abs(total - v_full) <= tol, f"A3 失败：Σφ={total} ≠ v(N)={v_full}"
+    score = risk_result.get('risk_score') if isinstance(risk_result, dict) else None
+    if finite_number(score):
+        assert abs(v_full * 100 - score) <= 0.01, f"A3 失败：v(N)×100={v_full * 100} ≠ 报告风险分={score}"
+    shares = {k: (phi[k] / total if total else 0.0) for k in phi}
+    # A1：ΣC(k) = 1
+    if total:
+        assert abs(sum(shares.values()) - 1.0) <= tol, f"A1 失败：ΣC={sum(shares.values())}"
+    return {'status': 'ok', 'algorithm_version': 'shapley-v1',
+            'risk_index': v_full, 'risk_index_pct': round(v_full * 100, 4),
+            'shapley': {k: round(phi[k], 8) for k in phi},
+            'shapley_pct': {k: round(phi[k] * 100, 4) for k in phi},
+            'shares': {k: round(shares[k], 6) for k in shares},
+            'drivers': sorted(phi, key=lambda k: (-phi[k], k)),
+            'primary_driver': (max(phi, key=lambda k: phi[k]) if total else None),
+            'assertions': {'A1_sum_shares_eq_1': True, 'A3_sum_phi_eq_R': True, 'tolerance': tol},
+            'note': 'Shapley 值分摊含权重再归一的非线性效应；贡献份额不代表因果作用'}
+
+
+def change_identity(current, previous, tol=SHAPLEY_TOLERANCE):
+    """A2：Σ_k w(k)·ΔZ(k) = ΔR（残差为零）。仅在两期同一有效指标集、固定权重且全覆盖时严格成立。"""
+    from utils.data_contract import finite_number
+
+    def extract(rec):
+        d = rec.get('indicator_scores') if isinstance(rec, dict) else None
+        d = d if isinstance(d, dict) else {}
+        out = {}
+        for k, v in d.items():
+            if isinstance(v, dict) and finite_number(v.get('weight')) and finite_number(v.get('value')):
+                out[k] = (float(v['weight']), float(v['value']))
+        return out
+
+    cur, prev = extract(current), extract(previous)
+    Rc = current.get('risk_score') if isinstance(current, dict) else None
+    Rp = previous.get('risk_score') if isinstance(previous, dict) else None
+    common = sorted(set(cur) & set(prev))
+    if not common or not (finite_number(Rc) and finite_number(Rp)):
+        return {'status': 'insufficient', 'A2_holds': None,
+                'reason': '缺少两期共有的权重/标准化值或风险分，A2 不适用'}
+    same_set = set(cur) == set(prev) == set(common)
+    same_weights = all(abs(cur[k][0] - prev[k][0]) <= tol for k in common)
+    sum_w_dz = sum(cur[k][0] * (cur[k][1] - prev[k][1]) for k in common) * 100
+    delta_r = Rc - Rp
+    residual = delta_r - sum_w_dz
+    holds = bool(same_set and same_weights and abs(residual) <= 0.01)
+    return {'status': 'ok', 'A2_holds': holds, 'same_indicator_set': same_set,
+            'same_weights': same_weights, 'sum_w_delta_z': round(sum_w_dz, 6),
+            'delta_r': round(delta_r, 6), 'residual': round(residual, 6),
+            'n_common': len(common), 'tolerance': tol,
+            'note': '固定权重、同一全覆盖指标集下 Σw·ΔZ=ΔR；有缺测或权重变化时以 Shapley 分摊为准'}
 
 
 class LegacyDiagnosticAnalyzer:
@@ -416,11 +541,15 @@ class DiagnosticAnalyzer:
                 else '缺少有效贡献明细，不能用当前权重反推历史。')
         if drivers and total == 0:
             text += '有效指标贡献均为零，不指定主导因素。'
-        return {'total_score': score if finite_number(score) else None, 'drivers': drivers,
+        result = {'total_score': score if finite_number(score) else None, 'drivers': drivers,
                 'primary_driver': drivers[0]['name'] if drivers and total else None,
                 'attribution_text': text, 'contribution_text': text,
                 'concentration': sum((r['contribution_pct'] / 100) ** 2 for r in drivers) if total else None,
                 'algorithm_version': 'contribution-v2'}
+        # 组长模块四：Shapley 值分解（处理权重再归一的非线性交互）+ 因果动词过滤
+        result['shapley'] = shapley_attribution(risk_result)
+        assert_no_causal_verbs(result['attribution_text'])
+        return result
 
     def diagnose_change(self, current, previous):
         from utils.data_contract import finite_number
@@ -438,12 +567,16 @@ class DiagnosticAnalyzer:
         if unavailable:
             text += '部分指标覆盖不同，贡献差不可完整解释总分变化。'
         residual = delta - sum(v['change'] for v in changes) if delta is not None else None
-        return {'current_score': current_score, 'previous_score': previous_score,
+        result = {'current_score': current_score, 'previous_score': previous_score,
                 'delta': round(delta, 4) if delta is not None else None,
                 'trend': '数据不足' if delta is None else '上升' if delta > 0 else '下降' if delta < 0 else '持平',
                 'changes': changes, 'main_change': changes[0] if changes and changes[0]['change'] else None,
                 'uncomparable_indicators': unavailable, 'unexplained_delta': round(residual, 4) if residual is not None else None,
                 'change_text': text, 'algorithm_version': 'contribution-v2'}
+        # 组长模块四 A2：Σw·ΔZ=ΔR 恒等式校验（固定权重、全覆盖时严格成立）+ 因果动词过滤
+        result['change_identity'] = change_identity(current, previous)
+        assert_no_causal_verbs(result['change_text'])
+        return result
 
     def diagnose_from_history(self, days=14, end_date=None, region='MMR', algorithm_version='risk-v2', records=None):
         from datetime import timedelta

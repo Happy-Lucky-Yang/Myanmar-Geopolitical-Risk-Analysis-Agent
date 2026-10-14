@@ -25,17 +25,61 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # 每个中心点代表一个地缘影响力来源, weight 表示战略重要性
 STRATEGIC_CENTERS = {
-    "中缅边境(瑞丽)": {"lat": 24.01, "lon": 97.85, "weight": 1.0,
-                    "desc": "中缅陆路贸易与油气管道入口"},
-    "皎漂港": {"lat": 19.43, "lon": 93.55, "weight": 0.9,
-              "desc": "中缅经济走廊出海口/深水港"},
-    "内比都": {"lat": 19.76, "lon": 96.07, "weight": 0.8,
-              "desc": "缅甸首都/军政府中心"},
-    "泰缅边境(妙瓦底)": {"lat": 16.69, "lon": 98.50, "weight": 0.7,
-                     "desc": "缅泰贸易口岸/难民通道"},
-    "仰光": {"lat": 16.87, "lon": 96.20, "weight": 0.75,
-            "desc": "最大城市/经济中心"},
+    "中缅边境(瑞丽)": {"lat": 24.01, "lon": 97.85, "weight": 0.30, "tier": 1,
+                    "desc": "最大陆路边境口岸；中缅经济走廊北向入口（一档）"},
+    "皎漂港": {"lat": 19.43, "lon": 93.55, "weight": 0.30, "tier": 1,
+              "desc": "印度洋出海口；中缅油气管道起点（一档）"},
+    "内比都": {"lat": 19.76, "lon": 96.07, "weight": 0.20, "tier": 2,
+              "desc": "政治决策中枢（二档）"},
+    "泰缅边境(妙瓦底)": {"lat": 16.69, "lon": 98.50, "weight": 0.10, "tier": 3,
+                     "desc": "泰缅边境区域节点（三档）"},
+    "仰光": {"lat": 16.87, "lon": 96.20, "weight": 0.10, "tier": 3,
+            "desc": "经济中心，与华直接利益关联较间接（三档）"},
 }
+# 组长《地缘环境智能计算四模块实施说明》模块一表1：按中国直接利益分三档（3:2:1）归一化，
+# 权重之和须为 1（验收断言1，容差 1e-6）。weight 为可见研究假设，非观测量。
+CENTER_WEIGHT_TOLERANCE = 1e-6
+
+
+def validate_center_weights(centers=None) -> float:
+    """验收断言(1)：全部战略中心权重之和为 1（容差 1e-6），不成立即中止报告生成。"""
+    centers = centers or STRATEGIC_CENTERS
+    total = sum(c["weight"] for c in centers.values())
+    if abs(total - 1.0) > CENTER_WEIGHT_TOLERANCE:
+        raise AssertionError(f"战略中心权重之和须为 1（容差 1e-6），当前为 {total}")
+    return total
+
+
+def _average_ranks(values):
+    """并列取平均秩（1-based），用于 Spearman 秩相关。"""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        avg = (i + j) / 2.0 + 1
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg
+        i = j + 1
+    return ranks
+
+
+def spearman_rho(a, b):
+    """Spearman 秩相关系数（无 scipy 依赖）；长度不足或零方差返回 None。
+
+    组长模块一（二）：基准（大圆距离）与对照（陆路通行距离）两套位势排序的秩相关，
+    ≥0.8 表示排序对距离口径不敏感。
+    """
+    a, b = list(a), list(b)
+    if len(a) != len(b) or len(a) < 2:
+        return None
+    ra, rb = _average_ranks(a), _average_ranks(b)
+    ma, mb = sum(ra) / len(ra), sum(rb) / len(rb)
+    num = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
+    den = (sum((x - ma) ** 2 for x in ra) * sum((y - mb) ** 2 for y in rb)) ** 0.5
+    return num / den if den > 1e-12 else None
 
 
 class LegacyGeoPotentialAnalyzer:
@@ -307,6 +351,7 @@ class GeoPotentialAnalyzer(LegacyGeoPotentialAnalyzer):
 
     def compute_potential(self, province_risk=None):
         from utils.data_contract import finite_number
+        validate_center_weights()  # 验收断言(1)：权重和为 1，否则中止
         risk = self._build_province_risk() if province_risk is None else province_risk
         results = []
         for province, (lat, lon) in self._get_provinces().items():
@@ -324,9 +369,52 @@ class GeoPotentialAnalyzer(LegacyGeoPotentialAnalyzer):
         maximum = max((r['potential'] for r in results if r['potential'] is not None), default=None)
         for row in results:
             row['potential_normalized'] = (100 * row['potential'] / maximum if maximum else 0) if row['potential'] is not None else None
+            # 验收断言(2)：位势非负，且风险指数为零时位势为零
+            if row['potential'] is not None:
+                assert row['potential'] >= -1e-12, f"位势须非负：{row['province']}={row['potential']}"
+                if row['risk_score'] == 0:
+                    assert abs(row['potential']) <= 1e-12, f"风险为 0 时位势须为 0：{row['province']}"
         return {'provinces': results, 'max_potential': maximum, 'centers': [{'name': k, **v} for k, v in STRATEGIC_CENTERS.items()],
-                'model': '规则烈度×Σ战略权重/(距离km/100)²；距离下限10km', 'algorithm_version': 'potential-v2',
-                'note': '战略权重为研究假设，不是观测；归一化值仅用于本窗口排序，不可跨时比较'}
+                'model': '规则烈度×Σ战略权重(3:2:1归一)/(距离km/100)²；距离下限10km', 'algorithm_version': 'potential-v3',
+                'note': '战略权重按中国直接利益分三档归一（和为1），为研究假设非观测；归一化值仅用于本窗口排序，不可跨时比较'}
+
+    def distance_sensitivity(self, province_risk=None, alt_distance=None):
+        """距离口径敏感性（组长模块一(二)）：基准大圆距离 vs 对照陆路通行距离的位势排序 Spearman。
+
+        对照口径需路网数据支撑，组长列为可选；未提供 alt_distance（callable(lat1,lon1,lat2,lon2)->km）
+        时返回 status='unavailable'，仅呈报基准口径，绝不臆造陆路里程。
+        Spearman ≥ 0.8 表示排序对距离口径不敏感，可只呈报基准口径并加脚注。
+        """
+        from utils.data_contract import finite_number
+        validate_center_weights()
+        risk = self._build_province_risk() if province_risk is None else province_risk
+        provinces = self._get_provinces()
+
+        def ranking(distance_fn):
+            potentials = {}
+            for province, (lat, lon) in provinces.items():
+                value = risk.get(province)
+                if not finite_number(value):
+                    continue
+                total = sum(c['weight'] / (max(distance_fn(lat, lon, c['lat'], c['lon']), 10) / 100) ** 2
+                            for c in STRATEGIC_CENTERS.values())
+                potentials[province] = total * value / 100
+            return sorted(potentials, key=lambda p: potentials[p], reverse=True), potentials
+
+        base_order, base_map = ranking(self._haversine)
+        out = {'status': 'ok', 'threshold': 0.8, 'baseline_metric': '大圆距离（haversine, R=6371km）',
+               'baseline_order': base_order, 'spearman': None, 'n': len(base_order)}
+        if alt_distance is None:
+            out.update(status='unavailable',
+                       note='对照口径（陆路通行距离）需路网数据，组长说明列为可选；未提供时仅呈报基准大圆距离口径')
+            return out
+        alt_order, alt_map = ranking(alt_distance)
+        common = [p for p in base_order if p in alt_map]
+        rho = spearman_rho([base_map[p] for p in common], [alt_map[p] for p in common])
+        out.update(spearman=rho, alternative_metric='对照陆路通行距离', alternative_order=alt_order,
+                   insensitive=(rho is not None and rho >= 0.8),
+                   note='Spearman≥0.8：排序对距离口径不敏感，可只呈报基准口径；否则须两套并列并分析差异来源')
+        return out
 
     def compute_spatial_autocorrelation(self, province_risk=None):
         from analyzer.spatial_analysis import morans_i, province_shapes

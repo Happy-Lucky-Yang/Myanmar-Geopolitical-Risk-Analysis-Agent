@@ -12,7 +12,7 @@ import logging
 import threading
 from typing import Dict, List
 import numpy as np
-from utils.config import get_risk_weights, load_config
+from utils.config import get_risk_weights, get_risk_weights_v3, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -425,3 +425,49 @@ def get_risk_scorer() -> RiskScorer:
             if _scorer_instance is None:
                 _scorer_instance = RiskScorer()
     return _scorer_instance
+
+
+class GeoRiskScorer(RiskScorer):
+    """risk-v3：组长九指标三层体系（地缘关系0.6/地理环境0.2/地缘结构0.2）。
+
+    输入为 GDELT 事件行（含 actor1/2_country、goldstein、num_mentions）与外部非文本
+    指标；由 analyzer.geo_indicators 派生九项方向统一、量纲 [0,1] 的指标，再按
+    risk_weights_v3 全局权重加权合成。稀疏双边指标缺测时复用父类动态权重归一
+    （缺测剔除、有效权重按比例重分配），绝不以 0 冒充“关系良好”。
+    """
+
+    def compute_event_risk(self, events, external_data=None):
+        """从 GDELT 事件计算九指标综合风险分（0-100）。
+
+        :param events: 已去重的 GDELT 事件列表
+        :param external_data: 非文本指标（nightlight_change / displacement，需声明 quality）
+        """
+        from analyzer.geo_indicators import compute_geo_indicators, to_scorer_input
+        geo = compute_geo_indicators(events, external_data)
+        values, quality = to_scorer_input(geo)
+        result = self.calculate_risk_score(values, quality)
+        result.update(
+            algorithm_version="risk-v3",
+            indicator_model="九指标三层（地缘关系0.6/地理环境0.2/地缘结构0.2）",
+            geo_indicators=geo["indicators"],
+            event_count=geo.get("event_count"),
+            classified_count=geo.get("classified_count"),
+            source=geo.get("source"),
+            metric_description="GDELT 事件派生的九指标加权风险分；双边指标稀疏缺测时按有效权重动态归一",
+        )
+        return result
+
+
+_geo_scorer_instance = None
+_geo_scorer_lock = threading.Lock()
+
+
+def get_geo_risk_scorer() -> GeoRiskScorer:
+    """获取九指标（risk-v3）风险评分器单例（线程安全）。"""
+    global _geo_scorer_instance
+    if _geo_scorer_instance is None:
+        with _geo_scorer_lock:
+            if _geo_scorer_instance is None:
+                from analyzer.geo_indicators import DEFAULT_WEIGHTS_V3
+                _geo_scorer_instance = GeoRiskScorer(get_risk_weights_v3() or DEFAULT_WEIGHTS_V3)
+    return _geo_scorer_instance
