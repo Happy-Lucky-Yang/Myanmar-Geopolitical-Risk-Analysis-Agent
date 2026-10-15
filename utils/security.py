@@ -86,7 +86,9 @@ def init_security(app):
                 if not g.user:
                     return jsonify(success=False, error='请先登录'), 401
                 analyst = {'analyze', 'chain_analysis', 'acknowledge_alert', 'share_analysis'}
-                required = 'analyst' if request.endpoint in analyst else 'reader' if request.endpoint == 'logout' else 'admin'
+                from workspace_api import WRITE_ROLES
+                required = WRITE_ROLES.get(request.endpoint,
+                    'analyst' if request.endpoint in analyst else 'reader' if request.endpoint == 'logout' else 'admin')
                 levels = {'reader': 0, 'analyst': 1, 'admin': 2}
                 if levels.get(g.user['role'], -1) < levels[required]:
                     return jsonify(success=False, error='权限不足'), 403
@@ -98,7 +100,7 @@ def init_security(app):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'same-origin'
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-        if app.config['SHARED_MODE'] and (request.path.startswith('/api/') or request.path == '/login'):
+        if app.config['SHARED_MODE'] and (request.path.startswith('/api/') or request.path in {'/login', '/workspace'}):
             response.headers['Cache-Control'] = 'no-store'
         return response
 

@@ -115,6 +115,15 @@ def _load_source(source_mode: SourceMode, result: PipelineResult) -> List[Dict]:
 
     news: List[Dict] = []
     collectors = []
+    from utils.product_features import enabled
+    if enabled('un_news'):
+        try:
+            from data.un_news_crawler import collect_un_news
+            collected = collect_un_news(get_data_loader())
+            news.extend(collected)
+            collectors.append(f'UN News {len(collected)} 条')
+        except Exception as exc:
+            _add_warning(result, 'source', 'UN News 失败: ' + type(exc).__name__)
     try:
         from data.crawler import NewsCrawler
         crawler = NewsCrawler()
@@ -389,6 +398,13 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
         result["stages"]["persist"] = _stage("skipped", "persist=False")
 
     if persist and source_mode != "demo":
+        from utils.product_features import enabled
+        if enabled('auto_briefing'):
+            try:
+                from analyzer.assistant_tasks import maybe_auto_briefing
+                result['stages']['auto_briefing'] = maybe_auto_briefing()
+            except Exception as exc:
+                result['stages']['auto_briefing'] = _stage('degraded', type(exc).__name__)
         try:
             from analyzer.alert_monitor import get_alert_monitor
             alerts = get_alert_monitor().check_history()

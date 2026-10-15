@@ -11,8 +11,19 @@ python scripts/evaluate_acceptance.py --ner-gold data/static/ner_annotations/ner
 pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁网夹具；`postgis` 标记的用例要求显式提供
 专用 `*_test` 测试库，缺少时按 skip 处理，不能用 SQLite 顶替。浏览器用例复用已安装的 Edge，
 页面与网络请求全部由 Playwright 拦截，不下载浏览器、不出网。`pytest.ini` 将采集范围限定为 `tests/`
-（排除随项目分发的 `py312` 运行时与 `venv312`），使 `python -m pytest -q` 稳定收集 352 个用例
-（本轮实测 343 通过 + 9 跳过），不再误采 `idlelib` / `site-packages` 第三方测试而报 collection error。
+（排除随项目分发的 `py312` 运行时与 `venv312`），本轮 `python -m pytest -q` 收集 **388 个用例**，
+实测 **375 通过、13 跳过、7 条警告（204.02秒）**。13项跳过均为未配置独立PostGIS测试实例，
+其中4项为本轮新增工作区事务测试；不能算集成通过。结果文件为 gitignored 的 `logs/product-fullsuite.xml`。
+不再误采 `idlelib` / `site-packages` 第三方测试而报 collection error。
+
+## 本轮产品功能验收
+- 文献中心与说明：`test_product_features.py` 验证分页无重叠、检索筛选、公开字段白名单、DOI与开放全文区别、危险链接拒绝及默认关闭状态。
+- 新闻源：离线测试验证真实发布日期、缺日期待核验、专题入口去重、20篇上限、跨站重定向拒绝与限流退避。浏览器只读核验 UN News 一篇真实报道的正文选择器、两个日期字段及 robots；未采集生产数据。
+- AI：验证自动触发覆盖门槛、混版／过期／权重不一致拒绝、引用和数值约束、上下文上限、最多一次格式修复、超时及无证据降级。同稿转载按正文标识去重。输出仍需人工核验，结构校验不等于事实正确率。
+- 工作区：HTTP桩测试验证未登录、CSRF、reader角色、伪造身份、管理员越权及导出no-store；不把桩测试当成真实数据库隔离证明。
+- 真实离线浏览器：新页面分页、详情、空态、失败、响应乱序和390px布局；工作区评价／撤回、切换账号清除历史与用户信息。旧地图、趋势、综合态势等既有浏览器回归通过。
+- `0004_workspace` 增量迁移、预算／幂等、后台权限复核与删除清理已编写；真实数据库与worker联跑待下节所列环境确认。功能开关默认关闭，未执行共享上线。
+- 正式风险仍为 **risk-v2**，**risk-v3 为独立实验代理**。本轮不修改指标体系，不重算真实历史；终稿差异详见 `docs/upgrade_v3.md` 对标矩阵。
 
 ## 已完成并有自动化保护
 
@@ -38,7 +49,7 @@ pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁
   类型，不写入用户私密文本或供应商回显。
 - 前端四页保留兼容路由，新增统一时间/区域/来源筛选；综合态势首屏显示真实事件、样本量、来源与
   定位方法；对话页分为“结论摘要—证据—不确定性—技术详情”。
-- risk-v3 九指标与智能计算四模块（本轮升级，均带可复现断言）：`geo_indicators` 派生指标带
+- risk-v3 九指标代理与智能计算四模块（既有算法断言，不代表正式日系列已贯通或终稿全部对齐）：`geo_indicators` 派生指标带
   `observed/derived/missing` 质量标记、缺测不补零（`tests/test_geo_indicators.py`）；地缘位势战略中心权重
   3:2:1 归一、权重和为 1（`tests/test_geo_potential.py`）；空间权重矩阵行标准化、全局 Moran's I 逆序不变、
   LISA 四分类、Getis-Ord Gi* 冷热点（`tests/test_spatial_multimodal.py`）；Shapley 三恒等式（ΣC=1 / ΣwΔZ=ΔR /
@@ -72,6 +83,8 @@ pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁
 
 ## 仍待外部条件验收
 
+- 个人工作区：需部署负责人提供 `POSTGIS_TEST_URL`（库名以 `_test` 结尾）并设置匹配的 `POSTGIS_TEST_CONFIRM`；每次测试独立schema。验收迁移、A/B所有权、并发幂等、每日额度、删除后不能绕过额度、自动冷却及停用账号任务复核。当前4项工作区集成测试明确跳过。
+- 真实模型与公共自动报告：未调用收费模型或启动生产worker；模型配置、队列执行、额度及证据质量须在获准环境联调。
 - 真实 PostGIS 16 + 3.5：空间索引 / `ST_IsValid` / GiST、并发 `claim` 与租约恢复、导入中断续跑、
   每日备份与 14 份保留策略、隔离库恢复、角色与共享读写。测试实例由运维提供，SQLite 不可替代。
 - 中英别名归一与留出集 NER 效果比较：需要至少 5 个人工事件组和未参与词典调参的独立留出。

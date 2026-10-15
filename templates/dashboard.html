@@ -35,6 +35,13 @@
             <section class="card span-6"><h3>风险、变化与数据覆盖</h3><div id="overview-body" aria-live="polite"></div></section>
             <section class="card span-6"><h3>窗口内最近事件与证据</h3><div id="focus-events"></div></section>
         </div>
+        <section class="card" aria-label="有证据的AI研判">
+            <h3>AI 风险解读（辅助研判）</h3>
+            <p>贡献不等于因果；建议须人工复核，旧数据不能代表当前预警。</p>
+            <button id="ai-briefing-request" class="btn btn-primary" disabled>解释所选窗口风险变化</button>
+            <a href="/workspace" class="btn btn-secondary">进入个人工作区追问</a>
+            <div id="ai-briefing-body" role="status">正在检查研判服务…</div>
+        </section>
         <p class="muted-note">报告导出首屏观测快照及其趋势与贡献分析；下方全局健康和独立历史资料不混入报告。</p>
         <details id="research-details">
             <summary>展开研究详情：预警、贡献比较、空间统计、共现网络及多模态</summary>
@@ -93,5 +100,6 @@
 
     <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
     <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=views-v3"></script>
+    <script src="{{ url_for('static', filename='js/briefing.js') }}"></script>
 </body>
 </html>

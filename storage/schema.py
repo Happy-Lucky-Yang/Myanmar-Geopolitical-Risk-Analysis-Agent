@@ -21,3 +21,6 @@ observations.append_constraint(UniqueConstraint('source_id', 'indicator', 'regio
     'frequency', 'product', 'dataset_version', name='indicator_series_period'))
 observations.append_constraint(CheckConstraint("run_kind IN ('live','existing','manual','demo','legacy')", name='observation_run_kind'))
 observations.append_constraint(CheckConstraint('period_end IS NULL OR period_end > period_start', name='observation_period'))
+
+from storage.workspace_schema import attach as attach_workspace
+attach_workspace(metadata)

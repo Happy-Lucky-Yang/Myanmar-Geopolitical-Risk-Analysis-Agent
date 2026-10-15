@@ -1,0 +1,19 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>个人工作区 · 缅甸地缘风险系统</title><link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}"></head>
+<body>{% include '_product_nav.html' %}<main class="container console-page">
+<h1>个人工作区</h1><p>仅本人可见的多轮对话。最多使用当前会话最近6轮上下文；不会自动训练模型，不读取其他用户的历史。</p>
+<p id="workspace-status" class="product-status" role="status">检查账户和服务状态…</p>
+<div class="controls"><span id="workspace-user"></span><a href="/login">登录</a><button class="btn" id="workspace-logout">退出登录</button></div>
+<div class="workspace-layout"><aside class="card"><button class="btn btn-primary" id="workspace-new" disabled>新建对话</button><div id="workspace-history" class="workspace-history"></div><button id="workspace-more" class="btn" disabled>更多历史</button></aside>
+<section><div class="controls"><h2 id="workspace-title">选择或新建对话</h2><button id="workspace-rename" class="btn" disabled>重命名</button><button id="workspace-delete" class="btn" disabled>删除会话</button><a id="workspace-export" hidden>导出本人会话</a></div>
+<div id="workspace-messages" aria-live="polite"></div>
+<form id="workspace-form"><label for="workspace-input">问题</label><textarea id="workspace-input" maxlength="2000" placeholder="例如：请结合证据解释这段时间的风险变化" disabled></textarea>
+{% include '_view_filters.html' %}<button id="workspace-send" class="btn btn-primary" disabled>发送并检索证据</button></form>
+</section></div>
+<details class="card"><summary>个人偏好（可修改或清除）</summary><form id="preferences-form" class="controls">
+<label>关注地区<input id="preference-region" value="MMR" maxlength="64"></label>
+<label>使用场景<select id="preference-scenario"><option value="research">研究观察</option><option value="travel">出行安全</option><option value="trade">贸易研究</option></select></label>
+<label>解释长度<select id="preference-verbosity"><option value="brief">简明</option><option value="detailed">详细</option></select></label>
+<label><input id="preference-suggestions" type="checkbox">允许根据成功使用次数推荐其他功能（不保存浏览正文）</label>
+<button class="btn" id="preferences-save" disabled>保存偏好</button><button type="button" id="preferences-clear" class="btn" disabled>清除偏好</button></form></details>
+</main><script src="{{ url_for('static',filename='js/common.js') }}"></script><script src="{{ url_for('static',filename='js/workspace.js') }}"></script></body></html>

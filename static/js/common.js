@@ -71,6 +71,7 @@ async function fetchJSON(url, options, timeout) {
             }
             throw new Error('任务仍在执行，请稍后查询 /api/jobs/' + jobId);
         }
+        if (data.success) noteFeatureSuccess(url);
         return data;
     } catch (e) {
         clearTimeout(timer);
@@ -79,6 +80,37 @@ async function fetchJSON(url, options, timeout) {
         }
         throw e;
     }
+}
+
+/* ---------- 自愿功能推荐：仅记成功功能计数，不记页面轨迹 ---------- */
+let featureRecorded = false;
+async function noteFeatureSuccess(url) {
+    const feature = location.pathname.slice(1);
+    const endpoints = {dashboard:'/api/report', trend:'/api/trend', map:'/api/regions',
+        graph:'/api/network', literature:'/api/literature', workspace:'/api/workspace/requests/'};
+    if (featureRecorded || !endpoints[feature] || !url.startsWith(endpoints[feature])) return;
+    featureRecorded = true;
+    try {
+        const auth = (await fetchJSON('/api/session')).data;
+        if (!auth.shared_mode || !auth.user) return;
+        const flags = (await fetchJSON('/api/product/status')).data;
+        if (!flags.workspace) return;
+        const prefs = (await fetchJSON('/api/workspace/preferences')).data;
+        if (!prefs.suggestions) return;
+        const headers = {'Content-Type':'application/json', 'X-Workspace-User':auth.user.id};
+        await fetchJSON('/api/workspace/usage', {method:'POST', headers, body:JSON.stringify({feature})});
+        const suggestion = (await fetchJSON('/api/workspace/suggestion', {method:'POST',headers,body:'{}'})).data;
+        if (!suggestion) return;
+        const card = createEl('aside', 'card'); card.setAttribute('aria-label','可关闭的功能建议');
+        card.append(createEl('p', '', suggestion.message));
+        const link = createEl('a', '', '查看推荐功能');
+        if (!['graph','literature','dashboard'].includes(suggestion.feature)) return;
+        link.href = '/' + suggestion.feature; card.append(link);
+        const close = createEl('button', 'btn', '关闭推荐');
+        close.onclick = async () => {card.remove();try{await fetchJSON('/api/workspace/preferences',
+            {method:'PUT',headers,body:JSON.stringify({...prefs,suggestions:false})});}catch(_){showToast('关闭偏好未保存，请在个人工作区关闭');}};
+        card.append(close); document.querySelector('main')?.append(card);
+    } catch (_) { /* 可选推荐失败不影响业务功能。 */ }
 }
 
 /* ---------- 风险等级映射 ---------- */
@@ -274,6 +306,36 @@ function setViewReport(snapshot) {
         a.href = '/api/report?' + viewQuery({format:a.dataset.reportFormat, revision:snapshot.revision}, snapshot.filters);
     });
 }
+
+/* ---------- 产品入口与筛选解释 ---------- */
+document.addEventListener('DOMContentLoaded', async function () {
+    const nav = document.querySelector('.nav-links');
+    if (nav) {
+        nav.style.flexWrap = 'wrap';
+        [['/literature','文献中心'], ['/workspace','个人工作区'], ['/guide','使用说明']].forEach(([path,label]) => {
+            if (!nav.querySelector('a[href="' + path + '"]')) {
+                const li = createEl('li'); const a = createEl('a', '', label); a.href = path; li.append(a); nav.append(li);
+            }
+        });
+    }
+    const container = document.querySelector('.view-filters') || document.querySelector('.map-sidebar');
+    if (!container) return;
+    const help = createEl('details', 'filter-help');
+    help.append(createEl('summary', '', '这些筛选条件是什么意思？'));
+    help.append(createEl('p', '', 'MMR=缅甸全国；省邦代码限定事件发生地。来源留空=全部；单来源不提供全国综合分。正式观测=真实资料计算的系列，不代表已人工验证；旧版历史仅作对照，演示不是真实数据。缺测不能解释为零风险。'));
+    const link = createEl('a', '', '查看各模块的含义与边界'); link.href = '/guide'; help.append(link); container.append(help);
+    try {
+        const response = await fetchJSON('/api/view-options');
+        if (!response.success) return;
+        for (const [id, rows] of [['region-filter', response.data.regions], ['source-filter', response.data.sources.map(s => ({code:s,name:s}))]]) {
+            const input = document.getElementById(id);
+            if (!input || input.tagName !== 'INPUT') continue;
+            const list = createEl('datalist'); list.id = id + '-options';
+            rows.forEach(row => {const option = createEl('option'); option.value = row.code; option.label = row.name; list.append(option);});
+            input.setAttribute('list', list.id); input.insertAdjacentElement('afterend', list);
+        }
+    } catch (_) { /* 辅助列表失败不阻止原页面查询。 */ }
+});
 
 /* ---------- 页脚注入 ---------- */
 

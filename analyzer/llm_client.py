@@ -382,6 +382,21 @@ class LLMClient:
             except OSError as exc:
                 logger.warning("[LLM] 缓存写入失败: %s", exc)
 
+    def generate_evidence_json(self, system_prompt: str, content: str) -> Dict:
+        """个人研判专用：单次请求、禁用共享缓存、限定输出，预算由任务层预留。"""
+        client, model, error = self._get_client_for_model()
+        if client is None or error:
+            raise RuntimeError('大模型未配置或不可用')
+        response = client.chat.completions.create(
+            model=model, messages=[{'role': 'system', 'content': system_prompt},
+                                   {'role': 'user', 'content': content}],
+            temperature=0.2, max_tokens=min(self._max_tokens, 1800),
+            timeout=min(self._timeout_seconds, 45))
+        result = self._parse_json_response(response.choices[0].message.content or '')
+        if result.get('_parse_error'):
+            raise ValueError('大模型回答不是有效JSON')
+        return result
+
     def batch_analyze(self, texts: list, delay: float = 1.0) -> list:
         results = []
         for index, text in enumerate(texts):

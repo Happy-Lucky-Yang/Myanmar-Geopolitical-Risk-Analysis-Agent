@@ -1,0 +1,15 @@
+/* 独立产品样式，不更改既有图表容器尺寸。 */
+.product-list {display:grid; gap:16px; margin:20px 0;}
+.product-list .card {margin:0; min-width:0; overflow-wrap:anywhere;}
+.console-page p, .console-page dd {line-height:1.8;}
+.console-page dt {font-weight:700; margin-top:12px;}
+.console-page details summary {cursor:pointer; line-height:1.8;}
+.workspace-layout {display:grid; grid-template-columns:260px minmax(0,1fr); gap:20px;}
+.workspace-history {display:flex; flex-direction:column; gap:8px; max-height:70vh; overflow:auto;}
+.workspace-message {white-space:pre-wrap; overflow-wrap:anywhere; border-left:3px solid #58a6ff; padding:14px; margin:12px 0; background:#161b22;}
+.workspace-message.assistant {border-color:#3fb950;}
+.workspace-message p {margin:6px 0;}
+#workspace-input {width:100%; min-height:100px; padding:12px;}
+.product-status {padding:12px; border:1px solid #8b949e; border-radius:8px;}
+.navbar .nav-links {flex-wrap:wrap;}
+@media(max-width:800px) {.workspace-layout {grid-template-columns:1fr;} .workspace-history {max-height:180px;} .controls {flex-wrap:wrap;} }

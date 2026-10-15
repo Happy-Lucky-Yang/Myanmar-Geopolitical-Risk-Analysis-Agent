@@ -42,6 +42,9 @@ def execute_job(job):
     reused = _reuse_committed_snapshot(job)
     if reused is not None:
         return reused
+    if kind == 'assistant':
+        from analyzer.assistant_tasks import execute_assistant
+        return execute_assistant(job)
     if kind in {'manual', 'chain'}:
         from app import app, analyze, chain_analysis
         from flask import g

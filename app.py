@@ -68,6 +68,10 @@ CORS(
 logger = logging.getLogger(__name__)
 from utils.security import init_security
 init_security(app)
+from product_api import bp as product_blueprint
+app.register_blueprint(product_blueprint)
+from workspace_api import bp as workspace_blueprint
+app.register_blueprint(workspace_blueprint)
 
 
 def enqueue_request(kind, payload):
