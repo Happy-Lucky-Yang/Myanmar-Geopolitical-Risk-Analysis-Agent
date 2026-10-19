@@ -61,6 +61,27 @@ def test_literature_out_of_order_and_error(page,catalog,monkeypatch):
     assert page.locator('#catalog-next').is_disabled()
 
 
+def test_grouped_navigation_visual_hierarchy_and_mobile_overflow(page):
+    errors=[]
+    page.on('pageerror',lambda error:errors.append(str(error)))
+    page.goto('http://offline.test/dashboard?days=30&end_date=2026-03-31')
+    page.wait_for_function('dashboardSnapshot !== null')
+    assert page.locator('.nav-links > li').count()==4
+    assert page.locator('.nav-links').inner_text().splitlines()==['态势总览','时空分析','对话分析','研究资料']
+    assert page.locator('.sub-nav').count()==0
+    assert not page.locator('#research-details').get_attribute('open')
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor !== 'rgb(15, 17, 23)'")
+    page.goto('http://offline.test/graph?days=30&end_date=2026-03-31')
+    page.wait_for_function("document.querySelector('#end_date-filter').value === '2026-03-31'")
+    assert page.locator('.sub-nav a').count()==3
+    assert page.locator('.sub-nav a.active').inner_text()=='关系图谱'
+    page.set_viewport_size({'width':390,'height':844})
+    for path in ('/dashboard?days=30&end_date=2026-03-31','/graph?days=30&end_date=2026-03-31','/literature'):
+        page.goto('http://offline.test'+path)
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+2')
+    assert not errors
+
+
 def test_workspace_fixture_context_feedback_logout(page):
     state={'user':{'id':'alice','username':'Alice','role':'analyst'},'feedback':None,'deleted':False}
     def fulfill(route,data):route.fulfill(status=200,content_type='application/json',body=json.dumps({'success':True,'data':data}))
@@ -94,3 +115,25 @@ def test_workspace_fixture_context_feedback_logout(page):
     page.wait_for_function("document.querySelector('#workspace-messages').textContent==='' ")
     assert page.locator('#workspace-history').inner_text()==''
     assert page.locator('#workspace-user').inner_text()==''
+    assert page.locator('#workspace-export').is_hidden()
+    assert page.locator('#workspace-export').get_attribute('href') is None
+
+
+def test_multisource_fold_read_only_and_responsive(page,monkeypatch,tmp_path):
+    from storage.risk_store import RiskStore
+    from tests.test_risk_multisource import synthetic_panel, score_panel
+    monkeypatch.setenv('ENABLE_RISK_PANELS','true')
+    RiskStore().save('risk_panels',[score_panel(synthetic_panel())])
+    errors=[]
+    page.on('pageerror',lambda error:errors.append(str(error)))
+    page.goto('http://offline.test/dashboard?end_date=2026-01-31')
+    assert not page.locator('#risk-panel-section').get_attribute('open')
+    page.click('#risk-panel-section > summary')
+    page.wait_for_function("document.querySelector('#risk-panel-body').textContent.includes('正式分未合成')")
+    assert page.locator('#risk-panel-body tbody tr').count()==12
+    for width in (1440,1024,390):
+        page.set_viewport_size({'width':width,'height':900})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+2')
+    page.select_option('#panel-frequency','annual')
+    page.wait_for_function("document.querySelectorAll('#risk-panel-body tbody tr').length===5")
+    assert not errors

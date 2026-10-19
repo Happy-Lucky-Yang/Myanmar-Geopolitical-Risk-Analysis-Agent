@@ -1,14 +1,29 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>系统如何工作</title><link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}"></head>
-<body>{% include '_product_nav.html' %}<main class="container console-page">
-<h1>系统如何工作</h1><p>数据采集 → 清洗与实体识别 → 风险及空间计算 → 证据解读 → 可视化与报告</p>
-<section class="card"><h2>先读懂筛选条件</h2><dl>
+<title>使用说明 · 缅甸地缘风险智能分析系统</title><link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}?v=mist-1"><link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}?v=mist-1"></head>
+<body>{% include '_nav.html' %}<main class="container console-page">
+<header class="page-hero">
+    <div class="hero-text">
+        <p class="eyebrow">How It Works</p>
+        <h1>系统如何工作</h1>
+        <p class="lede">数据采集 → 清洗与实体识别 → 风险及空间计算 → 证据解读 → 可视化与报告。每个页面回答什么、不能证明什么，都写在这里。</p>
+    </div>
+</header>
+<ol class="flow-steps" aria-label="处理流程">
+    <li><b>采集</b><span>新闻、GDELT 事件与外部观测</span></li>
+    <li><b>结构化</b><span>去重、实体识别、发生地定位</span></li>
+    <li><b>计算</b><span>风险评分、位势、空间统计、网络</span></li>
+    <li><b>解读</b><span>贡献拆解与有证据的 AI 研判</span></li>
+    <li><b>呈现</b><span>地图、趋势、图谱与报告</span></li>
+</ol>
+<div class="guide-grid">
+<section class="card"><h3>先读懂筛选条件</h3><dl>
 <dt>区域代码 MMR</dt><dd>MMR 是缅甸的三字母国家代码，表示全国。省邦代码取自 GADM 边界；选某省表示事件发生地子集，不是把全国风险分套给该省。</dd>
 <dt>来源</dt><dd>留空为全部来源，选项来自实际保存的新闻。单一来源不提供全国综合评分，不能把部分证据当作全量。</dd>
 <dt>截止业务日与时间窗口</dt><dd>按 Asia/Yangon 时区，包括截止日的连续日历。未观测日为空，不会自动复制上一日数值。</dd>
 <dt>数据域</dt><dd>observed：正式采集资料衍生的观测系列；legacy：旧口径历史，只供对照；demo：演示数据，不是事实。observed 不表示算法结论已经人工验证。</dd>
 <dt>运行方式</dt><dd>live 表示本次采集，existing 表示分析本地已有资料，manual 表示用户手工输入。运行方式不等同于数据域；手工文本不更新全国日风险。</dd>
 </dl></section>
+<section class="card"><h3>各模块的含义与边界</h3>
 {% for name, meaning, method, boundary, module in [
 ('综合态势', '查看窗口内风险、证据和覆盖率', '汇总同一版本和筛选范围的指标与新闻', '当前正式日风险仍为 risk-v2；GDELT 九指标为另一条实验代理路径，不混算', 'diagnostic'),
 ('风险地图与地缘位势', '查看事件在哪，以及离战略中心多近', '事件定位、省级烈度、等面积 KDE；位势使用距离衰减', '省级事件烈度不是全国综合风险，也不等于终稿省级九指标', 'geo_potential'),
@@ -16,7 +31,9 @@
 ('关系图谱', '查看实体共现和国家行为体联系', '文章共现网络与 GDELT 国家关系分别计算', '共现不等于合作或冲突；种子图为演示；无边不证明现实没有关系', 'network'),
 ('诊断归因', '查看哪些指标贡献较大', '指标贡献与等长前后期变化分解', '贡献不是因果；版本或权重不可比时不强行解释', 'diagnostic'),
 ('趋势预测', '查看历史变化和可支持的外推', '连续日历、样本门槛和滚动回测', '至少14有效日且80%覆盖才外推；缺数据不造预测', 'diagnostic') ] %}
-<details class="card"><summary>{{ name }}：{{ meaning }}</summary><p>怎么算：{{ method }}</p><p>不能据此推断：{{ boundary }}</p><a href="/literature?module={{ module }}">查看相关研究文献</a></details>
+<details class="guide-item"><summary><b>{{ name }}</b><span>{{ meaning }}</span></summary><p>怎么算：{{ method }}</p><p>不能据此推断：{{ boundary }}</p><a href="/literature?module={{ module }}">查看相关研究文献 →</a></details>
 {% endfor %}
-<section class="card"><h2>技术架构与当前困难</h2><p>前端使用 Jinja2、原生 JavaScript、ECharts 和 Folium/Leaflet；后端使用 Flask 与 Python 分析模块。多人账户和任务复用 PostgreSQL、独立 worker 与 Alembic；Neo4j 是可选能力。</p><p>亮点是版本和证据可追踪、缺测不伪造、图谱与风险不重复计量、引用有出处、个人对话隔离。真实 ACLED/OFAC/VIIRS/IDMC 接入、九指标正式链路、NER独立留出验收与云端多人联调仍有待完成。</p><p>满意度用于改进产品体验，不等于模型训练或事实准确率。文献中心提供题录/摘要与合法外部入口，不公开团队私密 PDF。</p></section>
-</main><script src="{{ url_for('static',filename='js/common.js') }}"></script></body></html>
+</section>
+</div>
+<section class="card guide-wide"><h3>技术架构与当前困难</h3><p>前端使用 Jinja2、原生 JavaScript、ECharts 和 Folium/Leaflet；后端使用 Flask 与 Python 分析模块。多人账户和任务复用 PostgreSQL、独立 worker 与 Alembic；Neo4j 是可选能力。</p><p>亮点是版本和证据可追踪、缺测不伪造、图谱与风险不重复计量、引用有出处、个人对话隔离。真实 ACLED/OFAC/VIIRS/IDMC 接入、九指标正式链路、NER独立留出验收与云端多人联调仍有待完成。</p><p>满意度用于改进产品体验，不等于模型训练或事实准确率。文献中心提供题录/摘要与合法外部入口，不公开团队私密 PDF。</p></section>
+</main><script src="{{ url_for('static',filename='js/common.js') }}?v=mist-1"></script></body></html>

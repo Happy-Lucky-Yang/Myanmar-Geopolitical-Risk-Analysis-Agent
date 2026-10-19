@@ -3,61 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>缅甸地缘风险分析 - 趋势预测</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
+    <title>趋势预测 · 缅甸地缘风险智能分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-1">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
-        <ul class="nav-links">
-            <li><a href="/">对话分析</a></li>
-            <li><a href="/dashboard">综合态势</a></li>
-            <li><a href="/map">风险地图</a></li>
-            <li><a href="/trend" class="active">趋势预测</a></li>
-            <li><a href="/graph">关系图谱</a></li>
-            <li id="alert-indicator" style="margin-left:auto;padding-right:16px;"></li>
-        </ul>
-    </nav>
+    {% include '_nav.html' %}
 
     <main class="container console-page">
-        <h2>风险趋势分析</h2>
-        <p class="subtitle">Risk Trend · Forecast · Anomaly Detection</p>
+        <header class="page-hero">
+            <div class="hero-text">
+                <p class="eyebrow">Risk Trend</p>
+                <h1>风险趋势与短期外推</h1>
+                <p class="lede">连续日历窗口内的风险变化、异常点与探索性预测。缺测日留空，不用旧值或零值补齐。</p>
+            </div>
+            <div class="hero-actions">
+                <span class="export-group">导出报告
+                    <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">HTML</a>
+                    <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener">DOCX</a>
+                </span>
+            </div>
+        </header>
 
-        {% include '_view_filters.html' %}
-        <div class="controls">
-            <label>数据域 <select id="domain-filter"><option value="observed">正式观测</option><option value="legacy">旧版历史（不预测）</option></select></label>
-            <button class="btn btn-primary" onclick="loadTrend()">刷新</button>
+        <div class="filter-bar">
+            {% include '_view_filters.html' %}
+            <div class="controls filter-extra">
+                <label>数据域 <select id="domain-filter"><option value="observed">正式观测</option><option value="legacy">旧版历史（不预测）</option></select></label>
+                <button class="btn btn-primary" onclick="loadTrend()">刷新</button>
+            </div>
         </div>
 
         <div class="console-grid">
-            <!-- 摘要卡片 -->
             <div class="span-12"><div class="summary-cards" id="summary-cards"></div></div>
 
-            <!-- ECharts 图表 -->
-            <div class="span-12"><div id="trend-chart"></div></div>
+            <section class="card chart-card span-12">
+                <div id="trend-chart"></div>
+            </section>
 
-            <!-- 预测信息 -->
-            <div class="card span-6">
-                <div class="card-title"><span class="icon">📈</span> 短期预测 (7天)</div>
+            <section class="card span-7">
+                <h3>短期预测（7 天）</h3>
                 <div id="forecast-area"></div>
-            </div>
+            </section>
 
-            <!-- 异常事件 -->
-            <div class="card span-6">
-                <div class="card-title"><span class="icon">⚡</span> 异常事件检测</div>
+            <section class="card span-5">
+                <h3>异常点检测</h3>
                 <div id="anomaly-area"></div>
-            </div>
-
-            <!-- 报告导出 -->
-            <div class="span-12" style="text-align:center;margin-top:0.5rem;">
-                <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none;margin-right:8px;">导出 HTML 报告</a>
-                <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none;">导出 DOCX 报告</a>
-            </div>
+            </section>
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
-    <script src="{{ url_for('static', filename='js/trend.js') }}?v=views-v3"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-1"></script>
+    <script src="{{ url_for('static', filename='js/trend.js') }}?v=mist-1"></script>
 </body>
 </html>

@@ -3,103 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>缅甸地缘风险分析 - 综合态势</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
+    <title>态势总览 · 缅甸地缘风险智能分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-1">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
-        <ul class="nav-links">
-            <li><a href="/">对话分析</a></li>
-            <li><a href="/dashboard" class="active">综合态势</a></li>
-            <li><a href="/map">风险地图</a></li>
-            <li><a href="/trend">趋势预测</a></li>
-            <li><a href="/graph">关系图谱</a></li>
-            <li id="alert-indicator" class="alert-indicator"></li>
-        </ul>
-    </nav>
+    {% include '_nav.html' %}
 
     <main class="container console-page">
-        <h2>综合地缘态势仪表盘</h2>
-        <p class="subtitle">当前风险 · 重点事件 · 实际贡献 · 数据覆盖（风险分不是发生概率）</p>
-        {% include '_view_filters.html' %}
+        <header class="page-hero">
+            <div class="hero-text">
+                <p class="eyebrow">Situation Overview</p>
+                <h1>缅甸地缘态势总览</h1>
+                <p class="lede">当前风险、近期事件与指标贡献，一屏读懂。风险分不是发生概率，缺测也不等于低风险。</p>
+            </div>
+            <div class="hero-actions">
+                <button class="btn btn-primary" onclick="loadAll()">刷新全部</button>
+                <span class="export-group" title="导出首屏观测快照及其趋势与贡献分析">导出报告
+                    <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">HTML</a>
+                    <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener">DOCX</a>
+                </span>
+            </div>
+        </header>
 
-        <div class="controls">
-            <button class="btn btn-primary" onclick="loadAll()">刷新全部</button>
-            <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-secondary">导出 HTML 报告</a>
-            <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener" class="btn btn-secondary">导出 DOCX 报告</a>
-        </div>
+        <div class="filter-bar">{% include '_view_filters.html' %}</div>
 
         <div class="console-grid">
-            <section class="card span-6"><h3>风险、变化与数据覆盖</h3><div id="overview-body" aria-live="polite"></div></section>
-            <section class="card span-6"><h3>窗口内最近事件与证据</h3><div id="focus-events"></div></section>
+            <section class="card card-feature span-7">
+                <h3>风险、变化与数据覆盖</h3>
+                <div id="overview-body" aria-live="polite"></div>
+            </section>
+            <section class="card span-5">
+                <h3>窗口内最近事件与证据</h3>
+                <div id="focus-events"></div>
+            </section>
+            <section class="card card-ai span-12" aria-label="有证据的AI研判">
+                <div class="ai-head">
+                    <div>
+                        <h3 class="card-title" style="margin-bottom:0.35rem">AI 风险解读 <span class="tag-hint">辅助研判</span></h3>
+                        <p>基于所选窗口的正式观测与新闻证据作答；贡献不等于因果，建议须人工复核，旧数据不代表当前预警。</p>
+                    </div>
+                    <div class="ai-actions">
+                        <button id="ai-briefing-request" class="btn btn-primary" disabled>解释所选窗口风险变化</button>
+                        <a href="/workspace" class="btn btn-secondary">进入个人工作区追问</a>
+                    </div>
+                </div>
+                <div id="ai-briefing-body" role="status">正在检查研判服务…</div>
+            </section>
         </div>
-        <section class="card" aria-label="有证据的AI研判">
-            <h3>AI 风险解读（辅助研判）</h3>
-            <p>贡献不等于因果；建议须人工复核，旧数据不能代表当前预警。</p>
-            <button id="ai-briefing-request" class="btn btn-primary" disabled>解释所选窗口风险变化</button>
-            <a href="/workspace" class="btn btn-secondary">进入个人工作区追问</a>
-            <div id="ai-briefing-body" role="status">正在检查研判服务…</div>
-        </section>
-        <p class="muted-note">报告导出首屏观测快照及其趋势与贡献分析；下方全局健康和独立历史资料不混入报告。</p>
-        <details id="research-details">
-            <summary>展开研究详情：预警、贡献比较、空间统计、共现网络及多模态</summary>
-        <div class="console-grid">
-            <!-- 预警面板 -->
-            <div class="card span-4">
-                <div class="card-title"><span class="icon">🚨</span> 动态预警面板</div>
-                <div id="alert-panel"></div>
-            </div>
 
-            <!-- 数据源健康 -->
-            <div class="card span-8">
-                <div class="card-title"><span class="icon">📡</span> 数据源健康 <span class="tag-hint">全局运行状态，不随事件时间窗口裁剪</span></div>
-                <div id="source-health-body"></div>
-            </div>
+        <details id="risk-panel-section" class="research-drawer">
+            <summary><span>多源九指标研究面板</span><span class="drawer-hint">月度、年度分别计算；ACLED／OFAC／IDMC／VIIRS按指标分工</span></summary>
+            <section class="card research-band">
+                <p>旧日风险仍为 risk-v2。新版正式数据、审定系数或冻结基准不完整时不合成；代理分不作正式预警。</p>
+                <div class="controls">
+                    <label>周期<select id="panel-frequency"><option value="monthly">月度（完整月）</option><option value="annual">年度（完整年）</option></select></label>
+                    <label>模式<select id="panel-mode"><option value="formal">正式来源（缺项不合成）</option><option value="proxy">显式代理（部分指标）</option></select></label>
+                    <label>基准<select id="panel-calibration"><option value="">自动（有冲突时须选择）</option></select></label>
+                    <button id="panel-refresh" class="btn btn-secondary" type="button">读取面板</button>
+                </div>
+                <div id="risk-panel-body" role="status">展开后读取；不自动抓取或重算。</div>
+            </section>
+        </details>
 
-            <!-- 地缘位势评估 -->
-            <div class="card span-3">
-                <div class="card-title"><span class="icon">🧭</span> 地缘位势评估 <span class="tag-hint">距离加权 1/d²</span></div>
-                <div id="geo-body"></div>
-            </div>
+        <details id="research-details" class="research-drawer">
+            <summary>
+                <span>研究详情</span>
+                <span class="drawer-hint">预警 · 贡献比较 · 空间格局 · 关系网络 · 多源印证 · 历史与数据源；不随报告导出</span>
+            </summary>
 
-            <!-- 空间自相关 -->
-            <div class="card span-3">
-                <div class="card-title"><span class="icon">🗺️</span> 空间自相关 <span class="tag-hint">Moran's I</span></div>
-                <div id="autocorr-body"></div>
-            </div>
+            <section class="research-band">
+                <div class="band-head"><span class="band-no">01</span><h3>风险信号</h3><p>预警状态与等长前后期的贡献比较，不作因果解释</p></div>
+                <div class="console-grid">
+                    <div class="card span-5">
+                        <div class="card-title">动态预警</div>
+                        <div id="alert-panel"></div>
+                    </div>
+                    <div class="card span-7">
+                        <div class="card-title">贡献分析 <span class="tag-hint">前后期对照</span></div>
+                        <div id="diagnostic-body"></div>
+                    </div>
+                </div>
+            </section>
 
-            <!-- 关系网络 -->
-            <div class="card span-3">
-                <div class="card-title"><span class="icon">🕸️</span> 关系网络分析 <span class="tag-hint">NetworkX</span></div>
-                <div id="network-body"></div>
-            </div>
+            <section class="research-band">
+                <div class="band-head"><span class="band-no">02</span><h3>空间格局</h3><p>战略中心位势、空间聚集与实体共现结构</p></div>
+                <div class="console-grid">
+                    <div class="card span-4">
+                        <div class="card-title">地缘位势 <span class="tag-hint">距离加权 1/d²</span></div>
+                        <div id="geo-body"></div>
+                    </div>
+                    <div class="card span-4">
+                        <div class="card-title">空间自相关 <span class="tag-hint">Moran's I</span></div>
+                        <div id="autocorr-body"></div>
+                    </div>
+                    <div class="card span-4">
+                        <div class="card-title">关系网络 <span class="tag-hint">实体共现</span></div>
+                        <div id="network-body"></div>
+                    </div>
+                </div>
+            </section>
 
-            <!-- 诊断归因 -->
-            <div class="card span-3">
-                <div class="card-title"><span class="icon">🔬</span> 贡献分析 <span class="tag-hint">等长前后期，不作因果解释</span></div>
-                <div id="diagnostic-body"></div>
-            </div>
+            <section class="research-band">
+                <div class="band-head"><span class="band-no">03</span><h3>多源印证</h3><p>窗口内完整月份；不同量纲分面展示，缺失不补零</p></div>
+                <div class="card">
+                    <div id="multimodal-chart"></div>
+                    <div id="correlation-body"></div>
+                </div>
+            </section>
 
-            <!-- 多源融合视图 -->
-            <div class="card span-12">
-                <div class="card-title"><span class="icon">📊</span> 多源数据融合视图 <span class="tag-hint">所选窗口内完整月份 · 不同量纲分面展示</span></div>
-                <div id="multimodal-chart" style="width:100%;height:440px"></div>
-                <div id="correlation-body"></div>
-            </div>
-
-            <!-- 历史事件时间线 -->
-            <div class="card span-12">
-                <div class="card-title"><span class="icon">📅</span> 历史事件时间线 <span class="tag-hint">独立历史参考库，不代表当前窗口观测</span></div>
-                <div id="history-body"></div>
-            </div>
-        </div>
+            <section class="research-band">
+                <div class="band-head"><span class="band-no">04</span><h3>背景与数据</h3><p>独立历史参考库与全局采集运行状态，不随时间窗口裁剪</p></div>
+                <div class="console-grid">
+                    <div class="card span-7">
+                        <div class="card-title">历史事件时间线</div>
+                        <div id="history-body"></div>
+                    </div>
+                    <div class="card span-5">
+                        <div class="card-title">数据源健康</div>
+                        <div id="source-health-body"></div>
+                    </div>
+                </div>
+            </section>
         </details>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=views-v3"></script>
-    <script src="{{ url_for('static', filename='js/briefing.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-1"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=mist-1"></script>
+    <script src="{{ url_for('static', filename='js/briefing.js') }}?v=mist-1"></script>
+    <script src="{{ url_for('static', filename='js/risk_panels.js') }}?v=risk-4"></script>
 </body>
 </html>

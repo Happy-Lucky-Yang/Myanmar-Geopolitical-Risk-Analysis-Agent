@@ -162,6 +162,7 @@ def _parse_csv_rows(csv_text: str, country: str) -> List[Dict]:
             "actor1_country": (row[COL_ACTOR1_COUNTRY] or "").strip() or None,
             "actor2_country": (row[COL_ACTOR2_COUNTRY] or "").strip() or None,
             "location": row[COL_ACTIONGEO_FULLNAME],
+            "action_country": row[COL_ACTIONGEO_COUNTRY],
             "lat": lat,
             "lon": lon,
             "source_url": row[COL_SOURCEURL],

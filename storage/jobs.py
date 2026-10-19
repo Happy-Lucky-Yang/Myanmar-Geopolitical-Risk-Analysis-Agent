@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from utils.data_contract import fingerprint, json_safe
 
-KINDS = {'pipeline', 'manual', 'chain', 'gdelt', 'nightlight', 'economic'}
+KINDS = {'pipeline', 'manual', 'chain', 'gdelt', 'nightlight', 'economic', 'assistant', 'risk_panels'}
 
 
 class LeaseLost(RuntimeError):

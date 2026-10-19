@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """事件密度（KDE）分析器单元测试（合成数据，无网络依赖）"""
-from datetime import datetime, timedelta
+from datetime import timedelta
+from utils.data_contract import business_date
 from itertools import count
 
 _EVENT_IDS = count()
@@ -13,7 +14,7 @@ from analyzer.event_density import EventDensityAnalyzer, LAT_RANGE, LON_RANGE
 def _mk_event(lat, lon, root="19", quad="4", date=None, num_sources=2):
     """构造合成 GDELT 事件（默认高烈度冲突、双信源互证）"""
     if date is None:
-        date = datetime.now().strftime("%Y%m%d")
+        date = business_date().strftime("%Y%m%d")
     return {
         "event_id": str(next(_EVENT_IDS)),
         "date": date,
@@ -93,7 +94,7 @@ def test_too_few_events_degrades(analyzer):
 
 def test_date_window_filter(analyzer):
     """days 过滤：30 天前的旧事件不计入 7 天窗口"""
-    old_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+    old_date = (business_date() - timedelta(days=30)).strftime("%Y%m%d")
     events = [_mk_event(16.85, 96.18, date=old_date) for _ in range(20)]
     events.extend(_cluster_events()[:6])
 
@@ -122,7 +123,8 @@ def test_verified_events_counted(analyzer):
     """互证事件（num_sources>=2）被计数"""
     events = _cluster_events()  # 默认 num_sources=2
     result = analyzer.compute(events, days=7)
-    assert result["verified_count"] == result["located_count"]
+    assert result["reported_multi_source_count"] == result["located_count"]
+    assert result["verified_count"] == 0  # NumSources并未证明原始出处相互独立
 
 
 def test_single_source_reprints_are_not_independent_evidence(analyzer):
@@ -153,7 +155,8 @@ def test_min_sources_filter():
     result = strict.compute(events, days=7)
     assert result["event_count"] == 8
     assert result["located_count"] == 4  # 仅双/多信源参与
-    assert result["verified_count"] == 4
+    assert result["reported_multi_source_count"] == 4
+    assert result["verified_count"] == 0
 
 
 def test_render_density_png(analyzer):

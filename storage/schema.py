@@ -24,3 +24,6 @@ observations.append_constraint(CheckConstraint('period_end IS NULL OR period_end
 
 from storage.workspace_schema import attach as attach_workspace
 attach_workspace(metadata)
+
+from storage.risk_schema import attach as attach_risk
+attach_risk(metadata)

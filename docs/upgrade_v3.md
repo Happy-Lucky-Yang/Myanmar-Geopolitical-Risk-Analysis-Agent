@@ -1,4 +1,60 @@
-# 系统升级方案说明 · risk-v3 九指标 + 智能计算四模块 + 文献知识库
+# 系统升级说明 · 九指标、多源面板与文献知识库
+
+## 本轮多源升级：risk-v4 独立月／年度面板
+
+### 指标与来源分工
+| 指标 | 主来源 | 暂时拿不到时的处理 |
+|---|---|---|
+| 中缅、周边、西方、中美博弈 | GDELT | 无有效配对留缺测，不把无报道解释为关系良好 |
+| 冲突频次、事件严重度 | ACLED | 未授权时可显式选GDELT CAMEO计数／规则烈度代理，不能称死亡人数测度 |
+| 夜光同比 | VIIRS真实月度分区统计 | 本轮不联网下载；WB电力只作年度背景代理，不复制到月度／邦省 |
+| 流离失所 | IDMC GIDD授权下载文件 | 没有文件/连续同版存量则缺测，流量次数与存量变化不互换 |
+| 国际制裁 | OFAC法律措施 | 未核验生效日期或μ未审定时不合成；CAMEO仅为显式胁迫新闻代理，欧盟暂未接入 |
+
+- `risk-v4-multisource`为新正式来源模式，`risk-v4-proxy`为显式代理模式。两者均有独立月/年周期、参数与基准版本；旧risk-v2日序列、既有risk-v3实验计算保持原版本。
+- ACLED保留Battles、Explosions/Remote violence、Violence against civilians；CF计事件，SE取λ×ln(1+死亡人数)均值。无冲突或死亡缺报不以0伪造严重度；λ、μ必须带`approved_version`，无默认3∶2∶1。
+- GDELT按国家对报道量加权，再按国家对象等权。对象缺失保留部分原值，正式合成不接受不完整国家集合；参考基准签名包含实际对象集合，禁止随对象变化拼接比较。
+- 正式分要求九项有效且参数、参考基准完整，缺项总分为null。代理分仅按有效权重归一，显示实际覆盖和贡献；不是正式预警。
+- Min-Max只用显式冻结的同频参考面板；常量列、不同源／版本／区域、缺基准均不强行标准化。参考范围、输入摘要和参数版本随基准保存。
+- VIIRS月度同比只用同产品的t与t-12，基期0/缺失不能算；全年亮度只有12个完整可比月才汇总。VNP46A2是日产品，VNP46A3是月产品。
+- IDMC的IDP年末人口存量和Internal displacements流量次数独立保存；存量差可为负，不称唯一新增人数。当前公开年度全国文件不生成省/月值；人口归一与特殊分区文件仍需有对应真实数据后扩展。
+- OFAC按法律行动／措施去重，不把一个行动涉及的多名对象重复计数；当前SDN名单只核验对象状态。官方页面检查结果保留`review_required`，不能用发布日期或首次抓取日冒充措施生效日。
+
+### 操作与文件契约
+新增代码：`utils/risk_contract.py`、`data/risk_sources.py`、`analyzer/risk_panels.py`、`analyzer/event_links.py`、`storage/risk_store.py`、`risk_api.py`、`scripts/manage_risk_data.py`。
+
+- 统一导入JSON结构为`{source, manifest, records}`。清单必需字段：`start`、`end`（排他）、`region`、`complete`、`dataset_version`、`license`、官方HTTPS `url`。不能夹带密码/token。文件批次摘要、首次取得时间及许可保存在私密运行数据中。
+- ACLED records为官方字段，包括event_id_cnty/event_date/event_type/country/fatalities与精度字段；admin1_mapping/actor_mapping仅接受显式核验的映射。
+- IDMC当前支持标准列`ISO3`、`Year`、`Conflict Stock Displacement`、`Conflict Internal Displacements`；未知官方版本/特殊分区表明确拒绝，不猜列；官方真实文件仍待团队提供验证。
+- VIIRS records沿用完整月观测契约，indicator=nightlight、source=viirs、quality=observed、unit=nW/cm²/sr、产品与版本明确；不接裸影像的自动分区统计。
+- OFAC措施记录需action_id/effective_date/program/change/measure_type/url/reviewed；同稿中的对象数组不计数。未知生效日保存待核验，不能计入正式强度。
+- WB年度观测可经统一JSON导入：source=worldbank、indicator=electricity_access、quality=proxy、unit=%。旧爬虫返回的年度原值只是背景代理，不代表已导入或VIIRS到位。
+
+```powershell
+# 均为预演；不自动复制文件、抓取或写入真实历史
+python scripts/manage_risk_data.py import --input 授权批次.json
+python scripts/manage_risk_data.py build --frequency monthly --count 12 --parameters 审定参数.json
+python scripts/manage_risk_data.py calibrate --input 参考原始面板数组.json --description "团队确认的同频面板基准"
+python scripts/manage_risk_data.py build --frequency annual --calibration-id 已保存基准ID
+```
+
+写入须额外`--apply --confirm`精确确认DATA_ROOT绝对路径或数据库名，并启用ENABLE_RISK_PANELS。ACLED同步的dry-run不发请求；`inspect-ofac`是显式只读网络检查。无真实授权、原始文件、审定参数和基准前，本轮不执行上述apply。
+
+### 证据核验与界面
+- 事件匹配只产候选：地区一致、日期差≤1日、坐标距≤10km、可靠精度及显式相容行为体/类型。原事件ID与版本不合并；match/review CLI均默认预演。
+- 原始出处独立性需审核，转载、GDELT索引和ACLED引用同一稿不算独立信源。确认增加证据，不增加CF计数/死亡人数，不输出真伪概率。
+- `ENABLE_EVIDENCE_WEIGHTING`默认关闭；只对审核过的独立出处开启KDE≤1.25加权，NumSources仅表示报告的多来源。KDE返回新版本与加权开关。
+- 态势总览新增一个默认收起的多源面板，月年/正式代理/基准选择集中显示，不增加主菜单。GET只读已保存面板，不抓取、生成或拟合；新月年不套用旧每日预警/7日预测。
+- 修复失租后自动任务仍能入队、hidden被按钮样式覆盖和低对比说明文字；无当前观测为中性灰，长hash折叠。默认地图去省质心光晕、科学KDE显式开启、图例随有效图层显示。
+
+### 云端交接与未验收项
+- 迁移`0005_risk_panels`新增risk_source_batches/risk_calibrations/risk_panels/event_links；当前父为0004_workspace，**合并前须部署负责人核对实际head**。未迁移时返回503，不自动建表。
+- 为防受限ACLED原文经旧events API公开，原始版本批次存独立risk_source_batches；已有events继续承载GDELT，已有daily_risk不塞月年。文件模式仅单机，PostgreSQL模式写失败不回写文件。
+- 新来源/面板/证据开关全部默认关闭；新增任务类型risk_panels复用既有独立worker、租约事务、管理员身份。需要Web/worker一致配置。source sync/import当前由授权CLI管理，不在Web GET或每个worker自动调度。
+- Dockerfile、compose.yaml、deploy、现有端口、真实.env和历史迁移均未修改。Compose不自动转发宿主.env新增变量，部署负责人须通过批准的override注入。
+- 本轮未申请ACLED账号、未获取IDMC真实文件、未下载VIIRS、未核验完整OFAC措施历史、未审定λ/μ/基准、未执行业务库迁移或历史重算。属于代码与合成夹具验收，不宣称完整九指标已上线。
+
+---
 
 > **口径更正**：本文记录九指标代理算法和四模块的已有实现，不代表已完整执行组长终稿。
 > 正式日风险仍由 `pipeline.py` → `compute_daily_risk()` 生成 **risk-v2 五维**；

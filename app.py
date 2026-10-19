@@ -72,6 +72,8 @@ from product_api import bp as product_blueprint
 app.register_blueprint(product_blueprint)
 from workspace_api import bp as workspace_blueprint
 app.register_blueprint(workspace_blueprint)
+from risk_api import bp as risk_blueprint
+app.register_blueprint(risk_blueprint)
 
 
 def enqueue_request(kind, payload):

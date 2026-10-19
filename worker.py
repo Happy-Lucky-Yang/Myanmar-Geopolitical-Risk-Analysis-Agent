@@ -42,6 +42,9 @@ def execute_job(job):
     reused = _reuse_committed_snapshot(job)
     if reused is not None:
         return reused
+    if kind == 'risk_panels':
+        from storage.risk_store import execute_risk_job
+        return execute_risk_job(job)
     if kind == 'assistant':
         from analyzer.assistant_tasks import execute_assistant
         return execute_assistant(job)
@@ -75,7 +78,9 @@ def execute_job(job):
         return get_gdelt_crawler().get_risk_metrics(timespan_days=int(payload.get('days', 7)))
     if kind == 'nightlight':
         from data.nightlight_crawler import get_nightlight_crawler
-        return {'value': get_nightlight_crawler().get_nightlight_change(), 'quality': 'proxy'}
+        value = get_nightlight_crawler().get_nightlight_change()
+        return {'value': value, 'quality': 'proxy' if value is not None else 'missing',
+                'source': 'worldbank', 'frequency': 'annual', 'note': '年度电力背景，不是VIIRS月夜光'}
     if kind == 'economic':
         from data.economic_crawler import get_economic_crawler
         return {'value': get_economic_crawler().get_refugee_change(), 'quality': 'proxy'}

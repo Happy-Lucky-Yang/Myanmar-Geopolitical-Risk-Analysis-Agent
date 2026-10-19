@@ -6,6 +6,15 @@
 
 当前状态：已实现版本化 Schema、repository、观测导入、原值只读核验、业务导出、备份/隔离恢复工具、独立 worker、共享权限和实库测试入口；尚未完成真实 PostGIS、并发租约、备份恢复及 Compose 部署验收。离线 DDL 通过或实库测试跳过均不等于数据库验收通过。尚未导入真实私密数据或切换主存储。
 
+### 多源面板增量交接（0005草案）
+- 新迁移`0005_risk_panels`当前接在`0004_workspace`后；合并前由部署负责人核对head，不能覆盖队友迁移或跳过0004。当前会话未执行任何业务库迁移。
+- `risk_source_batches`保存受限来源版本、覆盖与许可；source_version_key保证同源/同版本/同周期不被并发覆盖。原始ACLED批次不送入旧公共events API。
+- `risk_calibrations`保存不可变同频Min-Max参考范围及hash；`risk_panels`保存月／年度结果，与`daily_risk`分离；`event_links`保存候选/审定与审核人、两端版本及出处。
+- 新API以独立面板修订标识读取，不冒充旧日风险的revision。Web GET不写数据；管理员构建任务通过既有worker的risk_panels分支执行，并复用开始/提交前租约校验。
+- 文件模式新状态保存在`DATA_ROOT/external/risk_state.json`，仅单机；批次校验完成后原子替换。PostgreSQL失败绝不回写文件，未迁移返回503。
+- Web/worker需一致注入ENABLE_RISK_PANELS及启用的来源开关；OAuth账户为云端secret、token仅内存。不能依赖宿主.env自动转发，Dockerfile/Compose/部署脚本本轮保持原样。
+- 新实库测试`tests/test_risk_postgis.py`覆盖迁移、不可变输入、并发和失租写入；无明确独立*_test库则跳过，不能称已验收。与已有工作区、备份和租约测试一起由部署负责人运行。
+
 ### 主业务表与约束
 | 数据组 | 表与约束 |
 |---|---|

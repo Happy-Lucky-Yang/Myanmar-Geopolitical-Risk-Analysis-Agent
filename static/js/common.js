@@ -265,7 +265,7 @@ function syncViewNavigation(filters) {
     var common = {};
     ['days', 'end_date', 'region', 'source'].forEach(key => { if (filters) common[key] = filters[key]; });
     var query = viewQuery({}, common);
-    document.querySelectorAll('.nav-links a').forEach(function (a) {
+    document.querySelectorAll('.nav-links a, .sub-nav a').forEach(function (a) {
         var path = new URL(a.href, window.location.href).pathname;
         if (['/', '/dashboard', '/map', '/trend'].includes(path)) a.href = path + '?' + query;
     });
@@ -307,23 +307,16 @@ function setViewReport(snapshot) {
     });
 }
 
-/* ---------- 产品入口与筛选解释 ---------- */
+/* ---------- 筛选解释与选项列表（导航由模板 _nav.html 统一渲染） ---------- */
 document.addEventListener('DOMContentLoaded', async function () {
-    const nav = document.querySelector('.nav-links');
-    if (nav) {
-        nav.style.flexWrap = 'wrap';
-        [['/literature','文献中心'], ['/workspace','个人工作区'], ['/guide','使用说明']].forEach(([path,label]) => {
-            if (!nav.querySelector('a[href="' + path + '"]')) {
-                const li = createEl('li'); const a = createEl('a', '', label); a.href = path; li.append(a); nav.append(li);
-            }
-        });
-    }
     const container = document.querySelector('.view-filters') || document.querySelector('.map-sidebar');
     if (!container) return;
     const help = createEl('details', 'filter-help');
-    help.append(createEl('summary', '', '这些筛选条件是什么意思？'));
-    help.append(createEl('p', '', 'MMR=缅甸全国；省邦代码限定事件发生地。来源留空=全部；单来源不提供全国综合分。正式观测=真实资料计算的系列，不代表已人工验证；旧版历史仅作对照，演示不是真实数据。缺测不能解释为零风险。'));
-    const link = createEl('a', '', '查看各模块的含义与边界'); link.href = '/guide'; help.append(link); container.append(help);
+    help.append(createEl('summary', '', '筛选说明'));
+    const panel = createEl('div', 'filter-help-panel');
+    panel.append(createEl('p', '', 'MMR=缅甸全国；省邦代码限定事件发生地。来源留空=全部；单来源不提供全国综合分。正式观测=真实资料计算的系列，不代表已人工验证；旧版历史仅作对照，演示不是真实数据。缺测不能解释为零风险。'));
+    const link = createEl('a', '', '查看各模块的含义与边界 →'); link.href = '/guide'; panel.append(link);
+    help.append(panel); container.append(help);
     try {
         const response = await fetchJSON('/api/view-options');
         if (!response.success) return;

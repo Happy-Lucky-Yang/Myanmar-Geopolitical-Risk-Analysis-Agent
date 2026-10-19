@@ -73,8 +73,9 @@ function renderOverview(snapshot) {
         + statChip('日风险覆盖率', formatPercent(meta.coverage)) + '</div>';
     html += '<p class="muted-note">最新风险观测：' + escapeHtml(meta.actual_end || '无')
         + '；实际来源：' + escapeHtml((snapshot.sources || []).join('、') || '无') + '</p>';
-    html += '<p class="muted-note">算法：' + escapeHtml(meta.algorithm_version || '') + '；快照：' + escapeHtml(snapshot.snapshot_id)
-        + '；生成时间：' + escapeHtml(snapshot.generated_at) + '</p>';
+    html += '<details class="muted-note"><summary>算法 ' + escapeHtml(meta.algorithm_version || '')
+        + ' · 快照 ' + escapeHtml(String(snapshot.snapshot_id || '').slice(0, 12)) + '</summary>'
+        + '<p>完整快照：' + escapeHtml(snapshot.snapshot_id) + '；生成时间：' + escapeHtml(snapshot.generated_at) + '</p></details>';
     (snapshot.warnings || []).forEach(w => { html += '<p class="muted-note">' + escapeHtml(w) + '</p>'; });
     var indicators = latest && latest.details && latest.details.indicator_scores || {};
     var names = {conflict_frequency:'冲突报道频次', sentiment_avg:'情感风险', nightlight_change:'夜光变化', refugee_change:'难民变化', llm_risk:'LLM风险'};
@@ -351,7 +352,7 @@ async function loadDiagnostic() {
         if (fo) {
             var lvlColor = fo.projected_level === 'red' ? 'var(--risk-high)'
                 : fo.projected_level === 'orange' ? 'var(--risk-medium)'
-                : fo.projected_level === 'yellow' ? '#e3b341' : 'var(--text-muted)';
+                : fo.projected_level === 'yellow' ? '#d9a93a' : 'var(--text-muted)';
             html += '<div class="sub-title" style="margin-top:0.6rem">未来 ' + escapeHtml(String(fo.days_ahead || 7)) + ' 天探索性外推</div>';
             html += '<div class="diag-summary"><span class="diag-delta" style="color:' + lvlColor + '">' + escapeHtml(formatNumber(fo.predicted_score, 1)) + '</span>'
                 + '<span class="muted-note"> 分 → ' + escapeHtml(fo.projected_label || '') + '（' + escapeHtml(fo.reliability || '未验收') + '）</span></div>';
@@ -443,29 +444,35 @@ function renderMultimodalChart(dom, aligned, mixedNightlight) {
         window.addEventListener('resize', function () { mmChart.resize(); });
     }
     var axisStyle = {
-        axisLine: { lineStyle: { color: '#2a2d35' } },
-        axisLabel: { color: '#8a8f98', fontSize: 10 },
-        splitLine: { lineStyle: { color: '#1e2128', type: 'dashed' } }
+        axisLine: { lineStyle: { color: '#d6e0dc' } },
+        axisLabel: { color: '#576873', fontSize: 10 },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: '#edf2f0', type: 'dashed' } }
     };
+    var muted = { color: '#576873' };
     mmChart.setOption({
         backgroundColor: 'transparent',
-        tooltip: { trigger: 'axis', backgroundColor: 'rgba(26,29,35,0.95)', borderColor: '#2a2d35', textStyle: { color: '#e0e0e0' } },
-        legend: { data: ['夜光原值', '冲突类记录数', '情感风险'], top: 0, textStyle: { color: '#8a8f98' } },
+        tooltip: { trigger: 'axis', backgroundColor: 'rgba(255,255,255,0.96)', borderColor: '#e2e9e6', textStyle: { color: '#24333b' },
+            extraCssText: 'border-radius:12px;box-shadow:0 12px 28px -14px rgba(36,51,59,0.35);' },
+        legend: { data: ['夜光原值', '冲突类记录数', '情感风险'], top: 0, icon: 'roundRect', itemWidth: 14, itemHeight: 6, textStyle: { color: '#576873' } },
         grid: [
             { left: 65, right: 20, top: '16%', height: '18%' },
             { left: 65, right: 20, top: '46%', height: '18%' },
             { left: 65, right: 20, top: '76%', height: '16%' }
         ],
-        xAxis: [0, 1, 2].map(function (i) { return Object.assign({}, axisStyle, { type: 'category', data: months, gridIndex: i, axisLabel: { show: i === 2, color: '#8a8f98' } }); }),
+        xAxis: [0, 1, 2].map(function (i) { return Object.assign({}, axisStyle, { type: 'category', data: months, gridIndex: i, axisLabel: { show: i === 2, color: '#576873' } }); }),
         yAxis: [
-            Object.assign({ gridIndex: 0, type: 'value', name: '夜光原值', nameTextStyle: { color: '#8a8f98' } }, axisStyle),
-            Object.assign({ gridIndex: 1, type: 'value', name: '冲突类记录数', minInterval: 1, nameTextStyle: { color: '#8a8f98' } }, axisStyle),
-            Object.assign({ gridIndex: 2, type: 'value', name: '情感0～1', min: 0, max: 1, nameTextStyle: { color: '#8a8f98' } }, axisStyle)
+            Object.assign({ gridIndex: 0, type: 'value', name: '夜光原值', nameTextStyle: muted }, axisStyle),
+            Object.assign({ gridIndex: 1, type: 'value', name: '冲突类记录数', minInterval: 1, nameTextStyle: muted }, axisStyle),
+            Object.assign({ gridIndex: 2, type: 'value', name: '情感0～1', min: 0, max: 1, nameTextStyle: muted }, axisStyle)
         ],
         series: [
-            { name: '夜光原值', type: 'line', xAxisIndex: 0, yAxisIndex: 0, connectNulls: false, data: nightlight, itemStyle: { color: '#f0c000' } },
-            { name: '冲突类记录数', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: conflict, itemStyle: { color: 'rgba(248,81,73,0.6)' } },
-            { name: '情感风险', type: 'line', xAxisIndex: 2, yAxisIndex: 2, connectNulls: false, data: sentiment, itemStyle: { color: '#1e90ff' } }
+            { name: '夜光原值', type: 'line', xAxisIndex: 0, yAxisIndex: 0, connectNulls: false, data: nightlight, symbolSize: 6,
+              itemStyle: { color: '#e0a64a' }, lineStyle: { width: 2.2, color: '#e0a64a' } },
+            { name: '冲突类记录数', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: conflict, barMaxWidth: 26,
+              itemStyle: { color: 'rgba(219,102,94,0.55)', borderRadius: [6, 6, 0, 0] } },
+            { name: '情感风险', type: 'line', xAxisIndex: 2, yAxisIndex: 2, connectNulls: false, data: sentiment, symbolSize: 6,
+              itemStyle: { color: '#6c93d6' }, lineStyle: { width: 2.2, color: '#6c93d6' } }
         ]
     }, { notMerge: true });
 }
@@ -511,7 +518,8 @@ function errBox(msg) {
     return '<div class="error-card"><div class="error-icon">⚠️</div><div class="error-msg">' + escapeHtml(msg || '加载失败') + '</div></div>';
 }
 function statChip(label, value) {
-    return '<div class="stat-chip"><div class="sc-value">' + escapeHtml(String(value != null ? value : 'N/A')) + '</div><div class="sc-label">' + escapeHtml(label) + '</div></div>';
+    var missing = value == null || /无数据|无当前观测|N\/A/.test(String(value));
+    return '<div class="stat-chip' + (missing ? ' stat-missing' : '') + '"><div class="sc-value">' + escapeHtml(String(value != null ? value : 'N/A')) + '</div><div class="sc-label">' + escapeHtml(label) + '</div></div>';
 }
 function corrChip(label, value) {
     if (value === null || value === undefined || !Number.isFinite(value)) {

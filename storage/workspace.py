@@ -130,7 +130,7 @@ class WorkspaceStore:
         r, a, j = self.t['agent_requests'], self.t['audit_logs'], self.t['jobs']
         bucket = fingerprint(['agent',uid or 'automatic'])
         request_key = fingerprint([uid,kind,key])
-        with self.repo.engine.begin() as conn:
+        with self.repo.write_transaction() as conn:
             conn.execute(text('SELECT pg_advisory_xact_lock(:k)'), {'k':int(bucket[:15],16)})
             old = conn.execute(select(r).where(r.c.request_key == request_key)).mappings().first()
             if old:

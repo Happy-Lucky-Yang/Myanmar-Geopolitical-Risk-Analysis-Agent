@@ -1,15 +1,150 @@
-/* 独立产品样式，不更改既有图表容器尺寸。 */
-.product-list {display:grid; gap:16px; margin:20px 0;}
-.product-list .card {margin:0; min-width:0; overflow-wrap:anywhere;}
-.console-page p, .console-page dd {line-height:1.8;}
-.console-page dt {font-weight:700; margin-top:12px;}
-.console-page details summary {cursor:pointer; line-height:1.8;}
-.workspace-layout {display:grid; grid-template-columns:260px minmax(0,1fr); gap:20px;}
-.workspace-history {display:flex; flex-direction:column; gap:8px; max-height:70vh; overflow:auto;}
-.workspace-message {white-space:pre-wrap; overflow-wrap:anywhere; border-left:3px solid #58a6ff; padding:14px; margin:12px 0; background:#161b22;}
-.workspace-message.assistant {border-color:#3fb950;}
-.workspace-message p {margin:6px 0;}
-#workspace-input {width:100%; min-height:100px; padding:12px;}
-.product-status {padding:12px; border:1px solid #8b949e; border-radius:8px;}
-.navbar .nav-links {flex-wrap:wrap;}
-@media(max-width:800px) {.workspace-layout {grid-template-columns:1fr;} .workspace-history {max-height:180px;} .controls {flex-wrap:wrap;} }
+/* 文献中心、使用说明与个人工作区的补充样式（基于 style.css 的「晨雾」变量）。 */
+
+/* ---------- 文献中心 ---------- */
+.catalog-summary {
+    display: inline-flex;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+    padding: 0.45rem 1rem;
+    font-size: 0.86rem;
+    color: var(--jade-deep);
+    background: var(--jade-soft);
+    border-radius: var(--radius-pill);
+}
+.catalog-form .controls { margin: 0; width: 100%; }
+.catalog-form .catalog-query { flex: 1 1 22rem; }
+.catalog-form .catalog-query input { flex: 1; min-width: 0; }
+.catalog-form input[type="number"] { width: 6.5rem; }
+.product-list { display: grid; gap: 1rem; margin: 0.5rem 0 1.25rem; }
+.product-list .card { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.product-list article h2 { font-size: 1.06rem; line-height: 1.5; margin-bottom: 0.35rem; }
+.product-list article > p { font-size: 0.86rem; color: var(--ink-2); }
+.product-list article > p:nth-of-type(2) { color: var(--jade-deep); }
+.product-list details { margin-top: 0.6rem; font-size: 0.88rem; color: var(--ink-2); }
+.product-list details p { margin: 0.4rem 0; line-height: 1.75; }
+.product-list details a {
+    display: inline-flex;
+    margin: 0.35rem 0.35rem 0 0;
+    padding: 0.25rem 0.8rem;
+    border-radius: var(--radius-pill);
+    background: var(--sky-soft);
+    color: #4a73b8;
+    font-size: 0.82rem;
+    text-decoration: none;
+}
+.pager { justify-content: center; }
+.pager #catalog-page { font-size: 0.86rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* ---------- 使用说明 ---------- */
+.console-page dd { line-height: 1.8; color: var(--ink-2); font-size: 0.9rem; }
+.console-page dt { font-weight: 600; margin-top: 0.9rem; color: var(--ink); }
+.console-page dt:first-child { margin-top: 0; }
+.flow-steps {
+    list-style: none;
+    counter-reset: step;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.75rem;
+    padding: 0;
+    margin: 0 0 1.25rem;
+}
+.flow-steps li {
+    counter-increment: step;
+    position: relative;
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.9rem 1rem 0.9rem 3.1rem;
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: var(--shadow);
+}
+.flow-steps li::before {
+    content: counter(step, decimal-leading-zero);
+    position: absolute;
+    left: 1rem;
+    top: 0.85rem;
+    font: 700 1.2rem var(--font-serif);
+    color: transparent;
+    -webkit-text-stroke: 1px var(--jade);
+}
+.flow-steps b { font-family: var(--font-serif); color: var(--ink); }
+.flow-steps span { font-size: 0.8rem; color: var(--ink-3); }
+.guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.15rem; margin-bottom: 1.15rem; }
+.guide-wide p { color: var(--ink-2); font-size: 0.9rem; line-height: 1.85; }
+.guide-item { padding: 0.7rem 0; border-bottom: 1px dashed var(--line); }
+.guide-item:last-child { border-bottom: none; }
+.guide-item > summary { list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.7rem; }
+.guide-item > summary::-webkit-details-marker { display: none; }
+.guide-item > summary::before { content: '+'; width: 1rem; color: var(--jade); font-weight: 700; }
+.guide-item[open] > summary::before { content: '–'; }
+.guide-item > summary b { font-family: var(--font-serif); color: var(--ink); }
+.guide-item > summary span { font-size: 0.84rem; color: var(--ink-3); }
+.guide-item p { margin: 0.45rem 0 0 1.7rem; font-size: 0.86rem; color: var(--ink-2); line-height: 1.75; }
+.guide-item a { display: inline-block; margin: 0.4rem 0 0 1.7rem; font-size: 0.84rem; }
+
+/* ---------- 个人工作区 ---------- */
+.workspace-account { align-items: center; }
+#workspace-user:empty { display: none; }
+#workspace-user {
+    padding: 0.35rem 0.9rem;
+    border-radius: var(--radius-pill);
+    background: var(--jade-soft);
+    color: var(--jade-deep);
+    font-size: 0.84rem;
+}
+.product-status {
+    margin-bottom: 1.1rem;
+    padding: 0.7rem 1rem;
+    font-size: 0.88rem;
+    color: var(--ink-2);
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--sky);
+    border-radius: 12px;
+}
+.workspace-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 1.15rem; align-items: start; }
+.workspace-side { display: flex; flex-direction: column; gap: 0.7rem; }
+.workspace-side > h3 { margin-bottom: 0.2rem; }
+.workspace-history { display: flex; flex-direction: column; gap: 0.45rem; max-height: 60vh; overflow: auto; }
+.workspace-history .btn { justify-content: flex-start; white-space: normal; text-align: left; border-radius: 12px; }
+.workspace-titlebar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem 1rem; margin-bottom: 0.8rem; }
+.workspace-titlebar h2 { font-size: 1.2rem; margin: 0; }
+.workspace-message {
+    margin: 0.8rem 0;
+    padding: 0.9rem 1.1rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border-radius: 16px 16px 16px 6px;
+    background: var(--sky-soft);
+}
+.workspace-message.assistant { background: rgba(245, 248, 247, 0.95); border: 1px solid var(--line); border-radius: 16px 16px 6px 16px; }
+.workspace-message h3 { font-size: 0.86rem; color: var(--ink-3); margin-bottom: 0.3rem; }
+.workspace-message h4 { font-size: 0.9rem; margin: 0.6rem 0 0.2rem; color: var(--jade-deep); }
+.workspace-message p { margin: 6px 0; font-size: 0.9rem; }
+.workspace-message form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.7rem; font-size: 0.84rem; white-space: normal; }
+.workspace-message form select,
+.workspace-message form input { padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 8px; font: 0.84rem var(--font-sans); background: #ffffff; }
+.workspace-message form button {
+    padding: 0.3rem 0.85rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    background: #ffffff;
+    color: var(--jade-deep);
+    font: 0.82rem var(--font-sans);
+    cursor: pointer;
+}
+.workspace-form { display: grid; gap: 0.6rem; margin-top: 1rem; }
+.workspace-form > label { font-size: 0.84rem; color: var(--ink-2); }
+#workspace-input { min-height: 110px; }
+.workspace-form .view-filters { margin: 0; }
+.workspace-form #workspace-send { justify-self: end; }
+.workspace-prefs { margin-top: 1.15rem; }
+.workspace-prefs > summary { font-family: var(--font-serif); color: var(--ink); }
+.workspace-prefs[open] > summary { margin-bottom: 0.9rem; }
+.workspace-prefs .controls { margin: 0; }
+
+@media (max-width: 860px) {
+    .workspace-layout, .guide-grid { grid-template-columns: minmax(0, 1fr); }
+    .workspace-history { max-height: 200px; }
+}

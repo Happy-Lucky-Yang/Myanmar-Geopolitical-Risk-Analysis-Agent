@@ -4,7 +4,7 @@
     let uid=null, cid=null, offset=0, epoch=0, canWrite=false, ready=false, historyEpoch=0, pendingSubmission=null;
     const status=text=>{el('workspace-status').textContent=text;};
     function add(parent,tag,text){const n=document.createElement(tag); n.textContent=text||''; parent.append(n); return n;}
-    function clear(){epoch++; historyEpoch++; uid=null; cid=null; ready=false; pendingSubmission=null; el('preferences-form').reset(); el('workspace-user').textContent=''; el('workspace-messages').replaceChildren(); el('workspace-history').replaceChildren(); el('workspace-input').value=''; el('workspace-title').textContent='请选择会话'; el('workspace-export').hidden=true; document.querySelectorAll('main button, main textarea').forEach(n=>n.disabled=true);}
+    function clear(){epoch++; historyEpoch++; uid=null; cid=null; ready=false; pendingSubmission=null; el('preferences-form').reset(); el('workspace-user').textContent=''; el('workspace-messages').replaceChildren(); el('workspace-history').replaceChildren(); el('workspace-input').value=''; el('workspace-title').textContent='请选择会话'; el('workspace-export').hidden=true;el('workspace-export').removeAttribute('href'); document.querySelectorAll('main button, main textarea').forEach(n=>n.disabled=true);}
     window.addEventListener('pagehide',clear);
     window.addEventListener('pageshow',event=>{if(event.persisted) location.reload();});
     async function api(path,method='GET',body,key){
@@ -90,7 +90,7 @@
     el('workspace-new').onclick=safely(async()=>{const data=await api('/conversations','POST',{title:'新对话'});await history();await open(data.id);});
     el('workspace-more').onclick=safely(()=>history(false));
     el('workspace-rename').onclick=safely(async()=>{if(!cid)return; const title=prompt('会话标题',el('workspace-title').textContent); if(title){await api('/conversations/'+cid,'PATCH',{title}); await history();await open(cid);}});
-    el('workspace-delete').onclick=safely(async()=>{if(!cid||!confirm('删除该会话、消息及反馈？任务不会重新写回。'))return;await api('/conversations/'+cid,'DELETE');cid=null;epoch++;el('workspace-messages').replaceChildren();el('workspace-export').hidden=true;await history();status('会话已删除');});
+    el('workspace-delete').onclick=safely(async()=>{if(!cid||!confirm('删除该会话、消息及反馈？任务不会重新写回。'))return;await api('/conversations/'+cid,'DELETE');cid=null;epoch++;el('workspace-messages').replaceChildren();el('workspace-export').hidden=true;el('workspace-export').removeAttribute('href');await history();status('会话已删除');});
     el('workspace-form').onsubmit=safely(async event=>{
         event.preventDefault();if(!cid)return;
         const query=readViewFilters(); if(query.source)throw new Error('AI研判暂不支持单来源筛选，请清空来源。');

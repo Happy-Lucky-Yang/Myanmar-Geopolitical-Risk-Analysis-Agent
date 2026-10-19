@@ -11,10 +11,19 @@ python scripts/evaluate_acceptance.py --ner-gold data/static/ner_annotations/ner
 pytest 只使用 `DATA_ROOT` 临时目录、不存在的 `ENV_FILE` 与默认禁网夹具；`postgis` 标记的用例要求显式提供
 专用 `*_test` 测试库，缺少时按 skip 处理，不能用 SQLite 顶替。浏览器用例复用已安装的 Edge，
 页面与网络请求全部由 Playwright 拦截，不下载浏览器、不出网。`pytest.ini` 将采集范围限定为 `tests/`
-（排除随项目分发的 `py312` 运行时与 `venv312`），本轮 `python -m pytest -q` 收集 **388 个用例**，
-实测 **375 通过、13 跳过、7 条警告（204.02秒）**。13项跳过均为未配置独立PostGIS测试实例，
-其中4项为本轮新增工作区事务测试；不能算集成通过。结果文件为 gitignored 的 `logs/product-fullsuite.xml`。
+（排除随项目分发的 `py312` 运行时与 `venv312`），本轮 `python -m pytest -q` 收集 **417 个用例**，
+终版复跑 **402 通过、15 跳过、7 条警告（360.46秒）**。15项跳过均为未配置独立PostGIS测试实例，
+其中2项为本轮新增多源面板事务/迁移测试；不能算集成通过。结果文件为 gitignored 的 `logs/risk4-final.xml`。
 不再误采 `idlelib` / `site-packages` 第三方测试而报 collection error。
+
+## 本轮多源升级验收
+- `tests/test_risk_multisource.py`：ACLED类型/去重/死亡缺测、λ与μ未审定阻断、SE时段均值、OFAC按法律措施去重、SDN只核对当前对象、IDMC存量与流量分离、VIIRS同源同比、月年不补点、固定基准手算、来源版本冲突、受控OAuth刷新、主机/重定向/限流、CLI默认预演和目标确认。
+- 租约回归验证reserve复用开始/提交前守卫及普通Web事务；来源事件候选不自动合并、同稿不算独立出处、输入版本变化使确认失效。
+- `tests/test_product_browser.py`：隐藏导出及旧href清理，新面板默认折叠、GET只读、缺项不合成和1440/1024/390宽度无页面横向溢出。地图/趋势/仪表盘等既有浏览器回归通过。
+- `tests/test_risk_postgis.py`：迁移、同源版本并发幂等、不可变面板及失租写入测试已写入，但本机没有独立测试库，这2项明确跳过。
+- 未验收实际ACLED账户、真实IDMC文件、VIIRS原始/分区数据、完整OFAC法律措施历史、审定系数及基准。OFAC当前适配保留人工核验门槛，不以当前名单数量或抓取日期冒充新增措施。
+- 正式旧日风险、risk-v3实验计算保持原口径；新增risk-v4月年度独立。新功能默认关闭，未改Dockerfile/Compose/deploy、未执行业务库迁移或历史重算。
+- 此次测试数量包含旧基线，不与前次375/343等历史数字相加；通过结构/数学测试也不等于真实风险预测或事件真伪准确率。
 
 ## 本轮产品功能验收
 - 文献中心与说明：`test_product_features.py` 验证分页无重叠、检索筛选、公开字段白名单、DOI与开放全文区别、危险链接拒绝及默认关闭状态。

@@ -303,3 +303,17 @@ def test_internal_retry_keeps_chain_specific_json_schema(tmp_path):
     ])
 
     assert result == chain_result
+
+
+def test_evidence_json_uses_configured_assistant_model(tmp_path):
+    answer = {"data_gaps": []}
+    fake = FakeClient([json.dumps(answer)] * 2)
+    client = LLMClient(config=make_config(assistant_model="strong-model"), client=fake,
+                       cache_path=tmp_path / "cache.jsonl")
+    assert client.generate_evidence_json("系统", "内容") == answer
+    assert client.assistant_model == "strong-model"
+    assert fake.chat.completions.calls[0]["model"] == "strong-model"
+    default = LLMClient(config=make_config(), client=fake, cache_path=tmp_path / "cache.jsonl")
+    default.generate_evidence_json("系统", "内容")
+    assert default.assistant_model == "test-model"
+    assert fake.chat.completions.calls[1]["model"] == "test-model"

@@ -18,7 +18,8 @@ def isolated_runtime(tmp_path, monkeypatch, request):
     monkeypatch.setenv("LLM_API_KEY", "your-test-key")
     monkeypatch.setenv("STORAGE_BACKEND", "file")
     monkeypatch.setenv("APP_SHARED_MODE", "false")
-    for feature in ('LITERATURE', 'WORKSPACE', 'RISK_BRIEFING', 'AUTO_BRIEFING', 'UN_NEWS'):
+    for feature in ('LITERATURE', 'WORKSPACE', 'RISK_BRIEFING', 'AUTO_BRIEFING', 'UN_NEWS',
+                    'RISK_PANELS', 'ACLED', 'OFAC', 'IDMC', 'VIIRS', 'EVIDENCE_WEIGHTING'):
         monkeypatch.setenv('ENABLE_' + feature, 'false')
     from utils.config import reset_config, reset_data_paths
     reset_config()

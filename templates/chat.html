@@ -3,50 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>缅甸地缘风险分析 - 对话分析</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
+    <title>对话分析 · 缅甸地缘风险智能分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-1">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
-        <ul class="nav-links">
-            <li><a href="/" class="active">对话分析</a></li>
-            <li><a href="/dashboard">综合态势</a></li>
-            <li><a href="/map">风险地图</a></li>
-            <li><a href="/trend">趋势预测</a></li>
-            <li><a href="/graph">关系图谱</a></li>
-        </ul>
-    </nav>
+    {% include '_nav.html' %}
 
     <main class="container console-page">
-        <h2>新闻文本分析</h2>
-        <p class="subtitle">手工输入仅作独立文本分析，不写入正式日风险或共享图谱。</p>
-        <details><summary>浏览数据的筛选上下文（跨页面保留，不裁剪下面的输入文本）</summary>
-            {% include '_view_filters.html' %}
+        <header class="page-hero">
+            <div class="hero-text">
+                <p class="eyebrow">Text Analysis</p>
+                <h1>新闻文本研判</h1>
+                <p class="lede">粘贴或上传一篇缅甸相关报道，得到情感、风险、实体与贡献拆解。手工输入只作独立分析，不写入正式日风险或共享图谱。</p>
+            </div>
+            <div class="hero-actions">
+                <a class="btn btn-secondary" href="/workspace">多轮追问 → 个人工作区</a>
+            </div>
+        </header>
+
+        <details class="context-details">
+            <summary>浏览数据的筛选上下文（跨页面保留，不裁剪输入文本）</summary>
+            <div class="filter-bar">{% include '_view_filters.html' %}</div>
         </details>
-        <p class="muted-note">推荐从“综合态势”查看正式观测。模型结论须结合证据与不确定性复核，字段完整不等于结论正确。</p>
 
         <div class="chat-console">
-            <!-- 输入区 -->
             <div class="input-area">
-                <!-- 工具栏：模型选择 + 文件上传 -->
                 <div class="input-toolbar">
                     <div class="toolbar-left">
-                        <label class="toolbar-label">分析模型</label>
+                        <label class="toolbar-label" for="model-select">分析模型</label>
                         <select id="model-select" class="model-select">
                             <option value="">加载中...</option>
                         </select>
                     </div>
                     <div class="toolbar-right">
-                        <label class="file-upload-btn" title="上传文本文件（.txt / .json / .csv）">
+                        <label class="file-upload-btn" title="上传文本文件（.txt / .json / .csv / .md）">
                             <input type="file" id="file-input" accept=".txt,.json,.csv,.md" multiple style="display:none">
-                            <span class="upload-icon">📎</span> 上传文件
+                            <span class="upload-icon">＋</span> 上传文件
                         </label>
                     </div>
                 </div>
-                <!-- 已上传文件列表 -->
                 <div id="file-list" class="file-list" style="display:none"></div>
-                <textarea id="news-input" placeholder="请输入或粘贴缅甸相关新闻内容，或上传文件..." rows="10"></textarea>
+                <textarea id="news-input" placeholder="请输入或粘贴缅甸相关新闻内容，或上传文件…" rows="9"></textarea>
                 <div class="input-footer">
                     <span id="char-count" class="char-count">0 / 20000</span>
                     <div class="btn-group">
@@ -55,50 +52,37 @@
                         <button id="analyze-btn" class="btn btn-primary" onclick="analyzeText()">开始分析</button>
                     </div>
                 </div>
+                <p class="muted-note">模型结论须结合证据与不确定性复核；字段完整不等于结论正确。正式观测请到“态势总览”查看。</p>
             </div>
 
-            <!-- 结果区 -->
             <div id="result-area" style="display:none">
                 <div class="result-grid">
-                    <!-- 情感分析（左，与风险评分并排） -->
                     <div class="card">
-                        <div class="card-title"><span class="icon">💬</span> 情感分析</div>
+                        <div class="card-title">情感分析</div>
                         <div id="sentiment-body"></div>
                     </div>
-
-                    <!-- 风险评分（右，与情感分析并排） -->
                     <div class="card">
-                        <div class="card-title"><span class="icon">🎯</span> 风险评分</div>
+                        <div class="card-title">风险评分</div>
                         <div id="risk-body"></div>
                     </div>
-
-                    <!-- 实体识别（整行横铺，标签多时有足够空间） -->
                     <div class="card card-full">
-                        <div class="card-title"><span class="icon">🏷️</span> 实体识别</div>
+                        <div class="card-title">实体识别</div>
                         <div id="entities-body"></div>
                     </div>
-
-                    <!-- 大模型分析（整行） -->
                     <div class="card card-full">
-                        <div class="card-title"><span class="icon">🤖</span> 大模型分析</div>
+                        <div class="card-title">大模型分析</div>
                         <div id="llm-body"></div>
                     </div>
-
-                    <!-- 诊断归因 -->
                     <div class="card card-full">
-                        <div class="card-title"><span class="icon">🔬</span> 指标贡献分析（非因果）</div>
+                        <div class="card-title">指标贡献分析 <span class="tag-hint">非因果</span></div>
                         <div id="diagnostic-body"></div>
                     </div>
-
-                    <!-- 链式推理 -->
                     <div class="card card-full" id="chain-card" style="display:none">
-                        <div class="card-title"><span class="icon">🔗</span> 链式推理（分步逻辑）</div>
+                        <div class="card-title">链式推理 <span class="tag-hint">分步逻辑</span></div>
                         <div id="chain-body"></div>
                     </div>
-
-                    <!-- GDELT 指标 -->
                     <div class="card card-full">
-                        <div class="card-title"><span class="icon">📡</span> GDELT 全球事件指标</div>
+                        <div class="card-title">GDELT 全球事件指标</div>
                         <div id="gdelt-body"></div>
                     </div>
                 </div>
@@ -106,8 +90,8 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=views-v3"></script>
-    <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260816b"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-1"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=mist-1"></script>
     <script>initViewFilters();</script>
 </body>
 </html>

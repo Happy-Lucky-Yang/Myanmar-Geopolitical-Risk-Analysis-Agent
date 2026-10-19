@@ -112,7 +112,14 @@ class EventDensityAnalyzer:
         window_events = unique_events(events or [], days, end_date)
 
         lats, lons, weights = [], [], []
-        verified = 0
+        verified = reported = 0
+        from utils.product_features import enabled
+        if enabled('evidence_weighting'):
+            from analyzer.event_links import annotate
+            from storage.risk_store import RiskStore
+            store = RiskStore()
+            if store.ready():
+                window_events = annotate(window_events, store.load('event_links'))
         for ev in window_events:
             if not finite_number(ev.get("lat")) or not finite_number(ev.get("lon")):
                 continue
@@ -131,9 +138,13 @@ class EventDensityAnalyzer:
             lats.append(float(ev["lat"]))
             lons.append(float(ev["lon"]))
             w = severity
-            # 互证判定：≥2 家信源 或 ≥2 篇报道（缅甸事件多为单信源多篇）
             if sources >= 2:
+                reported += 1
+            independent = ev.get('independent_source_count', 0)
+            if ev.get('evidence_verified') is True and finite_number(independent) and independent >= 2:
                 verified += 1
+                if enabled('evidence_weighting'):
+                    w *= min(1.25, max(1, self._verified_boost))
             weights.append(w)
 
         total = len(window_events)
@@ -217,11 +228,12 @@ class EventDensityAnalyzer:
             "unit": "加权事件/(平方公里·天)",
             "bandwidth_km": self._bandwidth_km,
             "color_max_per_km2_day": self._color_max,
-            "algorithm_version": "kde-laea-v2",
+            "algorithm_version": "kde-laea-v3-evidence" if enabled('evidence_weighting') else "kde-laea-v3",
             "projection": projection,
             "normalization_days": normalization_days,
-            "reported_multi_source_count": verified,
-            "quality_note": "多来源报道数不证明来源独立；不据此额外放大权重",
+            "reported_multi_source_count": reported,
+            "evidence_weighting": enabled('evidence_weighting'),
+            "quality_note": "NumSources不证明独立；仅显式启用并经独立出处核验才加权，倍率不超过1.25",
             "bbox": [[LAT_RANGE[0], LON_RANGE[0]],
                      [LAT_RANGE[1], LON_RANGE[1]]],
             "event_count": total,

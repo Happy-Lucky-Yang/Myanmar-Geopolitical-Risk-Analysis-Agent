@@ -5,7 +5,12 @@
  */
 let graphChart = null;
 
-const CATEGORY_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff', '#39c5cf', '#ff7b72', '#7ee787'];
+// 浅色「晨雾」分类色：玉青、静蓝、杏黄、珊瑚、薰衣草、湖蓝、蘑粉、苔绿
+const CATEGORY_COLORS = ['#3a9a8a', '#6c93d6', '#e0a64a', '#db665e', '#9787cc', '#4fb0c6', '#e58fa5', '#8bb66a'];
+const GRAPH_TOOLTIP = {
+    backgroundColor: 'rgba(255,255,255,0.96)', borderColor: '#e2e9e6', textStyle: { color: '#24333b', fontSize: 12 },
+    extraCssText: 'border-radius:12px;box-shadow:0 12px 28px -14px rgba(36,51,59,0.35);'
+};
 
 function graphFilters() {
     return {
@@ -36,7 +41,7 @@ function degreeMap(edges) {
 function showEmpty(msg) {
     ensureChart().setOption({
         backgroundColor: 'transparent',
-        title: { text: msg, left: 'center', top: 'middle', textStyle: { color: '#8b949e', fontSize: 14 } },
+        title: { text: msg, left: 'center', top: 'middle', textStyle: { color: '#93a2aa', fontSize: 14, fontWeight: 400 } },
         series: []
     }, true);
 }
@@ -67,21 +72,21 @@ function renderEntityGraph(data, categoryField) {
     }));
     ensureChart().setOption({
         backgroundColor: 'transparent',
-        tooltip: {
+        tooltip: Object.assign({}, GRAPH_TOOLTIP, {
             formatter: p => {
-                if (p.dataType === 'edge') return escapeHtml(`${p.data.source} ↔ ${p.data.target}<br/>共现权重 ${p.data.value}`);
-                return escapeHtml(`<b>${p.data.name}</b><br/>类型 ${p.data.entity_type}<br/>度 ${p.data.degree}`);
+                if (p.dataType === 'edge') return `${escapeHtml(p.data.source)} ↔ ${escapeHtml(p.data.target)}<br/>共现权重 ${escapeHtml(p.data.value)}`;
+                return `<b>${escapeHtml(p.data.name)}</b><br/>类型 ${escapeHtml(p.data.entity_type)}<br/>度 ${escapeHtml(p.data.degree)}`;
             }
-        },
-        legend: [{ data: catNames, textStyle: { color: '#8b949e' }, top: 6 }],
+        }),
+        legend: [{ data: catNames, textStyle: { color: '#576873' }, top: 6, icon: 'circle', itemWidth: 9, itemHeight: 9 }],
         series: [{
             type: 'graph', layout: 'force', roam: true, draggable: true,
-            categories: catNames.map((c, i) => ({ name: c, itemStyle: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] } })),
-            label: { show: true, position: 'right', color: '#c9d1d9', fontSize: 11 },
+            categories: catNames.map((c, i) => ({ name: c, itemStyle: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length], borderColor: '#ffffff', borderWidth: 1.5, shadowBlur: 8, shadowColor: 'rgba(36,51,59,0.15)' } })),
+            label: { show: true, position: 'right', color: '#3c4c56', fontSize: 11 },
             force: { repulsion: 240, edgeLength: [60, 150], gravity: 0.08 },
             data: nodes, links: links,
-            lineStyle: { color: '#6e7681', curveness: 0.12, opacity: 0.65, width: 1.4 },
-            emphasis: { focus: 'adjacency', lineStyle: { width: 3 } }
+            lineStyle: { color: '#b9c7c3', curveness: 0.14, opacity: 0.7, width: 1.3 },
+            emphasis: { focus: 'adjacency', lineStyle: { width: 3, color: '#3a9a8a' } }
         }]
     }, true);
 }
@@ -93,25 +98,25 @@ function renderActorGraph(data) {
     const nodes = rawNodes.map(n => ({
         id: n.id, name: n.name, symbolSize: n.id === 'MMR' ? 56 : 40,
         role: n.role || '', indicator: n.indicator || '',
-        itemStyle: { color: n.id === 'MMR' ? '#58a6ff' : (n.indicator ? '#d29922' : '#8b949e') },
-        label: { show: true, color: '#e6edf3', fontSize: 12, fontWeight: 'bold' }
+        itemStyle: { color: n.id === 'MMR' ? '#3a9a8a' : (n.indicator ? '#e0a64a' : '#a9b6bd'), borderColor: '#ffffff', borderWidth: 2, shadowBlur: 12, shadowColor: 'rgba(36,51,59,0.18)' },
+        label: { show: true, color: '#24333b', fontSize: 12, fontWeight: 'bold' }
     }));
     const links = rawEdges.map(e => ({
         source: e.source, target: e.target, value: e.weight,
         layer: e.layer, mentions: e.mentions, event_count: e.event_count,
-        lineStyle: { color: e.layer === 'cooperation' ? '#3fb950' : (e.layer === 'conflict' ? '#f85149' : '#8b949e'), width: Math.min(8, 1 + Math.abs(e.weight) / 2), opacity: 0.85, curveness: 0.18 }
+        lineStyle: { color: e.layer === 'cooperation' ? '#4ca37c' : (e.layer === 'conflict' ? '#db665e' : '#b9c7c3'), width: Math.min(8, 1 + Math.abs(e.weight) / 2), opacity: 0.8, curveness: 0.18 }
     }));
     ensureChart().setOption({
         backgroundColor: 'transparent',
-        tooltip: {
+        tooltip: Object.assign({}, GRAPH_TOOLTIP, {
             formatter: p => {
                 if (p.dataType === 'edge') {
                     const d = p.data;
-                    return escapeHtml(`${d.source} → ${d.target}<br/>层 ${d.layer}<br/>Goldstein 净值 ${d.value}<br/>报道量 ${d.mentions} / 事件 ${d.event_count}`);
+                    return `${escapeHtml(d.source)} → ${escapeHtml(d.target)}<br/>层 ${escapeHtml(d.layer)}<br/>Goldstein 净值 ${escapeHtml(d.value)}<br/>报道量 ${escapeHtml(d.mentions)} / 事件 ${escapeHtml(d.event_count)}`;
                 }
-                return escapeHtml(`<b>${p.data.name}</b><br/>角色 ${p.data.role}<br/>对应指标 ${p.data.indicator || '—'}`);
+                return `<b>${escapeHtml(p.data.name)}</b><br/>角色 ${escapeHtml(p.data.role)}<br/>对应指标 ${escapeHtml(p.data.indicator || '—')}`;
             }
-        },
+        }),
         series: [{
             type: 'graph', layout: 'force', roam: true, draggable: true,
             data: nodes, links: links,
@@ -188,6 +193,7 @@ async function loadGraph() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    initViewFilters(loadGraph);
     const viewSel = document.getElementById('graph-view');
     if (viewSel) viewSel.addEventListener('change', loadGraph);
     loadGraph();

@@ -1,5 +1,5 @@
 """
-visualization.map_gen - Folium 地图生成（暗色主题）
+visualization.map_gen - Folium 地图生成（浅色「晨雾」主题）
 
 两类地图：
 1. 省级风险分级填色图（choropleth）：GADM L1 真实省界按风险分染色，
@@ -47,16 +47,29 @@ MYANMAR_CENTER = (19.76, 96.07)
 
 # ============================================================
 # 风险色阶：连续渐变（6 档语义分级，颜色本身连续插值）
+# 柔和的鼠尾草绿 → 杏黄 → 珊瑚 → 浆果红，在浅色底图上清爽且可辨
 # ============================================================
 _RISK_STOPS = [
-    (0.00, (46, 213, 115)),    # 低风险 绿
-    (0.20, (163, 222, 63)),    # 中低 黄绿
-    (0.40, (255, 211, 42)),    # 中等 黄
-    (0.55, (255, 165, 2)),     # 中高 橙
-    (0.70, (255, 99, 72)),     # 高 橙红
-    (0.85, (255, 71, 87)),     # 高风险 红
-    (1.00, (164, 18, 60)),     # 极高 暗红
+    (0.00, (110, 190, 152)),   # 低风险 鼠尾草绿
+    (0.20, (168, 208, 122)),   # 中低 嫩芽绿
+    (0.40, (240, 207, 110)),   # 中等 杏黄
+    (0.55, (238, 168, 96)),    # 中高 暖橙
+    (0.70, (229, 124, 96)),    # 高 珊瑚
+    (0.85, (212, 86, 100)),    # 高风险 浆果红
+    (1.00, (158, 48, 86)),     # 极高 深莓
 ]
+
+# 地图内浮层统一采用浅色毛玻璃风格，与系统页面一致
+_UI_FONT = "font-family:'PingFang SC','Microsoft YaHei',sans-serif;"
+_TOOLTIP_CSS = ("background:rgba(255,255,255,0.96);color:#24333b;border:1px solid #e2e9e6;"
+                "border-radius:10px;box-shadow:0 10px 24px -12px rgba(36,51,59,0.35);" + _UI_FONT)
+_POPUP_CSS = "background:#ffffff;color:#24333b;border-radius:10px;" + _UI_FONT
+_PANEL_CSS = ("background:rgba(255,255,255,0.9);color:#576873;border:1px solid rgba(226,233,230,0.95);"
+              "box-shadow:0 12px 28px -16px rgba(36,51,59,0.45);border-radius:12px;" + _UI_FONT)
+_KDE_COLORS = ["#9ccbe8", "#f3cf7a", "#ee9466", "#d4526a"]
+_GLOW_GRADIENT = {0.2: "#8fd0b0", 0.5: "#f2d36b", 0.8: "#ee9a6a", 1.0: "#d9586a"}
+_NO_DATA_FILL = "#cfd9d6"
+_HIGHLIGHT = "#2b7a70"
 
 # 图例分级（展示用）
 _LEGEND_LEVELS = [
@@ -109,20 +122,20 @@ def _localize_cdn(html: str) -> str:
 # ============================================================
 # 底图容错：双通道瓦片 + Leaflet 韧性选项（修复缩放空白板块）
 # ============================================================
-# 兜底源：Esri Dark Gray Canvas（暗色调，与主底图视觉一致，
-# CartoDB 超时露出的不是白色空白而是暗色底图）
+# 兜底源：Esri Light Gray Canvas（浅灰调，与主底图视觉一致，
+# CartoDB 超时露出的是同色系浅色底图而非空白）
 _TILE_FALLBACK_URL = (
     "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"
-    "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+    "World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 )
 _TILE_FALLBACK_ATTR = "Tiles \u00a9 Esri \u2014 Source: Esri, GEBCO, NOAA"
-# 双通道均失败时的本地暗色占位瓦（与 dark_matter 背景色一致）
-_TILE_ERROR_URL = "/static/images/tile-fallback-dark.png"
+# 双通道均失败时的本地浅色占位瓦（与 positron 底色接近）
+_TILE_ERROR_URL = "/static/images/tile-fallback-light.png"
 
 
 def _add_basemap(m: folium.Map) -> None:
     """
-    为地图添加容错底图：CartoDB dark_matter 主通道 + Esri 暗灰兜底通道。
+    为地图添加容错底图：CartoDB positron 主通道 + Esri 浅灰兜底通道。
 
     三项 Leaflet 韧性选项修复"放大缩小出现大量空白板块"：
       - updateWhenZooming=False: 缩放动画期间不清空瓦片网格，
@@ -132,8 +145,8 @@ def _add_basemap(m: folium.Map) -> None:
       - keepBuffer=6: 屏幕外保留 6 圈瓦片缓存（默认 2），
         缩小后再放大立即回填，无需等待网络
 
-    降级链：CartoDB 超时 → 露出下层 Esri 暗灰底图 →
-    两者均失败 → errorTileUrl 本地暗色占位图（全程无纯白空白）。
+    降级链：CartoDB 超时 → 露出下层 Esri 浅灰底图 →
+    两者均失败 → errorTileUrl 本地浅色占位图（全程无刺眼空白）。
     """
     # 兜底通道（垫底，不进图层控制面板）
     fallback = folium.TileLayer(
@@ -142,9 +155,9 @@ def _add_basemap(m: folium.Map) -> None:
         updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
         errorTileUrl=_TILE_ERROR_URL,
     ).add_to(m)
-    # 主暗色底图（不透明瓦片，正常加载时完全覆盖兜底层）
+    # 主浅色底图（不透明瓦片，正常加载时完全覆盖兜底层）
     primary = folium.TileLayer(
-        tiles="CartoDB dark_matter",
+        tiles="CartoDB positron",
         max_zoom=20, max_native_zoom=20, control=False,
         keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
         # 不使用 Leaflet 的 emptyImageUrl：内部将它视为取消加载，不能完成瓦片状态。
@@ -160,7 +173,7 @@ def _add_basemap(m: folium.Map) -> None:
             var box;
             control.onAdd = function () {
                 box = L.DomUtil.create('div', 'basemap-status');
-                box.style.cssText = 'background:#18202be8;color:#eee;padding:6px;font-size:12px;';
+                box.style.cssText = 'background:rgba(255,255,255,0.9);color:#576873;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid #e2e9e6;';
                 box.textContent = '底图加载中；分析图层不依赖底图成功';
                 return box;
             };
@@ -311,13 +324,12 @@ def _legend_html() -> str:
         for name, _ in _LEGEND_LEVELS
     )
     return (
-        '<div style="position:fixed;bottom:10px;right:10px;z-index:999;'
-        'background:rgba(0,0,0,0.75);padding:8px 12px;border-radius:6px;'
-        'color:#ccc;font-size:11px;width:240px;">'
-        '<div style="margin-bottom:4px;font-weight:600">风险等级色阶 (0-100)</div>'
-        f'<div style="height:10px;border-radius:3px;'
+        '<div class="risk-map-legend" style="position:fixed;bottom:12px;right:12px;z-index:999;'
+        'padding:10px 14px;font-size:11px;width:250px;' + _PANEL_CSS + '">'
+        '<div style="margin-bottom:6px;font-weight:600;color:#24333b">风险等级色阶 (0-100)</div>'
+        f'<div style="height:8px;border-radius:8px;'
         f'background:linear-gradient(to right,{stops})"></div>'
-        f'<div style="display:flex;margin-top:3px">{labels}</div>'
+        f'<div style="display:flex;margin-top:4px">{labels}</div>'
         '</div>'
     )
 
@@ -325,23 +337,21 @@ def _legend_html() -> str:
 def _source_note_html(text: str) -> str:
     """左下角数据来源说明栏"""
     return (
-        '<div style="position:fixed;bottom:10px;left:60px;z-index:999;'
-        'background:rgba(0,0,0,0.7);padding:6px 12px;border-radius:4px;'
-        'color:#ccc;font-size:11px;">' + text + '</div>'
+        '<div style="position:fixed;bottom:12px;left:60px;z-index:999;'
+        'padding:6px 12px;font-size:11px;' + _PANEL_CSS + '">' + text + '</div>'
     )
 
 
 def _kde_legend_html(density=None) -> str:
     """事件密度色标图例（左下角，避免与风险色阶重叠）"""
     return (
-        '<div style="position:fixed;bottom:10px;left:10px;z-index:999;'
-        'background:rgba(0,0,0,0.75);padding:8px 12px;border-radius:6px;'
-        'color:#ccc;font-size:11px;width:200px;">'
-        '<div style="margin-bottom:4px;font-weight:600">加权事件密度 (KDE)</div>'
+        '<div class="kde-map-legend" style="position:fixed;bottom:12px;left:12px;z-index:999;'
+        'padding:10px 14px;font-size:11px;width:210px;' + _PANEL_CSS + '">'
+        '<div style="margin-bottom:4px;font-weight:600;color:#24333b">加权事件密度 (KDE)</div>'
         f'<div>共同带宽 {(density or {}).get("bandwidth_km", "--")} km；'
         f'色标上限 {(density or {}).get("color_max_per_km2_day", "--")} /km²/天（以上饱和）</div>'
-        '<div style="height:10px;border-radius:3px;background:'
-        'linear-gradient(to right,#1e90ff,#ffa502,#ff6348,#ff4757)"></div>'
+        '<div style="height:8px;margin-top:4px;border-radius:8px;background:'
+        f'linear-gradient(to right,{",".join(_KDE_COLORS)})"></div>'
         '<div style="display:flex;margin-top:3px">'
         '<span style="flex:1">低</span>'
         '<span style="flex:1;text-align:center">中</span>'
@@ -368,8 +378,7 @@ def render_density_png(z, bbox) -> str:
     from matplotlib.colors import LinearSegmentedColormap
 
     rows, cols = z.shape
-    cmap = LinearSegmentedColormap.from_list(
-        "kde", ["#1e90ff", "#ffa502", "#ff6348", "#ff4757"])
+    cmap = LinearSegmentedColormap.from_list("kde", _KDE_COLORS)
     cmap.set_bad(alpha=0)  # 掩膜区域透明
     zm = np.ma.masked_where(z <= 0.02, z)
 
@@ -432,18 +441,18 @@ class RiskMapGenerator:
             if item:
                 norm = self._normalize_score(item.get("risk_score", 50))
                 return {
-                    "color": "#2a2d35",
+                    "color": "#ffffff",
                     "weight": 0.8,
                     "fillColor": risk_color_continuous(norm),
                     "fillOpacity": 0.62,
                 }
             return {
-                "color": "#2a2d35", "weight": 0.8,
-                "fillColor": "#3a3f47", "fillOpacity": 0.25,
+                "color": "#ffffff", "weight": 0.8,
+                "fillColor": _NO_DATA_FILL, "fillOpacity": 0.25,
             }
 
         def highlight_fn(f):
-            return {"weight": 2, "color": "#ffffff", "fillOpacity": 0.75}
+            return {"weight": 2, "color": _HIGHLIGHT, "fillOpacity": 0.75}
 
         layer = folium.GeoJson(
             gj,
@@ -452,14 +461,14 @@ class RiskMapGenerator:
             highlight_function=highlight_fn,
             tooltip=GeoJsonTooltip(
                 fields=["name_cn", "score_text"], labels=False,
-                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                style=_TOOLTIP_CSS +
                       "pointer-events:none;"
             ),
         )
         GeoJsonPopup(
             fields=["name_cn", "score_text"],
             labels=True,
-            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+            style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(layer)
         layer.add_to(m)
@@ -469,7 +478,7 @@ class RiskMapGenerator:
             _simplified_boundaries(0),
             name="国界",
             style_function=lambda f: {
-                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+                "color": "#6f8a8f", "weight": 1.4, "fill": False,
             },
         ).add_to(m)
 
@@ -527,8 +536,7 @@ class RiskMapGenerator:
                 radius=25,
                 blur=22,
                 max_zoom=10,
-                gradient={0.2: "#2ed573", 0.5: "#ffd32a",
-                          0.8: "#ff6348", 1.0: "#ff4757"},
+                gradient=_GLOW_GRADIENT,
             ).add_to(m)
             # 光晕 canvas 默认拦截指针事件，会遮蔽省界悬停高亮，禁用之
             m.get_root().header.add_child(folium.Element(
@@ -551,22 +559,22 @@ class RiskMapGenerator:
                 feat["properties"]["_risk_color"] = risk_color_continuous(norm)
             else:
                 feat["properties"]["score_text"] = "暂无数据"
-                feat["properties"]["_risk_color"] = "#3a3f47"
+                feat["properties"]["_risk_color"] = _NO_DATA_FILL
 
         def style_fn(f):
             # 近透明填充：视觉上不可见，但让多边形内部参与鼠标命中，
             # 否则 fill:false 时仅 1px 边线可触发悬停高亮（闪烁根因）
             return {
-                "color": "#7a828c", "weight": 1.1,
+                "color": "#8fa6a3", "weight": 1.1,
                 "fill": True, "fillColor": "#000000", "fillOpacity": 0.01,
             }
 
         def highlight_fn(f):
             # 悬停/点击高亮：白色粗边框 + 本省风险色淡填色
             return {
-                "weight": 2.6, "color": "#ffffff",
+                "weight": 2.6, "color": _HIGHLIGHT,
                 "fill": True,
-                "fillColor": f["properties"].get("_risk_color", "#3a3f47"),
+                "fillColor": f["properties"].get("_risk_color", _NO_DATA_FILL),
                 "fillOpacity": 0.30,
             }
 
@@ -578,14 +586,14 @@ class RiskMapGenerator:
             tooltip=GeoJsonTooltip(
                 fields=["name_cn", "score_text"], labels=False,
                 # pointer-events:none 防止 tooltip 截获鼠标导致高亮闪烁
-                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                style=_TOOLTIP_CSS +
                       "pointer-events:none;"
             ),
         )
         GeoJsonPopup(
             fields=["name_cn", "score_text"],
             labels=True,
-            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+            style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(layer)
         layer.add_to(m)
@@ -629,7 +637,7 @@ class RiskMapGenerator:
             _simplified_boundaries(0),
             name="国界",
             style_function=lambda f: {
-                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+                "color": "#6f8a8f", "weight": 1.4, "fill": False,
             },
         ).add_to(m)
 
@@ -698,7 +706,7 @@ class RiskMapGenerator:
                     feat["properties"]["_trend"] = "需等长前后期观测，当前未计算"
                 else:
                     feat["properties"]["score_text"] = "暂无数据"
-                    feat["properties"]["_risk_color"] = "#3a3f47"
+                    feat["properties"]["_risk_color"] = _NO_DATA_FILL
                     feat["properties"]["_risk_level"] = "--"
                     feat["properties"]["_trend"] = "--"
 
@@ -712,19 +720,19 @@ class RiskMapGenerator:
             if item:
                 norm = self._normalize_score(item.get("risk_score", 50))
                 return {
-                    "color": "#2a2d35", "weight": 0.8,
+                    "color": "#ffffff", "weight": 0.8,
                     "fillColor": risk_color_continuous(norm),
                     "fillOpacity": 0.62,
                 }
             return {
-                "color": "#2a2d35", "weight": 0.8,
-                "fillColor": "#3a3f47", "fillOpacity": 0.25,
+                "color": "#ffffff", "weight": 0.8,
+                "fillColor": _NO_DATA_FILL, "fillOpacity": 0.25,
             }
 
         def fill_highlight_fn(f):
             """悬停/点击高亮：白色粗边框 + 填充透明度提升"""
             return {
-                "weight": 2.6, "color": "#ffffff",
+                "weight": 2.6, "color": _HIGHLIGHT,
                 "fillOpacity": 0.82,
             }
 
@@ -735,14 +743,14 @@ class RiskMapGenerator:
             highlight_function=fill_highlight_fn,
             tooltip=GeoJsonTooltip(
                 fields=["name_cn", "score_text"], labels=False,
-                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                style=_TOOLTIP_CSS +
                       "pointer-events:none;"
             ),
             show=False)
         GeoJsonPopup(
             fields=["name_cn", "score_text", "_risk_level", "_trend"],
             labels=True,
-            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+            style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(choro_layer)
 
@@ -762,20 +770,7 @@ class RiskMapGenerator:
 
         # ---- 3) 混合层：荧光光晕 + 风险散点（默认开，与填色互斥）----
         hybrid_group = folium.FeatureGroup(name="风险散点")
-        heat_data = []
-        for item in risk_data:
-            pt = prov_points.get(item.get("province", ""))
-            if pt:
-                heat_data.append([
-                    pt[0], pt[1],
-                    self._normalize_score(item.get("risk_score", 50))])
-        if heat_data:
-            HeatMap(
-                heat_data,
-                radius=25, blur=22, max_zoom=10,
-                gradient={0.2: "#2ed573", 0.5: "#ffd32a",
-                          0.8: "#ff6348", 1.0: "#ff4757"},
-            ).add_to(hybrid_group)
+        # 省质心散点不再叠加仿密度光晕；科学KDE由用户显式开启。
 
         for item in risk_data:
             province = item.get("province", "")
@@ -814,16 +809,16 @@ class RiskMapGenerator:
 
         def line_fn(f):
             return {
-                "color": "#7a828c", "weight": 1.1,
+                "color": "#8fa6a3", "weight": 1.1,
                 "fill": True, "fillColor": "#000000",
                 "fillOpacity": 0.01,
             }
 
         def line_highlight_fn(f):
             return {
-                "weight": 2.6, "color": "#ffffff",
+                "weight": 2.6, "color": _HIGHLIGHT,
                 "fill": True,
-                "fillColor": f["properties"].get("_risk_color", "#3a3f47"),
+                "fillColor": f["properties"].get("_risk_color", _NO_DATA_FILL),
                 "fillOpacity": 0.30,
             }
 
@@ -834,14 +829,14 @@ class RiskMapGenerator:
             highlight_function=line_highlight_fn,
             tooltip=GeoJsonTooltip(
                 fields=["name_cn", "score_text"], labels=False,
-                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                style=_TOOLTIP_CSS +
                       "pointer-events:none;"
             ),
         )
         GeoJsonPopup(
             fields=["name_cn", "score_text"],
             labels=True,
-            style="background:#1a1d23;color:#e0e0e0;border-radius:6px;"
+            style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(borders_layer)
 
@@ -850,7 +845,7 @@ class RiskMapGenerator:
             _simplified_boundaries(0),
             name="国界",
             style_function=lambda f: {
-                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+                "color": "#6f8a8f", "weight": 1.4, "fill": False,
             },
         )
 
@@ -904,6 +899,12 @@ class RiskMapGenerator:
             f"country: {country_layer.get_name()}"
             "};}"
             "_reg(window);"
+            "function syncLegends(){"
+            "var m=window._mmMap,l=window._mmLayers;"
+            "var r=document.querySelector('.risk-map-legend'),k=document.querySelector('.kde-map-legend');"
+            "if(r)r.style.display=m.hasLayer(l.hybrid)||m.hasLayer(l.choropleth)?'':'none';"
+            "if(k)k.style.display=l.kde&&m.hasLayer(l.kde)?'':'none';}"
+            "window._mmMap.on('layeradd layerremove',syncLegends);syncLegends();"
             "if(window.parent && window.parent !== window){"
             "try{_reg(window.parent);}catch(e){}"
             "}"
@@ -926,12 +927,12 @@ class RiskMapGenerator:
                 _simplified_boundaries(1),
                 name="邦/省界",
                 style_function=lambda f: {
-                    "color": "#4a4f58", "weight": 0.8,
-                    "fillColor": "#3a3f47", "fillOpacity": 0.25,
+                    "color": "#a7b8b5", "weight": 0.8,
+                    "fillColor": _NO_DATA_FILL, "fillOpacity": 0.25,
                 },
                 tooltip=folium.GeoJsonTooltip(
                     fields=["NAME_1"], labels=False,
-                    style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                    style=_TOOLTIP_CSS +
                           "pointer-events:none;"
                 ),
             ).add_to(m)
@@ -963,7 +964,7 @@ class RiskMapGenerator:
             _simplified_boundaries(0),
             name="国界",
             style_function=lambda f: {
-                "color": "#9aa0a8", "weight": 1.4, "fill": False,
+                "color": "#6f8a8f", "weight": 1.4, "fill": False,
             },
         ).add_to(m)
 
@@ -972,12 +973,12 @@ class RiskMapGenerator:
             _simplified_boundaries(1),
             name="邦/省界",
             style_function=lambda f: {
-                "color": "#4a4f58", "weight": 0.8,
+                "color": "#a7b8b5", "weight": 0.8,
                 "dashArray": "4", "fill": False,
             },
             tooltip=folium.GeoJsonTooltip(
                 fields=["NAME_1"], labels=False,
-                style="background:#1a1d23;color:#e0e0e0;border-radius:4px;"
+                style=_TOOLTIP_CSS +
                       "pointer-events:none;"
             ),
         ).add_to(m)
@@ -999,8 +1000,7 @@ class RiskMapGenerator:
                 density["grid"],
                 name="事件密度 (KDE)",
                 radius=22, blur=18, max_zoom=11,
-                gradient={0.2: "#1e90ff", 0.5: "#ffa502",
-                          0.8: "#ff6348", 1.0: "#ff4757"}
+                gradient=dict(zip((0.2, 0.5, 0.8, 1.0), _KDE_COLORS))
             ).add_to(m)
 
         # 密度峰值标注
@@ -1008,7 +1008,7 @@ class RiskMapGenerator:
             folium.CircleMarker(
                 location=[density["peak_lat"], density["peak_lon"]],
                 radius=6,
-                color="#ff4757",
+                color="#d4526a",
                 fill=True,
                 fill_opacity=0.9,
                 tooltip=(
@@ -1040,16 +1040,17 @@ class RiskMapGenerator:
             folium.GeoJson(
                 _simplified_boundaries(0),
                 style_function=lambda f: {
-                    "color": "#9aa0a8", "weight": 1.4, "fill": False,
+                    "color": "#6f8a8f", "weight": 1.4, "fill": False,
                 },
             ).add_to(m)
         except Exception:
             pass
         notice_html = (
             '<div style="position:fixed;top:60px;left:50%;transform:'
-            'translateX(-50%);z-index:999;background:rgba(30,33,40,0.95);'
-            'border:1px solid #ffa502;padding:10px 18px;border-radius:6px;'
-            'color:#e0e0e0;font-size:13px;max-width:80%;">'
+            'translateX(-50%);z-index:999;background:rgba(255,255,255,0.94);'
+            'border:1px solid #f0c48a;padding:10px 18px;border-radius:12px;'
+            'color:#24333b;font-size:13px;max-width:80%;'
+            'box-shadow:0 12px 28px -16px rgba(36,51,59,0.45);' + _UI_FONT + '">'
             f'⚠️ {escape(str(message))}</div>'
         )
         m.get_root().html.add_child(folium.Element(notice_html))

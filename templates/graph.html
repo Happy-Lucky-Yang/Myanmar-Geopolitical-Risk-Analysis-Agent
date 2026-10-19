@@ -3,60 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>缅甸地缘风险分析 - 关系图谱</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=views-v3">
+    <title>关系图谱 · 缅甸地缘风险智能分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-1">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-brand">缅甸地缘风险智能分析系统</div>
-        <ul class="nav-links">
-            <li><a href="/">对话分析</a></li>
-            <li><a href="/dashboard">综合态势</a></li>
-            <li><a href="/map">风险地图</a></li>
-            <li><a href="/trend">趋势预测</a></li>
-            <li><a href="/graph" class="active">关系图谱</a></li>
-            <li id="alert-indicator" style="margin-left:auto;padding-right:16px;"></li>
-        </ul>
-    </nav>
+    {% include '_nav.html' %}
 
     <main class="container console-page">
-        <h2>关系网络图谱</h2>
-        <p class="subtitle">Knowledge Graph · Entity Co-occurrence · Actor Network</p>
+        <header class="page-hero">
+            <div class="hero-text">
+                <p class="eyebrow">Relation Network</p>
+                <h1>关系网络图谱</h1>
+                <p class="lede">文章实体共现、知识图谱种子与八个国家行为体之间的有向关系；拖拽节点、滚轮缩放即可探索。</p>
+            </div>
+        </header>
 
-        {% include '_view_filters.html' %}
-        <div class="controls">
-            <label>视图
-                <select id="graph-view">
-                    <option value="cooccur">文章实体共现网络（正式观测）</option>
-                    <option value="kg">知识图谱种子网络（演示域）</option>
-                    <option value="actors">国家行为体网络（8节点·有向）</option>
-                </select>
-            </label>
-            <button class="btn btn-primary" onclick="loadGraph()">刷新</button>
+        <div class="filter-bar">
+            {% include '_view_filters.html' %}
+            <div class="controls filter-extra">
+                <label>视图
+                    <select id="graph-view">
+                        <option value="cooccur">文章实体共现网络（正式观测）</option>
+                        <option value="kg">知识图谱种子网络（演示域）</option>
+                        <option value="actors">国家行为体网络（8节点·有向）</option>
+                    </select>
+                </label>
+                <button class="btn btn-primary" onclick="loadGraph()">刷新</button>
+            </div>
         </div>
 
         <div class="console-grid">
-            <div class="span-12"><div id="graph-chart" style="height:560px;width:100%;"></div></div>
+            <section class="card chart-card span-8">
+                <div id="graph-chart"></div>
+            </section>
 
-            <div class="card span-8">
-                <div class="card-title"><span class="icon">📊</span> 网络统计</div>
+            <aside class="card span-4">
+                <h3>网络解读</h3>
                 <div id="graph-stats"></div>
-            </div>
-            <div class="card span-4">
-                <div class="card-title"><span class="icon">🧭</span> 关键节点 / 社区</div>
+                <h4>关键节点与社区</h4>
                 <div id="graph-top"></div>
-            </div>
-            <div class="span-12">
-                <div class="card">
-                    <div class="card-title"><span class="icon">⚠️</span> 语义边界（必读）</div>
-                    <div id="graph-semantics"></div>
-                </div>
-            </div>
+                <details open>
+                    <summary>语义边界（必读）</summary>
+                    <div id="graph-semantics" class="diag-text"></div>
+                </details>
+            </aside>
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/graph.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-1"></script>
+    <script src="{{ url_for('static', filename='js/graph.js') }}?v=mist-1"></script>
 </body>
 </html>

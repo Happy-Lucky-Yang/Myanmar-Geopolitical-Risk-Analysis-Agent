@@ -155,6 +155,7 @@ def generate_answer(question, evidence, context=(), preferences=None, llm=None):
     if llm is None:
         from analyzer.llm_client import get_llm_client
         llm=get_llm_client()
+    model_version=getattr(llm,'assistant_model',None) or getattr(llm,'_model','test')
     history=[{'role':r['role'],'content':r['content'][:1000]} for r in list(context)[-12:]]
     body={'question':question, 'evidence':evidence,'preferences':preferences or {},'history':history}
     truncated=len(context)>12 or any(len(r['content'])>1000 for r in list(context)[-12:])
@@ -179,9 +180,9 @@ def generate_answer(question, evidence, context=(), preferences=None, llm=None):
                     raise
                 body['format_reminder']='仅输出规定结构；只引用现有证据及其中数值，删除不受支持的结论。'
         return {'status':'ok','answer':answer,'evidence':evidence,'context_truncated':truncated,
-                'generation_attempts':attempts,'model_version':getattr(llm, '_model', 'test'),
+                'generation_attempts':attempts,'model_version':model_version,
                 'prompt_version':PROMPT_VERSION,'disclaimer':'辅助研究研判，需人工核查；贡献分解不是因果证明。'}
     except Exception:
         return {'status':'failed','reason':'模型不可用或回答未通过结构、引用、数值校验；未展示未经校验结论',
                 'evidence':evidence,'context_truncated':truncated,'generation_attempts':attempts,
-                'prompt_version':PROMPT_VERSION,'model_version':getattr(llm, '_model', 'test')}
+                'prompt_version':PROMPT_VERSION,'model_version':model_version}

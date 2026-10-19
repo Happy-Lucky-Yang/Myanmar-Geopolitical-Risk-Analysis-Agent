@@ -1,16 +1,10 @@
 """
-data.nightlight_crawler - NASA VIIRS 夜间灯光遥感数据接入
+data.nightlight_crawler - World Bank 年度电力背景代理（不是VIIRS遥感）
 
-数据源优先级:
-  1. World Bank Light Every Night 数据集 (通过 wbgapi, 免费无需API Key)
-  2. NOAA EOG VIIRS 月度合成数据 (需注册 Token)
-  3. 本地缓存 / 历史基准值 (兜底)
-
-输出指标:
-  - nightlight_change: 0-1 归一化, 表示近期夜光变化率
-    > 0.5 表示夜光增强 (经济活跃 / 局势稳定)
-    < 0.5 表示夜光减弱 (冲突 / 经济衰退)
-    = 0.5 表示无变化
+通过wbgapi读取World Bank年度电力可及性与传输损耗原值。
+nightlight_change仅为历史兼容的电力背景代理标度，不是近期夜光变化率。
+新面板只接受明确年度代理原值；真实VIIRS月亮度由独立导入契约处理。
+过期缓存/网络失败不返回0.5默认观测，年度数据不展开为月度点。
 """
 import os
 import json
@@ -25,18 +19,10 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # 常量
 # ============================================================
-_DATA_DIR = os.path.join(os.path.dirname(__file__), "raw")
-_CACHE_FILE = os.path.join(_DATA_DIR, "nightlight_cache.json")
-os.makedirs(_DATA_DIR, exist_ok=True)
-
-
 def _get_cache_file() -> str:
-    """运行时解析缓存文件路径（支持 DATA_ROOT 外置，失败时回退项目内）"""
-    try:
-        from utils.config import get_data_paths
-        return os.path.join(get_data_paths()["raw"], "nightlight_cache.json")
-    except Exception:
-        return _CACHE_FILE
+    """通过路径中枢解析缓存；配置失败不偷偷回写项目目录。"""
+    from utils.config import get_data_paths
+    return os.path.join(get_data_paths()["raw"], "nightlight_cache.json")
 
 # 缅甸 World Bank 国家代码
 MYANMAR_COUNTRY_CODE = "MMR"
@@ -63,7 +49,7 @@ class NightlightCrawler:
     # 公共接口
     # ============================================================
 
-    def get_nightlight_change(self) -> float:
+    def get_nightlight_change(self) -> Optional[float]:
         """
         获取夜间灯光变化指标 (0-1 归一化)
 
@@ -75,7 +61,7 @@ class NightlightCrawler:
         with self._lock:
             # 检查缓存有效性
             if self._is_cache_valid():
-                return self._cache.get("nightlight_change", 0.5)
+                return self._cache.get("nightlight_change")
 
         # 尝试从 World Bank API 获取
         result = self._fetch_worldbank_nightlight()
@@ -84,9 +70,8 @@ class NightlightCrawler:
             return result["nightlight_change"]
 
         # 兜底: 返回缓存中的旧值或默认值
-        logger.warning("[Nightlight] 所有数据源不可用, 使用缓存/默认值")
-        with self._lock:
-            return self._cache.get("nightlight_change", 0.5)
+        logger.warning("[Nightlight] 年度电力代理不可用，不返回默认观测")
+        return None
 
     def get_monthly_series(self, months: int = 12) -> List[Dict]:
         """
@@ -95,17 +80,15 @@ class NightlightCrawler:
         返回: [{"month": "2026-01", "value": 0.42}, ...]
         """
         with self._lock:
-            series = self._cache.get("monthly_series", [])
-            if series:
-                return series[-months:]
-        return []
+            # 年度数据不展开为虚构月度点，旧缓存也不作为真实遥感读取。
+            return []
 
     def force_refresh(self) -> Dict:
         """强制刷新数据"""
         result = self._fetch_worldbank_nightlight()
         if result:
             self._update_cache(result)
-        return result or self._cache
+        return result or {"nightlight_change": None, "quality": "missing", "status": "unavailable"}
 
     # ============================================================
     # World Bank 数据获取
@@ -137,7 +120,7 @@ class NightlightCrawler:
                     if data is not None and not data.empty:
                         # 取最近的值
                         row = data.loc[MYANMAR_COUNTRY_CODE]
-                        for col in reversed(data.columns):
+                        for col in sorted(data.columns, key=lambda c: int(str(c).replace('YR', '').strip()), reverse=True):
                             val = row[col]
                             if val is not None and not (isinstance(val, float) and
                                                         (val != val)):  # NaN check
@@ -162,7 +145,7 @@ class NightlightCrawler:
 
             # 计算 nightlight_change
             # 基于电力覆盖率变化推断: 覆盖率上升→夜光增强
-            nl_change = 0.5  # 默认无变化
+            nl_change = None  # 缺少电力原值不推断“无变化”
 
             if "electricity_access" in latest_values:
                 ea = latest_values["electricity_access"]
@@ -178,12 +161,15 @@ class NightlightCrawler:
                 # 典型范围: 5%(优秀) - 25%(差)
                 loss_factor = max(0.0, min(1.0, (25 - tl["value"]) / 20.0))
                 # 融合: 70% 电力覆盖率 + 30% 传输损耗
-                nl_change = 0.7 * nl_change + 0.3 * loss_factor
+                nl_change = 0.7 * nl_change + 0.3 * loss_factor if nl_change is not None else loss_factor
 
             # 构建月度序列 (年度数据按12个月展开)
             monthly_series = self._build_monthly_series(latest_values)
 
             result = {
+                "quality": "proxy", "status": "available", "frequency": "annual",
+                "annual_observations": [{"year": v['year'], "indicator": k, "value": v['value'],
+                    "unit": "%", "source": "worldbank", "quality": "proxy"} for k, v in latest_values.items()],
                 "nightlight_change": round(nl_change, 4),
                 "source": "worldbank",
                 "indicators_used": list(latest_values.keys()),
@@ -218,33 +204,8 @@ class NightlightCrawler:
             return None
 
     def _build_monthly_series(self, wb_data: Dict) -> List[Dict]:
-        """将年度 WB 数据展开为月度序列 (线性插值)"""
-        series = []
-        # 按年份排序
-        years_data = {}
-        for name, info in wb_data.items():
-            years_data.setdefault(info["year"], {})[name] = info["value"]
-
-        sorted_years = sorted(years_data.keys())
-        if len(sorted_years) < 2:
-            return series
-
-        for i in range(len(sorted_years) - 1):
-            y1, y2 = sorted_years[i], sorted_years[i + 1]
-            # 每月线性插值
-            for month in range(1, 13):
-                t = (month - 1) / 12.0
-                date_str = f"{y1}-{month:02d}"
-                # 使用电力覆盖率作为主要指标
-                if "electricity_access" in years_data[y1]:
-                    v1 = years_data[y1].get("electricity_access", 60)
-                    v2 = years_data[y2].get("electricity_access", 60)
-                    interpolated = v1 + t * (v2 - v1)
-                    # 归一化到 0-1
-                    val = max(0.05, min(0.95, 0.1 + 0.8 * interpolated / 100.0))
-                    series.append({"month": date_str, "value": round(val, 4)})
-
-        return series
+        """历史兼容入口：年度电力数据不展开成月度观测。"""
+        return []
 
     # ============================================================
     # 缓存管理
@@ -273,12 +234,15 @@ class NightlightCrawler:
 
     def _is_cache_valid(self) -> bool:
         """检查缓存是否在有效期内"""
+        if not isinstance(self._cache, dict) or self._cache.get('quality') != 'proxy':
+            return False
         fetched = self._cache.get("fetched_at")
         if not fetched:
             return False
         try:
             fetch_time = datetime.fromisoformat(fetched)
-            return (datetime.now() - fetch_time).total_seconds() < _CACHE_TTL
+            age = (datetime.now() - fetch_time).total_seconds()
+            return 0 <= age < _CACHE_TTL
         except Exception:
             return False
 

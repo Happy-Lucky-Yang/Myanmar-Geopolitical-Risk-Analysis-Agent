@@ -4,7 +4,6 @@ from flask import Blueprint, current_app, g, jsonify, request, render_template, 
 import json
 from utils.product_features import enabled
 from utils.data_contract import json_safe, time_window
-from storage.workspace import WorkspaceStore, MissingRecord, LimitReached
 
 bp = Blueprint('workspace', __name__)
 WRITE_ROLES = {
@@ -27,7 +26,11 @@ def secured(function):
         if expected and expected != g.user['id']:
             return jsonify(success=False,error='账户已切换，请刷新页面'),409
         try:
+            from storage.workspace import WorkspaceStore, MissingRecord, LimitReached
             from storage.repository import get_repository
+        except ImportError:
+            return jsonify(success=False,error='工作区数据库依赖不可用，请在当前解释器中安装项目依赖'),503
+        try:
             store=WorkspaceStore(get_repository())
             if not store.ready():
                 return jsonify(success=False,error='工作区数据库迁移尚未完成，请联系管理员'),503

@@ -1,20 +1,29 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>文献中心 · 缅甸地缘风险系统</title>
-<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
-<link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}"></head>
-<body>{% include '_product_nav.html' %}<main class="container console-page">
-<h1>文献中心</h1><p>浏览团队整理的题录与摘要，追溯四模块与九指标的研究依据。并非每篇均已完成质量审核，也不是全文数据库。</p>
-<p id="catalog-summary" role="status">正在读取索引状态…</p>
-<form id="catalog-form" class="controls">
-<label>检索题名、作者或摘要<input id="catalog-q" maxlength="300" placeholder="例如：空间自相关"></label>
-<label>主题<select id="catalog-topic"><option value="">全部主题</option></select></label>
-<label>模块<select id="catalog-module"><option value="">全部模块</option><option value="geo_potential">地缘位势</option><option value="spatial">空间统计</option><option value="network">关系网络</option><option value="diagnostic">诊断归因</option></select></label>
-<label>指标<select id="catalog-indicator"><option value="">全部指标</option></select></label>
-<label>起始年份<input id="catalog-from" type="number" min="1800" max="2100"></label>
-<label>结束年份<input id="catalog-to" type="number" min="1800" max="2100"></label>
-<label><input id="catalog-core" type="checkbox">仅核心标记</label><button class="btn btn-primary">搜索</button>
+<title>文献中心 · 缅甸地缘风险智能分析系统</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}?v=mist-1">
+<link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}?v=mist-1"></head>
+<body>{% include '_nav.html' %}<main class="container console-page">
+<header class="page-hero">
+    <div class="hero-text">
+        <p class="eyebrow">Literature</p>
+        <h1>文献中心</h1>
+        <p class="lede">浏览团队整理的题录与摘要，追溯四模块与九指标的研究依据。并非每篇均已完成质量审核，也不是全文数据库。</p>
+    </div>
+</header>
+<p id="catalog-summary" class="catalog-summary" role="status">正在读取索引状态…</p>
+<form id="catalog-form" class="filter-bar catalog-form">
+    <div class="controls">
+        <label class="catalog-query">检索题名、作者或摘要<input id="catalog-q" maxlength="300" placeholder="例如：空间自相关"></label>
+        <label>主题<select id="catalog-topic"><option value="">全部主题</option></select></label>
+        <label>模块<select id="catalog-module"><option value="">全部模块</option><option value="geo_potential">地缘位势</option><option value="spatial">空间统计</option><option value="network">关系网络</option><option value="diagnostic">诊断归因</option></select></label>
+        <label>指标<select id="catalog-indicator"><option value="">全部指标</option></select></label>
+        <label>起始年份<input id="catalog-from" type="number" min="1800" max="2100"></label>
+        <label>结束年份<input id="catalog-to" type="number" min="1800" max="2100"></label>
+        <label><input id="catalog-core" type="checkbox">仅核心标记</label>
+        <button class="btn btn-primary">搜索</button>
+    </div>
 </form>
 <div id="catalog-results" class="product-list" aria-live="polite"></div>
-<div class="controls"><button id="catalog-prev" class="btn" disabled>上一页</button><span id="catalog-page"></span><button id="catalog-next" class="btn" disabled>下一页</button></div>
-</main><script src="{{ url_for('static',filename='js/common.js') }}"></script><script src="{{ url_for('static',filename='js/literature.js') }}"></script></body></html>
+<div class="controls pager"><button id="catalog-prev" class="btn" disabled>上一页</button><span id="catalog-page"></span><button id="catalog-next" class="btn" disabled>下一页</button></div>
+</main><script src="{{ url_for('static',filename='js/common.js') }}?v=mist-1"></script><script src="{{ url_for('static',filename='js/literature.js') }}?v=mist-1"></script></body></html>

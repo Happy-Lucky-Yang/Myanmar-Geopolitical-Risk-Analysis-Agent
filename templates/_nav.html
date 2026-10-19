@@ -1,0 +1,32 @@
+{# 站点导航：四个功能组；当前组包含多个页面时，在下方显示子导航。
+   路由保持不变，旧链接与书签继续可用。 #}
+{% set groups = [
+    ('态势总览', '/dashboard', [('/dashboard', '综合态势')]),
+    ('时空分析', '/map', [('/map', '风险地图'), ('/trend', '趋势预测'), ('/graph', '关系图谱')]),
+    ('对话分析', '/', [('/', '文本分析'), ('/workspace', '个人工作区')]),
+    ('研究资料', '/literature', [('/literature', '文献中心'), ('/guide', '使用说明')]),
+] %}
+{% set current = namespace(label=None, pages=[]) %}
+{% for label, href, pages in groups %}{% for path, _ in pages %}{% if request.path == path %}{% set current.label = label %}{% set current.pages = pages %}{% endif %}{% endfor %}{% endfor %}
+<nav class="navbar" aria-label="主要导航">
+    <a class="nav-brand" href="/dashboard">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>缅甸地缘风险智能分析系统</span>
+        <span class="brand-sub">Geo-Risk Atlas</span>
+    </a>
+    <ul class="nav-links">
+        {% for label, href, pages in groups %}
+        <li><a href="{{ href }}"{% if current.label == label %} class="active" aria-current="{{ 'page' if request.path == href else 'true' }}"{% endif %}>{{ label }}</a></li>
+        {% endfor %}
+    </ul>
+    <div class="nav-end"><div id="alert-indicator" class="alert-indicator" aria-live="polite"></div></div>
+</nav>
+{% if current.pages|length > 1 %}
+<nav class="sub-nav" aria-label="{{ current.label }}">
+    <ul>
+        {% for path, label in current.pages %}
+        <li><a href="{{ path }}"{% if request.path == path %} class="active" aria-current="page"{% endif %}>{{ label }}</a></li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endif %}

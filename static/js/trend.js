@@ -52,7 +52,7 @@ function showChartLoading(el) {
     var mask = createEl('div', 'chart-loading-mask');
     mask.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;'
         + 'z-index:10;display:flex;align-items:center;justify-content:center;'
-        + 'background:rgba(13,17,23,0.55);border-radius:8px;';
+        + 'background:rgba(255,255,255,0.62);border-radius:16px;backdrop-filter:blur(2px);';
     var radar = createEl('div', 'loader-radar');
     radar.appendChild(createEl('div', 'sweep'));
     radar.appendChild(createEl('div', 'core'));
@@ -221,7 +221,12 @@ function renderAnomalies(anomalies) {
     el.innerHTML = html;
 }
 
-/* ---------- ECharts 图表 (暗色主题) ---------- */
+/* ---------- ECharts 图表（浅色「晨雾」配色） ---------- */
+var TREND_SERIES_COLORS = {
+    '风险分': '#3a9a8a', '移动平均': '#9787cc', '预测': '#dd973b',
+    '经验区间下界': '#e9bd84', '经验区间上界': '#e9bd84'
+};
+
 function renderChart(chartData) {
     var chartDom = document.getElementById('trend-chart');
     if (!chartDom) return;
@@ -249,47 +254,55 @@ function renderChart(chartData) {
         trendChart = echarts.init(chartDom);
     }
 
-    // 暗色主题配置
-    var darkAxisStyle = {
-        axisLine: { lineStyle: { color: '#2a2d35' } },
-        axisLabel: { color: '#8a8f98', fontSize: 11 },
-        splitLine: { lineStyle: { color: '#1e2128', type: 'dashed' } },
-        axisTick: { lineStyle: { color: '#2a2d35' } }
+    var axisStyle = {
+        axisLine: { lineStyle: { color: '#d6e0dc' } },
+        axisLabel: { color: '#576873', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#edf2f0', type: 'dashed' } },
+        axisTick: { show: false }
     };
 
     var option = {
         backgroundColor: 'transparent',
+        textStyle: { fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif' },
         title: {
             text: chartData.title || '风险趋势',
-            left: 'center',
-            textStyle: { color: '#f0f0f0', fontSize: 15, fontFamily: '"Noto Serif SC", serif' }
+            left: 8,
+            top: 4,
+            textStyle: { color: '#24333b', fontSize: 15, fontWeight: 600, fontFamily: '"Noto Serif SC", "Songti SC", serif' }
         },
         tooltip: {
             trigger: 'axis',
-            backgroundColor: 'rgba(26,29,35,0.95)',
-            borderColor: '#2a2d35',
-            textStyle: { color: '#e0e0e0', fontSize: 12 }
+            backgroundColor: 'rgba(255,255,255,0.96)',
+            borderColor: '#e2e9e6',
+            borderWidth: 1,
+            padding: [8, 12],
+            textStyle: { color: '#24333b', fontSize: 12 },
+            extraCssText: 'border-radius:12px;box-shadow:0 12px 28px -14px rgba(36,51,59,0.35);'
         },
         legend: {
             data: (chartData.series || []).map(function (s) { return s.name; }),
-            top: 30,
-            textStyle: { color: '#8a8f98' }
+            top: 6,
+            right: 8,
+            icon: 'roundRect',
+            itemWidth: 14,
+            itemHeight: 6,
+            textStyle: { color: '#576873' }
         },
         grid: {
-            left: '3%', right: '4%', bottom: '3%', containLabel: true
+            left: '2%', right: '3%', top: 56, bottom: '3%', containLabel: true
         },
-        xAxis: Object.assign({}, darkAxisStyle, {
+        xAxis: Object.assign({}, axisStyle, {
             type: 'category',
             data: chartData.xAxis,
-            axisLabel: { rotate: 45, color: '#8a8f98', fontSize: 10 }
+            axisLabel: { rotate: 40, color: '#576873', fontSize: 10 }
         }),
         yAxis: Object.assign({
             type: 'value',
             name: (chartData.yAxis && chartData.yAxis.name) || '风险分',
-            nameTextStyle: { color: '#8a8f98' },
+            nameTextStyle: { color: '#576873' },
             min: 0, max: 100
-        }, darkAxisStyle),
-        series: (chartData.series || []).map(function (s) {
+        }, axisStyle),
+        series: (chartData.series || []).map(function (s, index) {
             var item = {
                 name: s.name,
                 type: s.type,
@@ -297,29 +310,30 @@ function renderChart(chartData) {
                 smooth: s.smooth,
                 connectNulls: false
             };
-            // 主线发光效果
+            var color = TREND_SERIES_COLORS[s.name] || ['#3a9a8a', '#6c93d6', '#9787cc', '#dd973b'][index % 4];
             if (s.type === 'line') {
-                item.lineStyle = {
-                    width: 2,
-                    shadowBlur: 8,
-                    shadowColor: 'rgba(30,144,255,0.3)'
-                };
-                item.itemStyle = { color: '#1e90ff' };
-                // 渐变填充
-                item.areaStyle = {
-                    color: {
-                        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                        colorStops: [
-                            { offset: 0, color: 'rgba(30,144,255,0.25)' },
-                            { offset: 1, color: 'rgba(30,144,255,0.02)' }
-                        ]
-                    }
-                };
+                item.itemStyle = { color: color };
+                item.lineStyle = { width: 2.2, color: color };
                 item.symbol = 'circle';
-                item.symbolSize = 4;
+                item.symbolSize = 5;
+                // 主线：玉青柔光 + 渐隐填充；其余参考线不填充，避免画面发闷
+                if (index === 0) {
+                    item.lineStyle.shadowBlur = 10;
+                    item.lineStyle.shadowColor = 'rgba(58,154,138,0.25)';
+                    item.areaStyle = {
+                        color: {
+                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: 'rgba(58,154,138,0.24)' },
+                                { offset: 1, color: 'rgba(108,147,214,0.02)' }
+                            ]
+                        }
+                    };
+                }
             }
             if (s.lineStyle) item.lineStyle = Object.assign(item.lineStyle || {}, s.lineStyle);
             if (s.areaStyle) item.areaStyle = Object.assign(item.areaStyle || {}, s.areaStyle);
+            if (index === 0 && item.areaStyle && item.areaStyle.color) item.areaStyle.opacity = 1;
             if (s.itemStyle) item.itemStyle = Object.assign(item.itemStyle || {}, s.itemStyle);
             if (s.markLine) item.markLine = s.markLine;
             if (s.markPoint) item.markPoint = s.markPoint;

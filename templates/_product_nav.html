@@ -1,8 +1,0 @@
-<nav class="navbar" aria-label="主要导航">
-    <div class="nav-brand">缅甸地缘风险智能分析系统</div>
-    <ul class="nav-links">
-        {% for path, label in [('/', '对话分析'), ('/dashboard', '综合态势'), ('/map', '风险地图'), ('/trend', '趋势预测'), ('/graph', '关系图谱'), ('/literature', '文献中心'), ('/workspace', '个人工作区'), ('/guide', '使用说明')] %}
-        <li><a href="{{ path }}" {% if request.path == path %}class="active" aria-current="page"{% endif %}>{{ label }}</a></li>
-        {% endfor %}
-    </ul>
-</nav>

@@ -63,6 +63,8 @@ class LLMClient:
                  sleep_fn=None):
         cfg = dict(config or get_llm_config())
         self._model = cfg.get("model_name", "geopolitical-gpt")
+        # 证据型研判/自动简报可单独指定更强模型；留空沿用默认模型。
+        self._assistant_model = str(cfg.get("assistant_model") or "").strip() or self._model
         self._temperature = cfg.get("temperature", 0.3)
         self._max_tokens = cfg.get("max_tokens", 2048)
         self._max_retries = max(1, int(cfg.get("max_retries", 3)))
@@ -117,6 +119,10 @@ class LLMClient:
         self._cache_path = Path(cache_path) if cache_path else default_cache
         self._cache_lock = threading.Lock()
         self._cache = self._load_cache() if self._cache_enabled else {}
+
+    @property
+    def assistant_model(self) -> str:
+        return self._assistant_model
 
     @staticmethod
     def _is_placeholder_key(api_key: str) -> bool:
@@ -357,6 +363,8 @@ class LLMClient:
         try:
             with self._cache_path.open("r", encoding="utf-8") as handle:
                 for line in handle:
+                    if not line.strip():
+                        continue
                     try:
                         record = json.loads(line)
                         if isinstance(record, dict) and record.get("key") and isinstance(record.get("result"), dict) and record["result"].get("analysis_status") == "ok":
@@ -377,14 +385,14 @@ class LLMClient:
                     handle.write(json.dumps(
                         {"key": key, "result": record_result},
                         ensure_ascii=False,
-                    ) + os.linesep)
+                    ) + "\n")
                 self._cache[key] = record_result
             except OSError as exc:
                 logger.warning("[LLM] 缓存写入失败: %s", exc)
 
     def generate_evidence_json(self, system_prompt: str, content: str) -> Dict:
         """个人研判专用：单次请求、禁用共享缓存、限定输出，预算由任务层预留。"""
-        client, model, error = self._get_client_for_model()
+        client, model, error = self._get_client_for_model(self._assistant_model)
         if client is None or error:
             raise RuntimeError('大模型未配置或不可用')
         response = client.chat.completions.create(

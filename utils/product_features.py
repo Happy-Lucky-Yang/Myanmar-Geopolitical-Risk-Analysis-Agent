@@ -7,4 +7,5 @@ def enabled(name):
 
 
 def flags():
-    return {name: enabled(name) for name in ('literature', 'workspace', 'risk_briefing', 'auto_briefing', 'un_news')}
+    return {name: enabled(name) for name in ('literature', 'workspace', 'risk_briefing', 'auto_briefing', 'un_news',
+                                                           'risk_panels', 'acled', 'ofac', 'idmc', 'viirs', 'evidence_weighting')}

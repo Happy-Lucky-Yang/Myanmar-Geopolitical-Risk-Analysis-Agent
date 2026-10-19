@@ -11,6 +11,9 @@ llm:
   base_url: "https://open.bigmodel.cn/api/paas/v4/"
   api_key: "your-api-key-here"
   model_name: "glm-4-flash"
+  # AI研判/自动简报（证据型JSON）使用的模型；留空沿用 model_name。
+  # 可用 .env 的 LLM_ASSISTANT_MODEL 覆盖，如 deepseek-chat（自动走下方 DeepSeek 端点与密钥）。
+  assistant_model: ""
   temperature: 0.3
   max_tokens: 2048
   max_retries: 3

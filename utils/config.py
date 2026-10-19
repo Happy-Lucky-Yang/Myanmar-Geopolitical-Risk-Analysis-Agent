@@ -22,6 +22,7 @@ _ENV_OVERRIDES = [
     ("LLM_API_URL", "llm", "base_url"),
     ("LLM_API_KEY", "llm", "api_key"),
     ("LLM_MODEL_NAME", "llm", "model_name"),
+    ("LLM_ASSISTANT_MODEL", "llm", "assistant_model"),
     ("NEO4J_URI", "neo4j", "uri"),
     ("NEO4J_USER", "neo4j", "user"),
     ("NEO4J_PASSWORD", "neo4j", "password"),
