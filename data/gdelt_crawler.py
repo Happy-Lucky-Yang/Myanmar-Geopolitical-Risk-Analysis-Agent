@@ -226,16 +226,16 @@ class GDELTCrawler:
         # 保存去重 URL
         self._save_urls_seen()
 
-        # 数据源健康上报（0 条视为异常：限流或网络问题）
-        try:
-            from data.source_health import get_source_health_tracker
-            if raw_articles:
+        # 数据源健康上报：DOC API 只是新闻列表补充通道，风险指标主通道是 CSV 文件直连；
+        # 这里失败不记失联（否则限流会把整个 GDELT 误判为 dead），由调用方合并判定。
+        if raw_articles:
+            try:
+                from data.source_health import get_source_health_tracker
                 get_source_health_tracker().record("GDELT", True, len(news_list))
-            else:
-                get_source_health_tracker().record(
-                    "GDELT", False, 0, error="返回 0 条（限流或网络异常）")
-        except Exception:
-            pass
+            except Exception:
+                pass
+        else:
+            logger.warning("[GDELT Crawler] DOC API 无产出（限流或网络异常），健康状态留给 CSV 通道与调用方合并判定")
 
         return news_list
 

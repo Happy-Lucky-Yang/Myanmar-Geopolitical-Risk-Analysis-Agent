@@ -294,7 +294,8 @@ function renderChart(chartData) {
         xAxis: Object.assign({}, axisStyle, {
             type: 'category',
             data: chartData.xAxis,
-            axisLabel: { rotate: 40, color: '#576873', fontSize: 10 }
+            axisLabel: { rotate: 40, color: '#576873', fontSize: 10,
+                formatter: function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.slice(5) : v; } }
         }),
         yAxis: Object.assign({
             type: 'value',
@@ -343,6 +344,44 @@ function renderChart(chartData) {
         })
     };
 
+    var main = option.series[0];
+    if (main && main.markLine) {
+        // 预警阈值：细虚线 + 末端标签，不画箭头端点。
+        // 每条线沿用服务端预警色，标签同色，避免细点线被渲染成灰色。
+        var lines = (main.markLine.data || []).map(function (d) {
+            var c = (d.lineStyle && d.lineStyle.color) || '#93a2aa';
+            return Object.assign({}, d, {
+                lineStyle: { color: c, type: 'dashed', width: 1.4, opacity: 0.9 },
+                label: { color: c, fontWeight: 600 }
+            });
+        });
+        main.markLine = Object.assign({}, main.markLine, { symbol: 'none', data: lines,
+            label: { position: 'insideEndTop', fontSize: 10,
+                formatter: function (p) { return (p.name || '') + ' ' + p.value; } } });
+    }
+    var gaps = missingRuns(chartData);
+    if (main && gaps.length) {
+        main.markArea = { silent: true, itemStyle: { color: 'rgba(148,163,170,0.11)' },
+            label: { position: 'insideTop', color: '#7d8c93', fontSize: 11 }, data: gaps };
+    }
     trendChart.setOption(option, {notMerge: true});
     trendChart.resize();
+}
+
+/* 连续缺测日着浅灰底并标注天数；预测延伸段不算缺测。 */
+function missingRuns(chartData) {
+    var x = chartData.xAxis || [], series = chartData.series || [];
+    var actual = (series[0] || {}).data || [];
+    var forecast = series.find(function (s) { return s.name === '预测'; });
+    var runs = [], start = -1;
+    for (var i = 0; i <= x.length; i++) {
+        var missing = i < x.length && actual[i] == null && !(forecast && forecast.data && forecast.data[i] != null);
+        if (missing && start < 0) start = i;
+        if (!missing && start >= 0) {
+            var n = i - start;
+            if (n >= 2) runs.push([{ xAxis: x[start], name: '缺测 ' + n + ' 天' }, { xAxis: x[i - 1] }]);
+            start = -1;
+        }
+    }
+    return runs;
 }

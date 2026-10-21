@@ -6,7 +6,7 @@ from datetime import timedelta
 from xml.etree import ElementTree as ET
 from urllib.parse import urljoin
 from utils.risk_contract import batch, pure_day, number, official_url
-from utils.data_contract import fingerprint, normalize_observation, business_date
+from utils.data_contract import fingerprint, normalize_observation, business_date, FORMAL_MODES
 
 ACLED_TYPES = {'Battles', 'Explosions/Remote violence', 'Violence against civilians'}
 OFAC_TAGS = {'BURMA-EO14014'}
@@ -80,10 +80,19 @@ def parse_idmc(rows, manifest):
     return batch('idmc', result, manifest)
 
 
+def table_value(raw):
+    """CSV/XLSX数值单元格读为字符串；只在适配层显式转换，不放宽观测契约。"""
+    if isinstance(raw, dict) and isinstance(raw.get('value'), str) and raw['value'].strip():
+        return {**raw, 'value': number(raw['value'])}
+    return raw
+
+
 def parse_viirs(rows, manifest):
     result = []
     for raw in rows:
-        row = normalize_observation(raw)
+        row = normalize_observation(table_value(raw))
+        if row['run_kind'] not in FORMAL_MODES:
+            raise ValueError('VIIRS正式观测不能来自演示、手工或历史域')
         if (row['source'] != 'viirs' or row['frequency'] != 'monthly' or row['indicator'] != 'nightlight'
                 or row['quality'] != 'observed' or row['unit'] != 'nW/cm²/sr' or not row['product']
                 or row['dataset_version'] != manifest['dataset_version'] or row['value'] < 0):

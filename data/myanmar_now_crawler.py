@@ -60,14 +60,22 @@ class EnglishNewsCrawler:
             "Accept-Language": "en-US,en;q=0.9",
         }
 
+    def _current_proxies(self):
+        """兼容接口：返回当前首选通道（完整回退见 _request 的双通道轮换）"""
+        from utils.net import proxy_channels
+        return proxy_channels()[0]
+
     def _request(self, url: str) -> Optional[requests.Response]:
-        """带重试的 HTTP GET"""
+        """带重试的 HTTP GET：代理与直连互为兜底"""
+        from utils.net import channel_for, note_fallback, proxy_channels
+        channels = proxy_channels()
+        host = url.split("/")[2] if "//" in url else url
         for attempt in range(self._max_retries):
             try:
                 resp = requests.get(
                     url, headers=self._get_headers(),
                     timeout=self._timeout, allow_redirects=True,
-                    proxies=self._proxies or None
+                    proxies=channel_for(attempt, channels)
                 )
                 if resp.status_code == 200:
                     return resp
@@ -79,7 +87,9 @@ class EnglishNewsCrawler:
                     logger.warning(f"[EN-Crawler] HTTP {resp.status_code}: {url}")
                     return None
             except requests.RequestException as e:
-                logger.warning(f"[EN-Crawler] 请求异常: {e}")
+                logger.warning(f"[EN-Crawler] 请求异常({host}): {type(e).__name__}")
+                if attempt + 1 < self._max_retries and len(channels) > 1:
+                    note_fallback(host)
                 time.sleep(self._backoff * (2 ** attempt))
         return None
 
@@ -268,7 +278,7 @@ class EnglishNewsCrawler:
 
                 content = self._crawl_article_content(href)
 
-                time_tag = item.select_one("time, .td-post-date, .date")
+                time_tag = item.select_one("time, .jeg_meta_date, .td-post-date, .date")
                 pub_time = ""
                 if time_tag:
                     pub_time = time_tag.get("datetime", "") or time_tag.get_text(strip=True)
@@ -334,6 +344,8 @@ class EnglishNewsCrawler:
     def save_news(self, news_list: List[Dict], filename: str = None) -> Optional[str]:
         """保存英文新闻数据"""
         from storage.repository import get_repository
+        from utils.date_repair import fix_missing_dates
+        fix_missing_dates(news_list)
         repo = get_repository()
         if repo is not None:
             repo.save_collected_articles(news_list)

@@ -32,7 +32,8 @@ def run(args):
         if source == 'worldbank':
             from utils.data_contract import normalize_observation
             from utils.risk_contract import batch
-            obs = [normalize_observation(r) for r in rows]
+            from data.risk_sources import table_value
+            obs = [normalize_observation(table_value(r)) for r in rows]
             if any(r['source']!='worldbank' or r['frequency']!='annual' or r['quality']!='proxy'
                    or r['indicator']!='electricity_access' or r['unit']!='%' for r in obs):
                 raise ValueError('WB只接受年度电力可及性代理原值')
@@ -70,9 +71,11 @@ def run(args):
         calibration=next((c for c in store.load('risk_calibrations') if c['id']==args.calibration_id),None)
         if args.calibration_id and calibration is None:
             raise ValueError('基准不存在')
+        if args.batch_ids is not None and (len(args.batch_ids) > 100 or any(len(i) != 64 for i in args.batch_ids)):
+            raise ValueError('--batch-ids须为最多100个64位批次ID')
         payload=build_panels(store.load('risk_source_batches'),get_event_store().load(days=None),args.frequency,
             args.count if args.count is not None else (5 if args.frequency=='annual' else 12),args.end_date,args.region,args.mode,
-            read_json(args.parameters) if args.parameters else {},calibration)
+            read_json(args.parameters) if args.parameters else {},calibration,args.batch_ids)
         name='risk_panels'
     elif args.action == 'match':
         from analyzer.event_links import candidates
@@ -109,6 +112,8 @@ def main():
     parser.add_argument('--parameters')
     parser.add_argument('--description',default='')
     parser.add_argument('--calibration-id')
+    # 同周期存在多个修订批次时显式选择，不删除历史批次。
+    parser.add_argument('--batch-ids', nargs='+')
     parser.add_argument('--frequency',choices=['monthly','annual'],default='monthly')
     parser.add_argument('--count',type=int)
     parser.add_argument('--end-date')

@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 GDELT_FILES_BASE = "http://data.gdeltproject.org/gdeltv2/"
 MYANMAR_FIPS = "BM"
+# 早于最新已发布批次超过该时长仍 404 的批次视为 GDELT 永久缺失（官方偶有空洞），
+# 跳过并推进水位；更近的 404 可能只是尚未可见，仍停在连续成功水位等下轮重试。
+GAP_GRACE = timedelta(hours=1)
+MAX_CONSECUTIVE_GAPS = 8
 
 # events export CSV 列索引（0 基）
 COL_EVENTID = 0
@@ -235,14 +239,15 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
     :return: (事件列表, 成功处理到的最新批次时间戳或 None)
     """
     events = []
-    newest_ts = None  # 成功处理（200/404）的最新批次，供水位线推进
+    newest_ts = None  # 成功处理（200/永久缺失的 404）的最新批次，供水位线推进
     urls = enumerate_batch_urls(count=max_files, base_url=base_url)
+    latest = _batch_ts_from_url(urls[0]) if urls else None
     if since_ts is not None and urls:
-        latest = _batch_ts_from_url(urls[0])
         count = max(0, min(max_files, int((latest - since_ts).total_seconds() // 900))) if latest else 0
         upper = since_ts + timedelta(minutes=15 * count)
         urls = enumerate_batch_urls(end_dt=upper, count=count, base_url=base_url) if count else []
     urls = sorted(urls, key=lambda url: _batch_ts_from_url(url) or datetime.min)
+    gaps = 0
 
     for i, url in enumerate(urls):
         batch_ts = _batch_ts_from_url(url)
@@ -257,9 +262,16 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
         try:
             resp = requests.get(url, timeout=(15, timeout))
             if resp.status_code == 404:
-                logger.warning("[GDELT-CSV] 批次缺失，停止并保留连续成功水位")
-                break
+                permanent = latest is not None and batch_ts is not None and latest - batch_ts >= GAP_GRACE
+                gaps += 1
+                if not permanent or gaps > MAX_CONSECUTIVE_GAPS:
+                    logger.warning("[GDELT-CSV] 批次缺失，停止并保留连续成功水位")
+                    break
+                logger.info(f"[GDELT-CSV] 跳过永久缺失批次 {batch_ts:%Y%m%d%H%M}")
+                newest_ts = batch_ts if newest_ts is None or batch_ts > newest_ts else newest_ts
+                continue
             resp.raise_for_status()
+            gaps = 0
 
             with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
                 name = zf.namelist()[0]

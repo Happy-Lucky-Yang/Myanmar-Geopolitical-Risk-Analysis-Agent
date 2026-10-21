@@ -145,7 +145,9 @@ def raw_panel(start, end, frequency, region, batches, gdelt, parameters=None, mo
     nl, why, version = brightness(start, end)
     old, _, _ = brightness(prev_start, prev_end)
     if nl and old and old['value'] > 0 and (nl['product'], nl['dataset_version']) == (old['product'], old['dataset_version']):
-        values['nightlight_change'] = metric((nl['value']-old['value'])/old['value'], 'viirs', 'brightness_yoy', 'ratio', 'derived', version=version)
+        # 产品写入方法标识，进入冻结基准签名；跨产品或旧无产品基准均不可套用。
+        values['nightlight_change'] = metric((nl['value']-old['value'])/old['value'], 'viirs', 'brightness_yoy:'+nl['product'],
+                                             'ratio', 'derived', version=version)
     else:
         values['nightlight_change'] = metric(source='viirs', reason=why or '同比基期缺失/为0/产品不可比')
     stock, why, version = observation('idmc', 'idp_stock', start, end)

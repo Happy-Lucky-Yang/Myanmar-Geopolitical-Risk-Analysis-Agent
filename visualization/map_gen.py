@@ -122,20 +122,24 @@ def _localize_cdn(html: str) -> str:
 # ============================================================
 # 底图容错：双通道瓦片 + Leaflet 韧性选项（修复缩放空白板块）
 # ============================================================
-# 兜底源：Esri Light Gray Canvas（浅灰调，与主底图视觉一致，
-# CartoDB 超时露出的是同色系浅色底图而非空白）
-_TILE_FALLBACK_URL = (
+# 主底图：Esri Light Gray Canvas（无需密钥，境内直连可达）。
+# CARTO 公共瓦片现返回“API KEY REQUIRED”水印图（HTTP 200），
+# 无法触发降级，已停用。
+_TILE_PRIMARY_URL = (
     "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"
     "World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 )
-_TILE_FALLBACK_ATTR = "Tiles \u00a9 Esri \u2014 Source: Esri, GEBCO, NOAA"
-# 双通道均失败时的本地浅色占位瓦（与 positron 底色接近）
+_TILE_PRIMARY_ATTR = "Tiles \u00a9 Esri \u2014 Esri, HERE, Garmin, \u00a9 OpenStreetMap contributors"
+# 兜底源：OpenStreetMap（不同供应商，海外/云端可达）
+_TILE_FALLBACK_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+_TILE_FALLBACK_ATTR = "\u00a9 OpenStreetMap contributors"
+# 双通道均失败时的本地浅色占位瓦
 _TILE_ERROR_URL = "/static/images/tile-fallback-light.png"
 
 
 def _add_basemap(m: folium.Map) -> None:
     """
-    为地图添加容错底图：CartoDB positron 主通道 + Esri 浅灰兜底通道。
+    为地图添加容错底图：Esri 浅灰主通道 + OpenStreetMap 兜底通道。
 
     三项 Leaflet 韧性选项修复"放大缩小出现大量空白板块"：
       - updateWhenZooming=False: 缩放动画期间不清空瓦片网格，
@@ -145,20 +149,20 @@ def _add_basemap(m: folium.Map) -> None:
       - keepBuffer=6: 屏幕外保留 6 圈瓦片缓存（默认 2），
         缩小后再放大立即回填，无需等待网络
 
-    降级链：CartoDB 超时 → 露出下层 Esri 浅灰底图 →
+    降级链：Esri 失败 → 露出下层 OSM 底图 →
     两者均失败 → errorTileUrl 本地浅色占位图（全程无刺眼空白）。
     """
     # 兜底通道（垫底，不进图层控制面板）
     fallback = folium.TileLayer(
         tiles=_TILE_FALLBACK_URL, attr=_TILE_FALLBACK_ATTR,
-        max_zoom=20, max_native_zoom=16, control=False,
+        max_zoom=20, max_native_zoom=19, control=False,
         updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
         errorTileUrl=_TILE_ERROR_URL,
     ).add_to(m)
     # 主浅色底图（不透明瓦片，正常加载时完全覆盖兜底层）
     primary = folium.TileLayer(
-        tiles="CartoDB positron",
-        max_zoom=20, max_native_zoom=20, control=False,
+        tiles=_TILE_PRIMARY_URL, attr=_TILE_PRIMARY_ATTR,
+        max_zoom=20, max_native_zoom=16, control=False,
         keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
         # 不使用 Leaflet 的 emptyImageUrl：内部将它视为取消加载，不能完成瓦片状态。
         errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==",
@@ -179,14 +183,20 @@ def _add_basemap(m: folium.Map) -> None:
             };
             control.addTo(map);
             var failed = {primary: false, fallback: false};
+            // 只在主底图失败时提示；兜底源在境内常不可达，单独失败不影响显示。
+            function render() {
+                box.textContent = !failed.primary ? '底图已加载'
+                    : failed.fallback ? '底图不可用：仍显示本地边界和分析图层'
+                    : '主底图部分失败，正在显示备用底图';
+            }
             function bind(layer, name) {
                 layer.on('loading', function () { failed[name] = false; });
                 layer.on('tileerror', function () {
                     failed[name] = true;
-                    box.textContent = failed.primary && failed.fallback ? '底图不可用：仍显示本地边界和分析图层' : '部分瓦片失败，正在显示可用备用底图';
+                    if (failed.primary) render();
                 });
                 layer.on('load', function () {
-                    if (!failed.primary && !failed.fallback) box.textContent = '底图已加载';
+                    if (name === 'primary' || failed.primary) render();
                 });
             }
             bind({{this.primary}}, 'primary');

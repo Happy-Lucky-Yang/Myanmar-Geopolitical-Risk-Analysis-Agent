@@ -11,6 +11,9 @@ const GRAPH_TOOLTIP = {
     backgroundColor: 'rgba(255,255,255,0.96)', borderColor: '#e2e9e6', textStyle: { color: '#24333b', fontSize: 12 },
     extraCssText: 'border-radius:12px;box-shadow:0 12px 28px -14px rgba(36,51,59,0.35);'
 };
+// 实体类型中文显示名；未知类型保持原样
+const ENTITY_LABELS = { Location: '地点', Person: '人物', Organization: '组织', Org: '组织', Event: '事件', Country: '国家' };
+const entityLabel = t => ENTITY_LABELS[t] || t;
 
 function graphFilters() {
     return {
@@ -54,21 +57,24 @@ function renderEntityGraph(data, categoryField) {
     const deg = degreeMap(rawEdges);
     const catNames = [];
     rawNodes.forEach(n => {
-        const c = n[categoryField] || n.entity_type || '其他';
+        const c = entityLabel(n[categoryField] || n.entity_type || '其他');
         if (!catNames.includes(c)) catNames.push(c);
     });
+    // 节点少时放大节点与间距，让结构铺满画布；节点多时保持紧凑。
+    const sparse = rawNodes.length < 40;
     const nodes = rawNodes.map(n => ({
         id: String(n.id),
         name: n.name || String(n.id),
-        category: catNames.indexOf(n[categoryField] || n.entity_type || '其他'),
-        symbolSize: Math.min(46, 10 + (deg[n.id] || 0) * 2.2),
-        entity_type: n[categoryField] || n.entity_type || '',
+        category: catNames.indexOf(entityLabel(n[categoryField] || n.entity_type || '其他')),
+        symbolSize: sparse ? Math.min(66, 20 + (deg[n.id] || 0) * 5) : Math.min(46, 10 + (deg[n.id] || 0) * 2.2),
+        entity_type: entityLabel(n[categoryField] || n.entity_type || ''),
         degree: deg[n.id] || 0
     }));
     const idSet = new Set(nodes.map(n => n.id));
     const links = rawEdges.filter(e => idSet.has(String(e.source)) && idSet.has(String(e.target))).map(e => ({
         source: String(e.source), target: String(e.target),
-        value: e.weight || 1, rel: e.type || ''
+        value: e.weight || 1, rel: e.type || '',
+        lineStyle: { width: 1.2 + Math.min(5, Math.log2(1 + Math.abs(Number(e.weight) || 1)) * 1.4) }
     }));
     ensureChart().setOption({
         backgroundColor: 'transparent',
@@ -82,8 +88,8 @@ function renderEntityGraph(data, categoryField) {
         series: [{
             type: 'graph', layout: 'force', roam: true, draggable: true,
             categories: catNames.map((c, i) => ({ name: c, itemStyle: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length], borderColor: '#ffffff', borderWidth: 1.5, shadowBlur: 8, shadowColor: 'rgba(36,51,59,0.15)' } })),
-            label: { show: true, position: 'right', color: '#3c4c56', fontSize: 11 },
-            force: { repulsion: 240, edgeLength: [60, 150], gravity: 0.08 },
+            label: { show: true, position: 'right', color: '#3c4c56', fontSize: sparse ? 13 : 11, fontWeight: sparse ? 600 : 400 },
+            force: sparse ? { repulsion: 520, edgeLength: [90, 170], gravity: 0.12 } : { repulsion: 240, edgeLength: [60, 150], gravity: 0.08 },
             data: nodes, links: links,
             lineStyle: { color: '#b9c7c3', curveness: 0.14, opacity: 0.7, width: 1.3 },
             emphasis: { focus: 'adjacency', lineStyle: { width: 3, color: '#3a9a8a' } }

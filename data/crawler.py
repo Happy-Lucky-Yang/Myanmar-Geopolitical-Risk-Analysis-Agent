@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import List, Dict, Set, Optional
 from bs4 import BeautifulSoup
 from utils.config import get_crawler_config, get_storage_config, get_proxy
+from utils.date_repair import fix_missing_dates
 
 # ============================================================
 # 日志配置
@@ -201,8 +202,9 @@ class NewsCrawler:
             if page == 1:
                 page_url = base_url
             else:
-                # 分页格式：https://www.mhwmm.com/miandianxinwen/index_{page}.html
-                page_url = f"{base_url_clean}/index_{page}.html"
+                # 分页格式（站点实际分页链接）：https://www.mhwmm.com/miandianxinwen?page={page}；
+                # 旧的 index_{page}.html 已 404，导致只能抓到第 1 页
+                page_url = f"{base_url_clean}?page={page}"
 
             logger.info(f"[缅华网] 解析列表页第 {page} 页: {page_url}")
             resp = self.retry_request(page_url)
@@ -650,6 +652,13 @@ class NewsCrawler:
         if not news_list:
             logger.info("[Crawler] 无数据可保存")
             return None
+
+        # 自动修复缺失日期（集成到爬虫流水线）
+        date_stats = fix_missing_dates(news_list)
+        if date_stats['fixed'] > 0:
+            logger.info(f"[Crawler] 日期修复：{date_stats['fixed']}条 (URL:{date_stats['from_url']}, 内容:{date_stats['from_content']}, 爬取时间:{date_stats['from_crawled']})")
+        if date_stats['still_missing'] > 0:
+            logger.warning(f"[Crawler] {date_stats['still_missing']}条新闻仍缺失日期")
 
         if filename is None:
             date_str = datetime.now().strftime("%Y%m%d")

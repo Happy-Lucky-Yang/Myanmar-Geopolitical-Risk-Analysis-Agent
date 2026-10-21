@@ -61,16 +61,19 @@ function loadResearch() {
 
 function renderOverview(snapshot) {
     var history = snapshot.history || [], meta = snapshot.metadata || {};
-    var latest = history.length ? history[history.length - 1] : null;
+    var observed = history.filter(r => isScore(r.risk_score));
+    var latest = observed.length ? observed[observed.length - 1] : null;
     var current = latest && latest.date === snapshot.filters.end_date;
     var yesterday = new Date(snapshot.filters.end_date + 'T00:00:00Z');
     yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-    var previous = history.find(r => r.date === yesterday.toISOString().slice(0, 10));
+    var previous = observed.find(r => r.date === yesterday.toISOString().slice(0, 10));
     var delta = current && previous ? latest.risk_score - previous.risk_score : null;
-    var html = '<div class="net-stats">' + statChip('截止日风险（0～100）', current ? formatNumber(latest.risk_score, 1) : '无当前观测')
+    var html = '<div class="situation">' + situationGaugeHTML(latest, current, snapshot.filters.end_date)
+        + '<div class="sit-side"><div class="net-stats sit-kpis">'
         + statChip('较前一日变化（分）', formatNumber(delta, 1))
         + statChip('有效观测日', (meta.valid_days || 0) + '/' + snapshot.filters.days)
-        + statChip('日风险覆盖率', formatPercent(meta.coverage)) + '</div>';
+        + statChip('日风险覆盖率', formatPercent(meta.coverage)) + '</div>'
+        + riskStripHTML(observed, snapshot.filters.end_date, snapshot.filters.days) + '</div></div>';
     html += '<p class="muted-note">最新风险观测：' + escapeHtml(meta.actual_end || '无')
         + '；实际来源：' + escapeHtml((snapshot.sources || []).join('、') || '无') + '</p>';
     html += '<details class="muted-note"><summary>算法 ' + escapeHtml(meta.algorithm_version || '')
@@ -87,17 +90,120 @@ function renderOverview(snapshot) {
     document.getElementById('overview-body').innerHTML = html;
     var events = (snapshot.events || []).slice().sort((a,b) => String(b.date).localeCompare(String(a.date)));
     var eventHTML = '<p class="muted-note">去重事件记录 ' + events.length + ' 条；不是已验证的独立现实事件数量。</p>';
+    eventHTML += quadMixHTML(events);
     events.slice(0, 8).forEach(function (event) {
-        eventHTML += '<div class="tl-item"><div class="tl-content"><b>' + escapeHtml(event.date) + ' · '
-            + escapeHtml(event.event_location || event.location || '未定位') + '</b><p>'
-            + escapeHtml(event.description || event.event_type || event.root_code || '事件类型未标注') + '</p><p class="muted-note">来源：'
-            + escapeHtml(event.source || 'gdelt') + '；定位方法：' + escapeHtml(event.location_method || (event.lat != null && event.lon != null ? '坐标待边界匹配' : '未提供')) + '</p>';
+        var root = String(event.root_code || '').padStart(2, '0');
+        var quad = String(event.quad_class || '');
+        var kind = event.event_type || CAMEO_ROOT[root] || '事件类型未标注';
+        eventHTML += '<div class="ev-item quad-' + (QUAD[quad] ? quad : '0') + '"><div class="ev-top"><span class="ev-tag">'
+            + escapeHtml(kind) + '</span><span class="ev-date">' + escapeHtml(event.date) + '</span></div>'
+            + '<div class="ev-loc">' + escapeHtml(event.event_location || event.location || '未定位') + '</div>';
+        if (event.description) eventHTML += '<p class="ev-desc">' + escapeHtml(event.description) + '</p>';
+        var meta = [];
+        if (CAMEO_ROOT[root]) meta.push('CAMEO ' + root);
+        if (event.num_articles != null && Number.isFinite(Number(event.num_articles))) meta.push('报道 ' + Number(event.num_articles) + ' 篇');
+        meta.push('来源 ' + (event.source || 'gdelt'));
+        meta.push(event.location_method || (event.lat != null && event.lon != null ? '坐标待边界匹配' : '未提供定位方法'));
+        eventHTML += '<div class="ev-meta">' + escapeHtml(meta.join(' · '));
         var url = event.source_url || event.url;
-        if (typeof url === 'string' && /^https?:\/\//i.test(url)) eventHTML += '<a target="_blank" rel="noopener noreferrer" href="' + escapeHtml(url) + '">查看来源证据</a>';
+        if (typeof url === 'string' && /^https?:\/\//i.test(url)) eventHTML += ' · <a target="_blank" rel="noopener noreferrer" href="' + escapeHtml(url) + '">查看来源证据</a>';
         eventHTML += '</div></div>';
     });
     if (!events.length) eventHTML += '<p class="muted-note">所选窗口无事件记录，未回填旧闻或演示事件。</p>';
     document.getElementById('focus-events').innerHTML = eventHTML;
+}
+
+/* ================= 态势主视觉：风险仪表 + 逐日条码 ================= */
+// CAMEO 根代码与四类（QuadClass）中文名，仅作报道类型说明，不是事件定性。
+var CAMEO_ROOT = {'01': '公开声明', '02': '呼吁', '03': '表达合作意向', '04': '磋商', '05': '外交合作',
+    '06': '物质合作', '07': '提供援助', '08': '让步', '09': '调查', '10': '要求', '11': '表示不满',
+    '12': '拒绝', '13': '威胁', '14': '抗议', '15': '展示武力', '16': '降低关系', '17': '胁迫',
+    '18': '袭击', '19': '交战', '20': '大规模暴力'};
+var QUAD = {'1': '言语合作', '2': '物质合作', '3': '言语冲突', '4': '物质冲突'};
+
+function quadMixHTML(events) {
+    var counts = {'1': 0, '2': 0, '3': 0, '4': 0}, total = 0;
+    events.forEach(e => { var q = String(e.quad_class || ''); if (q in counts) { counts[q]++; total++; } });
+    if (!total) return '';
+    var bar = '', legend = '';
+    Object.keys(QUAD).forEach(function (q) {
+        if (counts[q]) bar += '<span class="quad-' + q + '" style="flex-grow:' + counts[q] + '" title="' + QUAD[q] + ' ' + counts[q] + ' 条"></span>';
+        legend += '<span><i class="quad-' + q + '"></i>' + QUAD[q] + ' ' + counts[q] + '</span>';
+    });
+    return '<div class="quad-mix" role="img" aria-label="按 CAMEO 四类的报道记录构成"><div class="quad-bar">' + bar
+        + '</div><div class="quad-legend">' + legend + '</div></div>';
+}
+function isScore(v) { return typeof v === 'number' && Number.isFinite(v); }
+function riskTone(score) { return score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low'; }
+var TONE_LABEL = {high: '高风险', medium: '中风险', low: '低风险'};
+
+function daysBetween(a, b) {
+    return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+}
+
+/* 270° 仪表：底轨按 40/70 分三段着色；非截止日观测整体置灰，避免把旧值读成当前态势。 */
+function situationGaugeHTML(latest, current, endDate) {
+    var size = 200, c = size / 2, r = 80, circ = 2 * Math.PI * r, arc = circ * 0.75;
+    var score = latest ? latest.risk_score : null;
+    var pct = isScore(score) ? Math.max(0, Math.min(100, score)) / 100 : 0;
+    var tone = isScore(score) ? riskTone(score) : 'none';
+    var rot = 'rotate(135 ' + c + ' ' + c + ')';
+    function seg(from, to, cls) {
+        return '<circle class="sg-zone ' + cls + '" cx="' + c + '" cy="' + c + '" r="' + r + '" transform="' + rot
+            + '" stroke-dasharray="' + (arc * (to - from)).toFixed(2) + ' ' + circ.toFixed(2)
+            + '" stroke-dashoffset="' + (-arc * from).toFixed(2) + '"/>';
+    }
+    var svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" aria-hidden="true">'
+        + seg(0, 0.4, 'zone-low') + seg(0.4, 0.7, 'zone-medium') + seg(0.7, 1, 'zone-high');
+    if (isScore(score)) {
+        var angle = (135 + 270 * pct) * Math.PI / 180;
+        svg += '<circle class="sg-fill" cx="' + c + '" cy="' + c + '" r="' + r + '" transform="' + rot
+            + '" style="--dash:' + (arc * pct).toFixed(2) + 'px;--circ:' + circ.toFixed(2) + 'px"/>'
+            + '<circle class="sg-dot" cx="' + (c + r * Math.cos(angle)).toFixed(2) + '" cy="' + (c + r * Math.sin(angle)).toFixed(2) + '" r="7"/>';
+    }
+    svg += '</svg>';
+    var center;
+    if (current) {
+        center = '<div class="sg-value">' + escapeHtml(formatNumber(score, 1)) + '</div>'
+            + '<div class="sg-level">' + TONE_LABEL[tone] + '</div>'
+            + '<div class="sg-date">截止日 ' + escapeHtml(endDate) + '</div>';
+    } else if (latest) {
+        var age = daysBetween(latest.date, endDate);
+        center = '<div class="sg-flag">无当前观测</div>'
+            + '<div class="sg-value">' + escapeHtml(formatNumber(score, 1)) + '</div>'
+            + '<div class="sg-date">最新 ' + escapeHtml(latest.date.slice(5)) + ' · ' + age + ' 天前</div>';
+    } else {
+        center = '<div class="sg-value">—</div><div class="sg-flag">无当前观测</div>';
+    }
+    var title = current ? '截止日风险 ' + formatNumber(score, 1) + '（0～100，非发生概率）'
+        : latest ? '截止日无观测；最新观测 ' + latest.date + ' 为 ' + formatNumber(score, 1) + ' 分，已置灰' : '窗口内无有效风险观测';
+    return '<div class="sit-gauge ' + (current ? 'is-current tone-' + tone : 'is-stale') + '" role="img" aria-label="'
+        + escapeHtml(title) + '" title="' + escapeHtml(title) + '">' + svg
+        + '<div class="sg-center">' + center + '</div><div class="sg-scale"><span>0</span><span>100</span></div></div>';
+}
+
+/* 每个自然日一格：柱高=风险分，颜色=等级；缺测为斜纹短格，绝不补零或沿用旧值。 */
+function riskStripHTML(observed, endDate, days) {
+    var byDate = {};
+    observed.forEach(r => { byDate[r.date] = r.risk_score; });
+    var end = new Date(endDate + 'T00:00:00Z'), cells = '', count = 0, start = '';
+    for (var i = days - 1; i >= 0; i--) {
+        var d = new Date(end.getTime());
+        d.setUTCDate(end.getUTCDate() - i);
+        var key = d.toISOString().slice(0, 10), v = byDate[key];
+        if (!start) start = key;
+        if (isScore(v)) {
+            count++;
+            cells += '<span class="rs-cell tone-' + riskTone(v) + '" style="--h:' + (14 + 86 * Math.max(0, Math.min(100, v)) / 100).toFixed(1)
+                + '%" title="' + key + ' · ' + formatNumber(v, 1) + ' 分"></span>';
+        } else {
+            cells += '<span class="rs-cell rs-missing" title="' + key + ' · 缺测"></span>';
+        }
+    }
+    return '<div class="risk-strip-wrap"><div class="strip-head"><span>逐日风险</span><span class="strip-legend">'
+        + '<i class="tone-low"></i>低<i class="tone-medium"></i>中<i class="tone-high"></i>高<i class="rs-missing"></i>缺测</span></div>'
+        + '<div class="risk-strip" role="img" aria-label="' + escapeHtml(days + '天窗口内有效观测' + count + '天，缺测' + (days - count) + '天') + '">' + cells + '</div>'
+        + '<div class="strip-axis"><span>' + escapeHtml(start) + '</span><span>' + escapeHtml(endDate) + '</span></div></div>';
 }
 
 /* ================= 数据源健康 ================= */
@@ -224,7 +330,7 @@ async function loadGeoPotential() {
         var html = '<div class="muted-note">' + escapeHtml(d.potential.model || '') + '</div>';
         top.forEach(function (p) {
             html += metricBarHTML(
-                p.province + ' (' + escapeHtml(p.dominant_center || '') + ')',
+                p.province + ' (' + (p.dominant_center || '') + ')',
                 p.potential_normalized, 100
             );
         });
@@ -285,7 +391,7 @@ async function loadNetwork() {
         if (actors.length > 0) {
             html += '<div class="sub-title">共现网络高连接实体（非现实影响力排名）</div>';
             actors.slice(0, 6).forEach(function (a) {
-                html += metricBarHTML(a.name + ' [' + escapeHtml(a.role || '') + ']', a.degree_centrality, 1);
+                html += metricBarHTML(a.name + ' [' + (a.role || '') + ']', a.degree_centrality, 1);
             });
         }
         el.innerHTML = html;

@@ -136,7 +136,7 @@ rss_feeds:
   frontier_myanmar:
     name: "Frontier Myanmar"
     rss_url: "https://www.frontiermyanmar.net/en/feed"
-    enabled: true
+    enabled: false   # 403 拒绝访问（2026-10 实测），停用
     language: "en"
   dvb:
     name: "Democratic Voice of Burma"
@@ -148,6 +148,12 @@ rss_feeds:
     rss_url: "https://thediplomat.com/feed/"
     enabled: false   # 付费墙 + 连接超时（2026-07 实测）
     language: "en"
+  kachin_news:
+    name: "Kachin News Group"
+    rss_url: "https://kachinnews.com/feed"
+    enabled: true    # 克钦独立媒体（英文），覆盖缅北冲突；2026-10 实测直连可用
+    language: "en"
+
 
 # ---------- 夜间灯光遥感 ----------
 nightlight:
@@ -253,6 +259,7 @@ scheduler:
   crawl_interval_hours: 4              # 缅华网爬取间隔（小时）
   gdelt_interval_hours: 6              # GDELT 查询间隔（小时）
   analysis_interval_hours: 12          # 分析流水线间隔（小时）
+  un_news_interval_hours: 4            # UN News 采集间隔（跟随新闻爬取每 4 小时一次；需 ENABLE_UN_NEWS=true）
 
 # ---------- Flask 服务 ----------
 flask:

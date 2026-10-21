@@ -5,13 +5,14 @@ data.source_health - 数据源健康追踪器
 持久化到 DATA_ROOT/processed/source_health.json（重启不丢失），
 供 /api/sources/health 与前端"数据源健康"卡片展示。
 
-状态判定规则：
-- healthy  : 近期窗口（最近6次）成功率 >= 70% 且最近一次成功
-- degraded : 其余情况（时好时坏）
-- dead     : 最近 3 次全部失败（站点停运/被封，应关注替代源）
+状态判定规则（以“当前是否可用”为主，历史成功率仅作稳定性参考）：
+- healthy  : 最近一次运行成功（含降级通道/备用入口成功）
+- degraded : 最近一次失败，但 24 小时内有过成功（时好时坏/网络抖动）
+- dead     : 最近一次失败且 24 小时内无成功，或最近 3 次全部失败
 
-说明：状态基于“近期窗口”而非全量20条窗口，避免早期失败（如代理刚开启时）
-长期拖累状态，使已恢复的源能及时回到 healthy；整体成功率仍按全窗口展示。
+说明：采集器的“成功”已包含降级路径（代理/直连双通道兜底、RSS fallback 页面、
+GDELT CSV 备用通道），不会再因单一通道不可用而误判失联；早期失败保留在成功率里
+反映稳定性，不再长期拖住状态标签。
 """
 import os
 import json
@@ -19,7 +20,7 @@ import time
 import logging
 import threading
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -91,12 +92,6 @@ class SourceHealthTracker:
                 recent = records[-RECENT_WINDOW:]
                 recent_rate = (sum(1 for r in recent if r["ok"]) / len(recent)
                                if recent else 0.0)
-                if total >= 3 and all(not r["ok"] for r in last3):
-                    status = "dead"
-                elif total > 0 and records[-1]["ok"] and recent_rate >= 0.7:
-                    status = "healthy"
-                else:
-                    status = "degraded"
 
                 # 最近一次成功时间
                 last_success = None
@@ -104,6 +99,15 @@ class SourceHealthTracker:
                     if r["ok"]:
                         last_success = r["time"]
                         break
+
+                if total >= 3 and all(not r["ok"] for r in last3):
+                    status = "dead"
+                elif records and records[-1]["ok"]:
+                    status = "healthy"
+                elif _within_hours(last_success, 24):
+                    status = "degraded"
+                else:
+                    status = "degraded" if total < 3 else "dead"
 
                 result[source] = {
                     "status": status,
@@ -144,6 +148,23 @@ class SourceHealthTracker:
             os.replace(tmp, self._file)
         except Exception as e:
             logger.warning(f"[SourceHealth] 持久化失败: {e}")
+
+
+# ============================================================
+# 内部工具
+# ============================================================
+
+def _within_hours(timestamp: Optional[str], hours: int) -> bool:
+    """时间戳是否落在最近 hours 小时内（解析失败视为不在窗口内）"""
+    if not timestamp:
+        return False
+    try:
+        moment = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - moment <= timedelta(hours=hours)
+    except ValueError:
+        return False
 
 
 # ============================================================

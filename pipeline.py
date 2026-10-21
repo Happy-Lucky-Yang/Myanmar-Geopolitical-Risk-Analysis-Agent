@@ -351,6 +351,12 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
 
     try:
         from analyzer.risk_scorer import get_risk_scorer
+        from utils.date_repair import fix_missing_dates
+        # 旧数据与各爬虫的缺失/不可解析日期统一在归日前修复，并以 date_quality 标明推断来历
+        date_stats = fix_missing_dates(news)
+        if date_stats["fixed"]:
+            _add_warning(result, "risk", f"{date_stats['fixed']} 条发布日期为推断值（URL {date_stats['from_url']}，"
+                                         f"正文 {date_stats['from_content']}，爬取时间兜底 {date_stats['from_crawled']}）")
         grouped = defaultdict(list)
         for item in news:
             day = business_date(item.get("pub_time"))
@@ -364,6 +370,7 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
             _add_warning(result, "risk", f"{invalid_count} 条缺少有效日期或日期在未来，未计入日指标")
         daily_results = []
         scorer = get_risk_scorer()
+        low_sample_days = []
         for day, items in sorted(grouped.items()):
             risk = scorer.compute_daily_risk(items)
             risk.update(date=day, run_kind=source_mode,
@@ -371,9 +378,17 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
                         input_hash=fingerprint({"version": RISK_VERSION, "date": day,
                                                "articles": sorted(item["content_hash"] for item in items),
                                                "indicators": risk.get("raw_indicators"), "weights": risk.get("weights_used")}))
+            # 极端分逐日告警；单样本日数量多，只汇总一条，避免淹没真正的异常
+            if risk.get("anomaly_flag") == "low_sample":
+                low_sample_days.append(day)
+            elif risk.get("anomaly_flag"):
+                _add_warning(result, "risk", f"{day} 异常：{risk.get('anomaly_reason')}（{risk.get('risk_score')}分），建议人工复核")
             daily_results.append(risk)
         result["risk"] = daily_results[-1]
         result["stages"]["risk"] = _stage("ok", f"按发布业务日重算 {len(daily_results)} 个日指标，返回最新观测而非今日推测")
+        if low_sample_days:
+            _add_warning(result, "risk", f"{len(low_sample_days)} 个业务日仅 1 条新闻，评分仅供参考"
+                                         f"（最近：{', '.join(low_sample_days[-3:])}）")
     except Exception as exc:
         result["stages"]["risk"] = _stage("failed", str(exc))
         return result

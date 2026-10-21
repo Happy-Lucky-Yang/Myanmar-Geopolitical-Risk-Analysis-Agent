@@ -12,10 +12,16 @@ utils.config - 配置加载工具
 若 .env 存放在项目外（如私密文件夹），设置系统环境变量 ENV_FILE 指向它即可。
 """
 import os
+import time
+import socket
+import logging
 import yaml
+from urllib.parse import urlsplit
 
 _config_cache = None
 _env_loaded = False
+_proxy_probe = {}  # 代理地址 -> (探测时刻, 是否可达)，避免每次请求都建连探测
+_PROXY_PROBE_TTL = 60
 
 # 环境变量 → config 字段的覆盖映射（仅敏感字段）
 _ENV_OVERRIDES = [
@@ -266,4 +272,32 @@ def get_proxy() -> dict:
         url = str(load_config().get("proxy", "") or "").strip()
     if not url:
         return {}
+    if not _local_proxy_alive(url):
+        return {}
     return {"http": url, "https": url}
+
+
+def _local_proxy_alive(url: str) -> bool:
+    """
+    本机代理（如 Clash 127.0.0.1:7890）未启动时自动降级直连：否则所有境外源会因
+    ProxyError 全部失败，连本可直连的源也采不到。非本机代理不探测，原样使用。
+    """
+    try:
+        parts = urlsplit(url)
+        host, port = parts.hostname, parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return True
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return True
+    cached = _proxy_probe.get(url)
+    if cached and time.time() - cached[0] < _PROXY_PROBE_TTL:
+        return cached[1]
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            alive = True
+    except OSError:
+        alive = False
+    if not alive and (not cached or cached[1]):
+        logging.getLogger(__name__).warning(f"[Config] 本机代理 {url} 未启动，境外源改为直连")
+    _proxy_probe[url] = (time.time(), alive)
+    return alive

@@ -47,6 +47,13 @@ DEFAULT_RSS_FEEDS = {
         "fallback_url": None,  # 无备用（付费墙限制）
         "enabled": False,  # 付费墙 + 连接超时，暂停用
     },
+    "kachin_news": {
+        "name": "Kachin News Group",
+        "rss_url": "https://kachinnews.com/feed",
+        "website": "https://kachinnews.com",
+        "language": "en",
+        "fallback_url": None,
+    },
 }
 
 
@@ -85,16 +92,24 @@ class RSSNewsCrawler:
     # HTTP 请求
     # ============================================================
 
+    def _current_proxies(self):
+        """兼容接口：返回当前首选通道（完整回退见 _request 的双通道轮换）"""
+        from utils.net import proxy_channels
+        return proxy_channels()[0]
+
     def _request(self, url: str) -> Optional[requests.Response]:
-        """带重试的 HTTP GET"""
+        """带重试的 HTTP GET：代理与直连互为兜底，任一通道成功即算采到"""
+        from utils.net import channel_for, note_fallback, proxy_channels
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0 MyanmarRiskSystem/1.0",
             "Accept": "application/rss+xml, application/xml, text/xml, text/html, */*",
         }
+        channels = proxy_channels()
+        host = url.split("/")[2] if "//" in url else url
         for attempt in range(self._max_retries):
             try:
                 resp = requests.get(url, headers=headers, timeout=self._timeout,
-                                    proxies=self._proxies or None)
+                                    proxies=channel_for(attempt, channels))
                 if resp.status_code == 200:
                     return resp
                 elif resp.status_code in (429, 503):
@@ -103,7 +118,9 @@ class RSSNewsCrawler:
                     logger.warning(f"[RSS] HTTP {resp.status_code}: {url}")
                     return None
             except requests.RequestException as e:
-                logger.warning(f"[RSS] 请求异常: {e}")
+                logger.warning(f"[RSS] 请求异常({host}): {type(e).__name__}")
+                if attempt + 1 < self._max_retries and len(channels) > 1:
+                    note_fallback(host)
                 time.sleep(self._backoff * (2 ** attempt))
         return None
 
@@ -334,6 +351,8 @@ class RSSNewsCrawler:
     def save_news(self, news_list: List[Dict], filename: str = None) -> Optional[str]:
         """保存 RSS 新闻数据"""
         from storage.repository import get_repository
+        from utils.date_repair import fix_missing_dates
+        fix_missing_dates(news_list)  # RFC-822 等原始时间保留在 pub_time_raw
         repo = get_repository()
         if repo is not None:
             repo.save_collected_articles(news_list)

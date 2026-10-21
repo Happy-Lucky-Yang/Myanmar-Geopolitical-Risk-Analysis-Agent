@@ -96,12 +96,14 @@ def test_un_news_dedup_limit_and_missing_date(monkeypatch):
     urls=[URL+str(i) for i in range(25)]
     def get(url,robots=False):
         if robots:return 'User-agent: *\nAllow: /'
-        if '/focus/' in url:return ''.join(f'<a href="{u}">文</a>' for u in urls)
-        return HTML.replace('2023-01-02','invalid') if url==urls[1] else HTML
+        if '/tags/' in url or '/focus/' in url:return ''.join(f'<a href="{u}">文</a>' for u in urls)
+        return HTML.replace('2023-01-02','invalid') if url==urls[24] else HTML
     monkeypatch.setattr(crawler,'_get',get)
     rows=crawler.crawl(known_urls=[urls[0]],limit=30)
-    assert len(rows)==19 and crawler.review_required==[urls[1]]
+    assert len(rows)==19 and crawler.review_required==[urls[24]]
     assert all(r['url']!=urls[0] for r in rows)
+    # 上限内优先取文章号最大（最新）的报道，最旧的留待下轮
+    assert urls[1] not in {r['url'] for r in rows} and urls[23] in {r['url'] for r in rows}
 
 
 def test_un_news_redirect_block_and_rate_limit():

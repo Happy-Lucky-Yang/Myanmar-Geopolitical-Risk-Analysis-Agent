@@ -129,13 +129,20 @@ class GDELTClient:
         if delay > 0:
             time.sleep(delay)
 
+    def _current_proxies(self):
+        """兼容接口：返回当前首选通道（完整回退见 _make_request 的双通道轮换）"""
+        from utils.net import proxy_channels
+        return proxy_channels()[0]
+
     def _make_request(self, params: Dict) -> Optional[Dict]:
         """
-        带重试机制的 HTTP GET 请求
+        带重试机制的 HTTP GET 请求：代理与直连互为兜底
 
         :param params: 查询参数字典
         :return: JSON 响应字典，或 None（请求失败）
         """
+        from utils.net import channel_for, note_fallback, proxy_channels
+        channels = proxy_channels()
         for attempt in range(self._max_retries):
             # 全局限速排队（含重试请求）
             self._pace_request()
@@ -148,7 +155,7 @@ class GDELTClient:
                         "User-Agent": "MyanmarRiskSystem/1.0 (Academic Research)",
                         "Accept": "application/json",
                     },
-                    proxies=self._proxies or None,
+                    proxies=channel_for(attempt, channels),
                 )
 
                 if resp.status_code == 200:
@@ -183,9 +190,13 @@ class GDELTClient:
 
             except requests.Timeout:
                 logger.warning(f"[GDELT] 请求超时 ({self._timeout}s), 重试 {attempt+1}/{self._max_retries}")
+                if attempt + 1 < self._max_retries and len(channels) > 1:
+                    note_fallback('api.gdeltproject.org')
                 time.sleep(self._backoff * (2 ** attempt))
             except requests.RequestException as e:
-                logger.warning(f"[GDELT] 请求异常: {e}, 重试 {attempt+1}/{self._max_retries}")
+                logger.warning(f"[GDELT] 请求异常({type(e).__name__}), 重试 {attempt+1}/{self._max_retries}")
+                if attempt + 1 < self._max_retries and len(channels) > 1:
+                    note_fallback('api.gdeltproject.org')
                 time.sleep(self._backoff * (2 ** attempt))
             except ValueError as e:
                 logger.error(f"[GDELT] JSON 解析失败: {e}")

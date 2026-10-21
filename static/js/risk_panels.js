@@ -54,6 +54,8 @@
     }
     root.addEventListener('toggle',()=>{if(root.open)load();else sequence++;});
     el('panel-refresh').onclick=load;
-    ['panel-frequency','panel-mode','panel-calibration'].forEach(id=>el(id).addEventListener('change',load));
+    // 切换周期/模式时旧基准必然不匹配，先清空再读，避免误报“尚未计算”。
+    ['panel-frequency','panel-mode'].forEach(id=>el(id).addEventListener('change',()=>{el('panel-calibration').value='';load();}));
+    el('panel-calibration').addEventListener('change',load);
     document.querySelectorAll('.view-filters input,.view-filters select').forEach(n=>n.addEventListener('change',()=>{sequence++;el('risk-panel-body').textContent='筛选已改变，请刷新多源面板。';}));
 })();

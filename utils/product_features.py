@@ -3,6 +3,9 @@ import os
 
 
 def enabled(name):
+    # .env 仅在首次 load_config() 时加载；开关可能先于它被查询，这里主动确保已加载
+    from utils.config import _load_env_file
+    _load_env_file()
     return os.environ.get('ENABLE_' + name.upper(), 'false').lower() == 'true'
 
 

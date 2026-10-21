@@ -89,6 +89,10 @@ class CrawlerScheduler:
         # 遥感/经济数据刷新间隔（小时）
         self._nightlight_interval = scheduler_cfg.get("nightlight_interval_hours", 168)  # 7天
         self._economic_interval = scheduler_cfg.get("economic_interval_hours", 720)     # 30天
+        # UN News 跟随新闻爬取节奏（默认每 4 小时一次），需 ENABLE_UN_NEWS=true；
+        # 保留独立间隔便于限频：更新慢时可调大，不必改爬取周期。
+        self._un_news_interval = scheduler_cfg.get("un_news_interval_hours", 4)
+        self._last_un_news_time = None
         self._last_nightlight_time = None
         self._last_economic_time = None
         self._last_nightlight_result = None
@@ -150,6 +154,23 @@ class CrawlerScheduler:
                 errors.append(f"RSS: {e}")
                 logger.error(f"[Scheduler] RSS 爬取失败: {e}", exc_info=True)
 
+            # 1d: UN News（联合国官方来源，按 un_news_interval_hours 限频）
+            try:
+                from utils.product_features import enabled
+                due = (self._last_un_news_time is None or
+                       (datetime.now() - self._last_un_news_time).total_seconds() >= self._un_news_interval * 3600)
+                if enabled('un_news') and due:
+                    from data.un_news_crawler import collect_un_news
+                    from analyzer.data_loader import get_data_loader
+                    un_news = collect_un_news(get_data_loader())
+                    self._last_un_news_time = datetime.now()
+                    all_news.extend(un_news)
+                    successful_collectors += 1
+                    logger.info(f"[Scheduler] UN News: {len(un_news)} 条")
+            except Exception as e:
+                errors.append(f"UN News: {e}")
+                logger.error(f"[Scheduler] UN News 爬取失败: {e}", exc_info=True)
+
             self._last_crawl_result = {
                 "success": successful_collectors > 0,
                 "count": len(all_news),
@@ -181,6 +202,16 @@ class CrawlerScheduler:
                 # 计算风险指标
                 metrics = gdelt.get_risk_metrics(timespan_days=7)
 
+                # 健康上报：DOC 新闻与 CSV 事件任一有产出即算成功（降级也算），全无产出才记失败
+                ok = bool(news) or bool(metrics and metrics.get('event_count'))
+                try:
+                    from data.source_health import get_source_health_tracker
+                    get_source_health_tracker().record(
+                        "GDELT", ok, len(news),
+                        error=None if ok else "DOC 与 CSV 通道均未返回数据")
+                except Exception:
+                    pass
+
                 self._last_gdelt_result = {
                     "success": True,
                     "count": len(news),
@@ -190,7 +221,7 @@ class CrawlerScheduler:
                 }
                 logger.info(
                     f"[Scheduler] GDELT 完成: {len(news)} 条新闻, "
-                    f"冲突 {metrics['conflict_count']} 条"
+                    f"冲突 {metrics['conflict_count']} 条, 健康上报={'ok' if ok else 'failed'}"
                 )
 
             except Exception as e:

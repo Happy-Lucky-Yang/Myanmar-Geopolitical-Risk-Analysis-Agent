@@ -155,7 +155,9 @@ class LLMClient:
             self._client_cache[model] = client
             return client, model, ""
         except Exception as e:
-            return None, model, str(e)
+            # SDK/依赖版本错配等内部异常不直接展示给用户，日志只记类型。
+            logger.warning("[LLM] 模型 %s 客户端初始化失败: %s", model, type(e).__name__)
+            return None, model, f"模型 {model} 客户端初始化失败，请检查 openai/httpx 依赖版本"
 
     def analyze_news(self, text: str, instruction: str = None,
                      model: str = None) -> Dict:

@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 from datetime import date, datetime, time, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -40,12 +41,18 @@ def business_date(value=_TODAY) -> date | None:
             return date.fromisoformat(value)
         return business_date(datetime.fromisoformat(value.replace("Z", "+00:00")))
     except ValueError:
-        for fmt in ("%Y%m%d", "%Y%m%d%H%M%S", "%Y%m%dT%H%M%SZ", "%Y年%m月%d日", "%Y/%m/%d", "%d/%m/%Y"):
+        for fmt in ("%Y%m%d", "%Y%m%d%H%M%S", "%Y%m%dT%H%M%SZ", "%Y年%m月%d日", "%Y/%m/%d", "%d/%m/%Y",
+                    "%B %d, %Y", "%b %d, %Y"):
             try:
                 parsed = datetime.strptime(value, fmt)
                 return business_date(parsed.replace(tzinfo=timezone.utc) if value.endswith("Z") else parsed)
             except ValueError:
                 continue
+        # RSS 的 RFC-822 时间（"Mon, 19 Oct 2026 19:21:59 GMT"），按自带时区换算到业务日
+        try:
+            return business_date(parsedate_to_datetime(value))
+        except (TypeError, ValueError, IndexError):
+            pass
     return None
 
 

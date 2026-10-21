@@ -248,12 +248,12 @@ def test_basemap_failover_pixels_and_repeated_zoom(page, tmp_path, primary_ok, f
         Image.new('RGB', (256, 256), color).save(stream, format='PNG')
         images[name] = stream.getvalue()
     def tiles(route):
-        primary = 'cartocdn' in route.request.url
+        primary = 'arcgisonline' in route.request.url
         if primary_ok if primary else fallback_ok:
             route.fulfill(body=images['primary' if primary else 'fallback'], content_type='image/png')
         else:
             route.abort()
-    page.route(re.compile(r'https://.*(?:cartocdn\.com|arcgisonline\.com)/.*'), tiles)
+    page.route(re.compile(r'https://.*(?:arcgisonline\.com|openstreetmap\.org)/.*'), tiles)
     page.goto('http://offline.test/map-fixture')
     variable = map_object.get_name()
     assert page.evaluate(f'''() => Object.values({variable}._layers)

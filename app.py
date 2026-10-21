@@ -527,15 +527,31 @@ def sources_health():
     数据源健康状态接口
 
     返回: 各数据源最近爬取的成功率/状态(healthy/degraded/dead)/最近明细
+    只展示当前仍在采集的源：已停用或已移除的源保留历史记录但不再出现在面板。
     """
     try:
         from data.source_health import get_source_health_tracker
+        health = get_source_health_tracker().get_health()
+        active = _active_source_names()
         return jsonify({
             "success": True,
-            "data": get_source_health_tracker().get_health()
+            "data": {name: item for name, item in health.items() if name in active}
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _active_source_names() -> set:
+    """当前仍在采集的源名集合：核心采集器 + config.yaml 中启用的 RSS 源。"""
+    names = {'缅甸缅华网', 'The Irrawaddy', 'GDELT', 'UN News 中文',
+             'World Bank 经济指标', 'World Bank 夜光代理'}
+    try:
+        for feed in (load_config().get('rss_feeds') or {}).values():
+            if isinstance(feed, dict) and feed.get('enabled', True) and feed.get('name'):
+                names.add(feed['name'])
+    except Exception:
+        pass
+    return names
 
 
 @app.route("/api/diagnostic", methods=["GET"])

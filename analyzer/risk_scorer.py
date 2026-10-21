@@ -393,6 +393,21 @@ class RiskScorer(LegacyRiskScorer):
         result = self.calculate_risk_score(self.normalize_indicators(raw, historical_data), quality)
         result.update(news_count=len(news), raw_indicators=raw, conflict_count=count, gdelt_used=False,
                       sentiment_samples=len(sentiments), metric_description="去重报道的关键词比例与情感，不等于独立事件频次")
+        # 异常值标记：极端分需人工复核；单样本日评分不稳定。告警汇总由 pipeline 负责。
+        risk_score = result.get("risk_score")
+        n = len(news)
+        if risk_score is not None:
+            if risk_score >= 95:
+                logger.warning(f"[RiskScorer] 极端高风险 {risk_score:.1f}分（{n}条新闻），建议人工复核")
+                result["anomaly_flag"] = "extreme_high"
+                result["anomaly_reason"] = f"风险分≥95（{n}条新闻）"
+            elif risk_score <= 5 and n >= 3:
+                logger.warning(f"[RiskScorer] 极端低风险 {risk_score:.1f}分（{n}条新闻），检查是否缺测")
+                result["anomaly_flag"] = "extreme_low"
+                result["anomaly_reason"] = f"风险分≤5（{n}条新闻）"
+            elif n == 1:
+                result["anomaly_flag"] = "low_sample"
+                result["anomaly_reason"] = "仅 1 条新闻，评分不稳定"
         return result
 
     def calculate_weekly_score(self, daily_scores):

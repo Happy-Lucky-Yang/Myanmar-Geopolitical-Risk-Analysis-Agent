@@ -109,6 +109,23 @@ def test_viirs_yoy_requires_same_product_real_period_and_positive_baseline():
     data=parse_viirs([obs(2025,0),obs(2026,5)],manifest('viirs'))
     assert panel([data])['indicators']['nightlight_change']['raw'] is None
     with pytest.raises(ValueError):parse_viirs([{**obs(2026,5),'quality':'proxy'}],manifest('viirs'))
+    # 演示域不得进入正式指标；表格字符串数值在适配层转换。
+    with pytest.raises(ValueError):parse_viirs([{**obs(2026,5),'run_kind':'demo'}],manifest('viirs'))
+    data=parse_viirs([obs(2025,'10'),obs(2026,'5')],manifest('viirs'))
+    assert panel([data])['indicators']['nightlight_change']['raw']==-.5
+    # 不同产品同版本号不能合并为同一冻结基准。
+    a=panel([parse_viirs([obs(2025,10),obs(2026,5)],manifest('viirs'))])
+    b=panel([parse_viirs([{**obs(2025,10),'product':'VJ146A3'},{**obs(2026,8),'product':'VJ146A3'}],manifest('viirs'))])
+    assert a['indicators']['nightlight_change']['method']!=b['indicators']['nightlight_change']['method']
+    with pytest.raises(ValueError):fit_calibration([a,b],'mixed products')
+
+
+def test_explicit_batch_ids_resolve_overlapping_revisions():
+    old=parse_acled([acled()],manifest())
+    new=parse_acled([acled(),acled(event_id_cnty='MMR2')],manifest(dataset_version='fixture-2'))
+    assert panel([old,new])['indicators']['conflict_frequency']['raw'] is None
+    p=raw_panel('2026-01-01','2026-02-01','monthly','MMR',[old,new],[],None,'formal',[new['id']])
+    assert p['indicators']['conflict_frequency']['raw']==2
 
 
 def synthetic_panel(value=2, mode='formal'):
