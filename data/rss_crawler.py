@@ -353,6 +353,8 @@ class RSSNewsCrawler:
         from storage.repository import get_repository
         from utils.date_repair import fix_missing_dates
         fix_missing_dates(news_list)  # RFC-822 等原始时间保留在 pub_time_raw
+        from utils.source_meta import annotate_stance
+        annotate_stance(news_list)  # 信源立场标注（仅展示用）
         repo = get_repository()
         if repo is not None:
             repo.save_collected_articles(news_list)

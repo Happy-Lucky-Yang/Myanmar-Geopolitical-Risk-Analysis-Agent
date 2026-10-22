@@ -352,8 +352,10 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
     try:
         from analyzer.risk_scorer import get_risk_scorer
         from utils.date_repair import fix_missing_dates
+        from utils.source_meta import annotate_stance, stance_counts
         # 旧数据与各爬虫的缺失/不可解析日期统一在归日前修复，并以 date_quality 标明推断来历
         date_stats = fix_missing_dates(news)
+        annotate_stance(news)  # 信源立场标注（仅展示用，不参与评分）
         if date_stats["fixed"]:
             _add_warning(result, "risk", f"{date_stats['fixed']} 条发布日期为推断值（URL {date_stats['from_url']}，"
                                          f"正文 {date_stats['from_content']}，爬取时间兜底 {date_stats['from_crawled']}）")
@@ -375,6 +377,8 @@ def run_pipeline(source_mode: SourceMode = "live", include_llm: bool = True,
             risk = scorer.compute_daily_risk(items)
             risk.update(date=day, run_kind=source_mode,
                         sources=sorted({s for item in items for s in item.get('sources', [item.get('source', 'unknown')]) if s}),
+                        # 来源立场构成（仅展示，不参与计算）
+                        source_stances=stance_counts(items),
                         input_hash=fingerprint({"version": RISK_VERSION, "date": day,
                                                "articles": sorted(item["content_hash"] for item in items),
                                                "indicators": risk.get("raw_indicators"), "weights": risk.get("weights_used")}))

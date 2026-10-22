@@ -64,8 +64,25 @@
         } catch (error) {
             if (seq !== sequence) return;
             el('catalog-summary').textContent = error.message; el('catalog-page').textContent = '';
+            // 结果区给占位：空白会让人误以为“没有匹配结果”，而不是“检索没成功”
+            el('catalog-results').replaceChildren();
+            add(el('catalog-results'), 'p', '检索未完成：' + error.message);
         }
     }
+    // 未启用时先禁用控件并说明原因，避免用户点搜索才看到报错
+    (async () => {
+        try {
+            const flags = (await fetchJSON('/api/product/status')).data;
+            if (!flags || flags.literature !== false) return;
+            ['catalog-q', 'catalog-topic', 'catalog-module', 'catalog-indicator',
+             'catalog-from', 'catalog-to', 'catalog-core'].forEach(id => { const n = el(id); if (n) n.disabled = true; });
+            const form = el('catalog-form');
+            if (form) form.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            el('catalog-summary').textContent = '文献中心未启用（需 ENABLE_LITERATURE=true 与团队文献索引）';
+            el('catalog-results').replaceChildren();
+            add(el('catalog-results'), 'p', '当前部署未开启文献检索，控件已禁用；索引构建方式见 docs/ 与 README。');
+        } catch (_) { /* 开关接口失败不阻塞正常检索 */ }
+    })();
     el('catalog-form').addEventListener('submit', event => {event.preventDefault(); recordId=null; offset = 0; load();});
     el('catalog-prev').onclick = () => {offset = Math.max(0,offset-pageSize); load();};
     el('catalog-next').onclick = () => {offset += pageSize; load();};

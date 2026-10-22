@@ -92,6 +92,21 @@ CHAIN_TEMPLATES = {
 CHAIN_ORDER = ["event_identification", "impact_analysis", "trend_assessment", "recommendation"]
 
 
+def _classify_llm_error(result) -> str:
+    """把供应商错误归类成对用户有用的提示，不回显原始报文。"""
+    raw = str((result or {}).get("error") or (result or {}).get("_parse_error") or "")
+    lowered = raw.lower()
+    if 'contentfilter' in lowered or '1301' in raw or '敏感' in raw or '不安全' in raw:
+        return "模型内容审核拦截：可换用其他模型或简化输入后重试"
+    if 'timeout' in lowered or '超时' in raw:
+        return "模型请求超时，请重试"
+    if '429' in raw or 'rate' in lowered or '限流' in raw:
+        return "模型限流，请稍后重试"
+    if 'api key' in lowered or '401' in raw or '未配置' in raw:
+        return "模型未配置或密钥无效"
+    return "模型调用失败或未返回有效结构"
+
+
 class ChainReasoner:
     """链式推理引擎"""
 
@@ -142,7 +157,7 @@ class ChainReasoner:
                 result = llm._call_with_retry(messages, model=actual_model,
                                                client=client)
                 if not isinstance(result, dict) or result.get("error") or result.get("_parse_error"):
-                    raise ValueError("模型调用失败或未返回有效结构")
+                    raise ValueError(_classify_llm_error(result))
                 completeness = self._schema_completeness(step_key, result)
                 if completeness < 1:
                     raise ValueError("该步骤的结构化字段不完整或类型不正确")
@@ -189,11 +204,10 @@ class ChainReasoner:
 
         if step_key == "impact_analysis":
             event_info = self._format_result(previous.get("event_identification", {}))
-            # 模板内含 JSON 字面花括号，不能用 .format()（会把 JSON 当占位符解析报 KeyError），
-            # 改用 .replace() 仅替换 {previous_result}
-            prompt = CHAIN_TEMPLATES[step_key]["system_prompt"].replace(
-                "{previous_result}", event_info)
-            return prompt + f"\n\n原始新闻:\n{text[:2000]}"
+            # system_prompt 已作为 system 消息发送，user 只给数据：
+            # 旧实现把整个模板（含输出格式说明）再塞进 user，既冗余又重复敏感表述，
+            # 实测会显著提高被供应商内容审核拦截的概率。
+            return f"事件信息:\n{event_info}\n\n原始新闻:\n{text[:2000]}"
 
         if step_key == "trend_assessment":
             event_info = self._format_result(previous.get("event_identification", {}))

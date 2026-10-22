@@ -24,21 +24,21 @@ llm:
   # 未指定时回退到上方的 base_url / api_key（即 GLM 默认值）。
   available_models:
     - id: "glm-4-flash"
-      name: "GLM-4-Flash (快速)"
+      name: "GLM-4-Flash（快速）"
       description: "免费高速，适合批量初筛"
     - id: "glm-4-plus"
-      name: "GLM-4-Plus (精准)"
+      name: "GLM-4-Plus（精准）"
       description: "深度分析，地缘推理能力更强"
     - id: "glm-4-long"
-      name: "GLM-4-Long (长文)"
+      name: "GLM-4-Long（长文）"
       description: "支持 20k 上下文，适合长报告"
     - id: "deepseek-chat"
-      name: "DeepSeek-V4-Flash (极速)"
-      description: "DeepSeek 高速模型，响应极快"
+      name: "DeepSeek-chat（极速）"
+      description: "DeepSeek 对话模型，响应极快"
       base_url: "https://api.deepseek.com/v1"
       api_key_env: "DEEPSEEK_API_KEY"
     - id: "deepseek-reasoner"
-      name: "DeepSeek-V4-Pro (推理)"
+      name: "DeepSeek-reasoner（推理）"
       description: "深度推理，复杂地缘分析能力更强"
       base_url: "https://api.deepseek.com/v1"
       api_key_env: "DEEPSEEK_API_KEY"
@@ -155,6 +155,47 @@ rss_feeds:
     language: "en"
 
 
+# ---------- 信源立场标注 ----------
+# 仅用于展示与解释（健康卡片、日指标来源构成、AI 解读），不参与评分权重。
+# stance 取值：official（官方）/ military（军方）/ independent（独立）/ ethnic（民族）/
+#              domestic（境内中文）/ international（国际组织）/ aggregator（聚合/事件库）
+# 详见 docs/source_landscape.md
+source_stance:
+  缅甸缅华网:
+    stance: domestic
+    label: 境内中文
+    note: 面向在缅华人读者的中文新闻
+  The Irrawaddy:
+    stance: independent
+    label: 独立（反军政府）
+    note: 流亡独立媒体，冲突报道及时但立场明显
+  Kachin News Group:
+    stance: ethnic
+    label: 民族（克钦）
+    note: 克钦独立媒体，主要覆盖缅北
+  Google News 聚合(中文):
+    stance: aggregator
+    label: 国际聚合
+    note: 聚合结果，来源媒体不可逐条确认
+  Google News 聚合(英文):
+    stance: aggregator
+    label: 国际聚合
+    note: 聚合结果，来源媒体不可逐条确认
+  UN News 中文:
+    stance: international
+    label: 国际组织
+    note: 联合国官方新闻
+  GDELT:
+    stance: aggregator
+    label: 全球事件库
+    note: 全球媒体事件抽取，自带报道偏差
+  World Bank 经济指标:
+    stance: international
+    label: 国际官方
+  World Bank 夜光代理:
+    stance: international
+    label: 国际官方
+
 # ---------- 夜间灯光遥感 ----------
 nightlight:
   enabled: true
@@ -256,6 +297,7 @@ alerts:
 # ---------- 定时调度器 ----------
 scheduler:
   enabled: true                        # 是否启用自动定时爬取
+  boot_crawl: true                     # 每次启动 app.py 时后台尝试采集一轮（仅爬取，失败不阻塞服务；BOOT_CRAWL 环境变量可覆盖）
   crawl_interval_hours: 4              # 缅华网爬取间隔（小时）
   gdelt_interval_hours: 6              # GDELT 查询间隔（小时）
   analysis_interval_hours: 12          # 分析流水线间隔（小时）

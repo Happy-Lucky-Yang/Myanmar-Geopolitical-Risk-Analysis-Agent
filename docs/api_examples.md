@@ -363,26 +363,47 @@ Content-Type: `text/html`
       "last_count": 6,
       "last_success": "2026-08-05T11:27:10",
       "last_error": null,
+      "stance": {"stance": "domestic", "label": "境内中文", "note": "面向在缅华人读者的中文新闻"},
       "records": [
         {"time": "2026-08-05T11:27:10", "ok": true, "count": 6, "error": null}
       ]
-    },
-    "The Irrawaddy": {
-      "status": "dead",
-      "success_rate": 0.0,
-      "recent_attempts": 3,
-      "recent_success": 0,
-      "last_count": 0,
-      "last_success": null,
-      "last_error": "Irrawaddy 列表页请求失败: https://www.irrawaddy.com/news/burma",
-      "records": []
     }
   }
 }
 ```
 
-`status` 取值：`healthy`（成功率≥70%且最近一次成功）/ `degraded`（时好时坏）/
-`dead`（最近3次全部失败）。每源显示最近20次记录。文件模式使用 `DATA_ROOT/processed/source_health.json`；Postgres模式从 `source_runs` 读取最近记录，数据库保留全历史。健康追踪支持成功0条，但各采集器的空结果/远程失败语义仍需按源验收，不能用文章数量直接推断采集健康。
+`status` 取值（以“当前是否可用”为主）：`healthy`（最近一次成功，含降级通道成功）/ `degraded`（最近一次失败但 24 小时内有过成功）/ `dead`（最近一次失败且 24 小时无成功，或最近 3 次全失败）。
+`stance` 为信源立场标注（`domestic/independent/ethnic/aggregator/international/unlabeled`），**仅展示不参与评分**，配置见 `config.yaml` 的 `source_stance`，背景见 `docs/source_landscape.md`。
+只返回当前仍在采集的源；已停用源保留历史记录但不展示。文件模式使用 `DATA_ROOT/processed/source_health.json`。
+
+### `/api/risk/explain` 风险成因解读
+
+`POST` 请求体：`{"date": "2026-10-20", "model": "glm-4-flash"}`（两者均可省略：date 默认最新观测，model 默认 GLM-4-Flash，可选 `deepseek-chat`）。
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "date": "2026-10-20",
+    "model_version": "glm-4-flash",
+    "answer": {
+      "summary": "2026-10-20 风险分 55.06，属于中风险，主要来自冲突频次与情感负面度。",
+      "top_drivers": [{"indicator": "冲突频次", "points": 31.8164},
+                      {"indicator": "情感负面度", "points": 23.2455}],
+      "explanations": ["冲突频次贡献最大，占 31.8164 分。"],
+      "suggestions": ["出行时注意安全，避免前往冲突频次高的地区。"],
+      "data_gaps": ["夜光变化数据缺失"],
+      "confidence": "高"
+    },
+    "evidence": {"indicator_coverage": 0.55, "source_stances": {"independent": 27, "aggregator": 21}},
+    "prompt_version": "risk-explain-v1",
+    "disclaimer": "辅助研判，需人工核查；指标贡献不是因果证明。"
+  }
+}
+```
+
+约束：模型只能引用证据中的数值，禁止因果断言与链接；校验不过重试一次，再不过返回 `status=degraded` 的规则解读（`model_version=rule-based`）。覆盖率低于 0.5 或样本少于 5 时置信度最高只能为“中”。同一 (日期, 输入指纹, 模型) 缓存 10 分钟，进程内每分钟最多 6 次调用。
 
 ---
 

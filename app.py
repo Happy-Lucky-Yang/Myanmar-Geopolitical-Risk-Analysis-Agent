@@ -17,6 +17,7 @@ API 接口：
 """
 import sys
 import os
+import re
 import logging
 import threading
 
@@ -123,6 +124,30 @@ def _start_scheduler():
     """仅在实际启动服务时启用调度器，导入 Flask app 不产生网络副作用。"""
     _scheduler = get_scheduler()
     _scheduler.start()
+
+
+def _start_boot_crawl():
+    """服务启动后后台尝试采集一轮新闻；失败只记日志，不阻塞启动。
+
+    仅在未启用嵌入式调度器时使用（嵌入式调度器首次启动已自带爬取），
+    与定时任务共用爬取锁，不会并发重复请求同一站点。
+    """
+    def _worker():
+        try:
+            result = get_scheduler().run_crawl_once()
+            logger.info("[Boot] 启动采集完成: %s 条，来源成功 %s 个",
+                        result.get('count'), result.get('success'))
+        except Exception as exc:  # 启动采集是尽力而为，不影响服务
+            logger.warning("[Boot] 启动采集失败（不影响服务启动）: %s", type(exc).__name__)
+        finally:
+            try:
+                from analyzer.alert_monitor import get_alert_monitor
+                get_alert_monitor().check_history()
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, name="boot-crawl", daemon=True).start()
+    logger.info("[Boot] 已启动后台采集线程，服务可立即使用")
 
 
 # ============================================================
@@ -531,12 +556,16 @@ def sources_health():
     """
     try:
         from data.source_health import get_source_health_tracker
+        from utils.source_meta import stance_of
         health = get_source_health_tracker().get_health()
         active = _active_source_names()
-        return jsonify({
-            "success": True,
-            "data": {name: item for name, item in health.items() if name in active}
-        })
+        data = {}
+        for name, item in health.items():
+            if name not in active:
+                continue
+            # 附信源立场（仅展示，不影响成功/失败判定）
+            data[name] = {**item, 'stance': stance_of(name)}
+        return jsonify({"success": True, "data": data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -552,6 +581,30 @@ def _active_source_names() -> set:
     except Exception:
         pass
     return names
+
+
+@app.route("/api/risk/explain", methods=["POST"])
+def risk_explain():
+    """风险成因解读：只读正式日指标，解释分数构成并给条件化建议（默认 GLM-4-Flash）。"""
+    try:
+        data = request.get_json(silent=True)
+        if data is not None and not isinstance(data, dict):
+            return jsonify({"success": False, "error": "请求体必须为对象"}), 400
+        data = data or {}
+        date = data.get('date')
+        if date is not None and (not isinstance(date, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date)):
+            return jsonify({"success": False, "error": "date 须为 YYYY-MM-DD"}), 400
+        model = data.get('model')
+        if model is not None and not isinstance(model, str):
+            return jsonify({"success": False, "error": "model 必须为字符串"}), 400
+        from analyzer.risk_explainer import explain_risk
+        result = explain_risk(date=date, model=model)
+        if result.get('status') == 'no_data':
+            return jsonify({"success": False, "error": result.get('reason')}), 404
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        logger.error('/api/risk/explain 处理失败: %s', type(e).__name__)
+        return jsonify({"success": False, "error": "风险解读暂不可用"}), 500
 
 
 @app.route("/api/diagnostic", methods=["GET"])
@@ -1261,11 +1314,20 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # debug 模式仅在 reloader 子进程启动；非 debug 模式直接启动。
-    if os.environ.get("ENABLE_EMBEDDED_SCHEDULER", "false").lower() == "true":
+    embedded_scheduler = os.environ.get("ENABLE_EMBEDDED_SCHEDULER", "false").lower() == "true"
+    if embedded_scheduler:
         if os.environ.get("APP_SHARED_MODE", "false").lower() == "true":
             raise RuntimeError("共享部署仅允许独立 worker 调度")
         if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             _start_scheduler()
+
+    # 启动即尝试采集一轮（仅爬取，不含 GDELT/分析）；可用 scheduler.boot_crawl: false 关闭
+    boot_crawl = (cfg.get('scheduler') or {}).get('boot_crawl', True)
+    if os.environ.get("BOOT_CRAWL", "").strip():
+        boot_crawl = os.environ["BOOT_CRAWL"].strip().lower() == "true"
+    if boot_crawl and not embedded_scheduler:
+        if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            _start_boot_crawl()
 
     app.run(
         host=flask_cfg.get("host", "127.0.0.1"),

@@ -37,18 +37,28 @@
                 <h3>窗口内最近事件与证据</h3>
                 <div id="focus-events"></div>
             </section>
-            <section class="card card-ai span-12" aria-label="有证据的AI研判">
+            <section class="card card-ai span-12" aria-label="AI 风险解读与研判">
                 <div class="ai-head">
                     <div>
                         <h3 class="card-title" style="margin-bottom:0.35rem">AI 风险解读 <span class="tag-hint">辅助研判</span></h3>
-                        <p>基于所选窗口的正式观测与新闻证据作答；贡献不等于因果，建议须人工复核，旧数据不代表当前预警。</p>
+                        <p>基于最新正式观测解释分数构成并给条件化建议；贡献不等于因果，建议须人工复核，旧数据不代表当前预警。</p>
                     </div>
                     <div class="ai-actions">
-                        <button id="ai-briefing-request" class="btn btn-primary" disabled>解释所选窗口风险变化</button>
-                        <a href="/workspace" class="btn btn-secondary">进入个人工作区追问</a>
+                        <label for="explain-model" style="font-size:0.8rem;color:var(--ink-3);align-self:center">模型</label>
+                        <select id="explain-model" class="model-select" style="font-size:0.82rem;padding:4px 8px;border-radius:8px">
+                            <option value="glm-4-flash">GLM-4-Flash（默认·免费）</option>
+                            <option value="deepseek-chat">DeepSeek-chat</option>
+                        </select>
+                        <button id="risk-explain-btn" class="btn btn-primary">解读最新风险</button>
+                        <button id="ai-briefing-request" class="btn btn-secondary" disabled>解释所选窗口</button>
+                        <a href="/workspace" class="btn btn-secondary">个人工作区</a>
                     </div>
                 </div>
-                <div id="ai-briefing-body" role="status">正在检查研判服务…</div>
+                <div id="risk-explain-body" role="status">点击“解读最新风险”，由大模型解释分数构成并给建议；模型不可用时自动降级为规则解读。</div>
+                <details style="margin-top:0.6rem">
+                    <summary style="cursor:pointer;font-size:0.82rem;color:var(--ink-3)">证据型研判（需启用 RISK_BRIEFING 与独立 worker）</summary>
+                    <div id="ai-briefing-body" role="status" style="margin-top:0.5rem">正在检查研判服务…</div>
+                </details>
             </section>
         </div>
 
@@ -129,8 +139,9 @@
     </main>
 
     <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-2"></script>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=mist-2"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=mist-4"></script>
     <script src="{{ url_for('static', filename='js/briefing.js') }}?v=mist-2"></script>
-    <script src="{{ url_for('static', filename='js/risk_panels.js') }}?v=risk-5"></script>
+    <script src="{{ url_for('static', filename='js/risk_explain.js') }}?v=explain-2"></script>
+    <script src="{{ url_for('static', filename='js/risk_panels.js') }}?v=risk-6"></script>
 </body>
 </html>

@@ -31,6 +31,49 @@ try:
 except ImportError:
     spacy = None
 
+# 英文地名词典（gazetteer）：spaCy en_core_web_sm 对缅甸地名存在系统性误判，
+# 实测把 Naypyitaw / Rakhine / Shan State 全部标为 PERSON，导致关系网络把首都显示成"人物"。
+# 这里只收录通用地理常识（省邦、主要城市、邻国），命中即强制归为地点。
+EN_GEO_GAZETTEER = {
+    # 缅甸省邦
+    'naypyitaw', 'nay pyi taw', 'yangon', 'mandalay', 'rakhine', 'arakans', 'arakan',
+    'shan', 'kachin', 'karen', 'kayin', 'chin', 'mon', 'kayah', 'sagaing', 'magway',
+    'bago', 'tanintharyi', 'ayeyarwady', 'irrawaddy',
+    # 主要城市与口岸
+    'sittwe', 'kyaukphyu', 'mrauk-u', 'muse', 'myitkyina', 'lashio', 'pathein',
+    'hpa-an', 'loikaw', 'dawei', 'myeik', 'bagan', 'meiktila', 'taunggyi',
+    'mawlamyine', 'monywa', 'pyay', 'mogok', 'hkamti', 'paletwa', 'buthidaung',
+    'maungdaw', 'laukkai', 'kokang', 'wa state',
+    # 国家与区域
+    'myanmar', 'burma', 'thailand', 'china', 'india', 'bangladesh', 'laos',
+    'malaysia', 'indonesia', 'singapore', 'vietnam', 'cambodia', 'philippines',
+    'japan', 'south korea', 'russia', 'australia', 'united states', 'united kingdom',
+    'france', 'germany', 'asean', 'yunnan', 'ruili', 'bangkok', 'beijing',
+    'new delhi', 'dhaka', 'washington', 'jakarta', 'manila', 'hanoi', 'vientiane',
+    'phnom penh', 'kuala lumpur', 'tokyo', 'seoul', 'moscow', 'london', 'paris',
+    'berlin', 'geneva', 'new york', 'brussels', 'mekong', 'salween', 'chindwin',
+    'gulf of bengal', 'indian ocean', 'andaman sea',
+}
+# 行政区后缀："Shan State"、"Rakhine Region" 剥离后缀后再查词典
+EN_GEO_SUFFIXES = (' state', ' region', ' division', ' province', ' township', ' city', ' district')
+
+
+def is_known_en_location(name) -> bool:
+    """实体名是否为已知地名（含行政区后缀变体），用于纠正 spaCy 的 PERSON 误判。"""
+    if not isinstance(name, str):
+        return False
+    key = ' '.join(name.lower().split()).strip(' .,')
+    if not key:
+        return False
+    if key in EN_GEO_GAZETTEER:
+        return True
+    for suffix in EN_GEO_SUFFIXES:
+        if key.endswith(suffix):
+            stem = key[:-len(suffix)].strip()
+            if stem in EN_GEO_GAZETTEER:
+                return True
+    return False
+
 # 缅甸地缘政治词典（jieba 自定义词，提升实体识别召回）
 # (词, 词性)  ns=地名 nr=人名 nt=机构
 JIEBA_GEO_DICT = [
@@ -279,7 +322,10 @@ class NERExtractor:
         entities = {"locations": [], "organizations": [], "persons": []}
 
         for ent in doc.ents:
-            if ent.label_ in ("GPE", "LOC"):
+            # 词典优先：spaCy 小模型常把缅甸地名误判为 PERSON
+            if is_known_en_location(ent.text):
+                entities["locations"].append(ent.text)
+            elif ent.label_ in ("GPE", "LOC"):
                 entities["locations"].append(ent.text)
             elif ent.label_ == "ORG":
                 entities["organizations"].append(ent.text)

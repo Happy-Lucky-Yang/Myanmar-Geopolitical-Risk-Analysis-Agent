@@ -233,11 +233,13 @@ async function loadSourceHealth() {
         names.forEach(function (name) {
             var s = data[name];
             var meta = statusMeta[s.status] || statusMeta.degraded;
+            var stance = s.stance || {};
             html += '<div class="sh-item">'
                 + '<div class="sh-head"><span class="dot" style="background:' + meta.color + '"></span>'
                 + '<span class="sh-name">' + escapeHtml(name) + '</span>'
-                + '<span class="sh-status" style="color:' + meta.color + '">' + meta.label + '</span></div>'
-                + '<div class="sh-meta">成功率 ' + escapeHtml(formatNumber(s.success_rate * 100, 0)) + '% ('
+                + (stance.label ? '<span class="sh-stance" title="' + escapeHtml(stance.note || '信源立场标注，仅展示不参与评分') + '">' + escapeHtml(stance.label) + '</span>' : '')
+                + '<span class="sh-status" style="color:' + meta.color + '" title="状态按最近一次采集结果判定；历史成功率反映长期稳定性">' + meta.label + '</span></div>'
+                + '<div class="sh-meta">历史成功率 ' + escapeHtml(formatNumber(s.success_rate * 100, 0)) + '% ('
                 + escapeHtml(String(s.recent_success)) + '/' + escapeHtml(String(s.recent_attempts)) + ')'
                 + ' · 上轮 ' + escapeHtml(String(s.last_count)) + ' 条</div>';
             if (s.last_error) {
@@ -459,7 +461,10 @@ async function loadDiagnostic() {
             var lvlColor = fo.projected_level === 'red' ? 'var(--risk-high)'
                 : fo.projected_level === 'orange' ? 'var(--risk-medium)'
                 : fo.projected_level === 'yellow' ? '#d9a93a' : 'var(--text-muted)';
-            html += '<div class="sub-title" style="margin-top:0.6rem">未来 ' + escapeHtml(String(fo.days_ahead || 7)) + ' 天探索性外推</div>';
+            // 末值基线不是外推：回测不足时后端直接沿用最后一个观测值，标题必须如实区分
+            var isBaseline = /末值基线/.test(fo.reliability || '') || fo.model === 'last';
+            html += '<div class="sub-title" style="margin-top:0.6rem">未来 ' + escapeHtml(String(fo.days_ahead || 7))
+                + (isBaseline ? ' 天（末值基线，未做外推）' : ' 天探索性外推') + '</div>';
             html += '<div class="diag-summary"><span class="diag-delta" style="color:' + lvlColor + '">' + escapeHtml(formatNumber(fo.predicted_score, 1)) + '</span>'
                 + '<span class="muted-note"> 分 → ' + escapeHtml(fo.projected_label || '') + '（' + escapeHtml(fo.reliability || '未验收') + '）</span></div>';
             html += '<div class="diag-text">' + escapeHtml(fo.text || '') + '</div>';

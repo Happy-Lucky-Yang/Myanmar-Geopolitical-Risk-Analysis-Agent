@@ -258,6 +258,9 @@ def test_basemap_failover_pixels_and_repeated_zoom(page, tmp_path, primary_ok, f
     variable = map_object.get_name()
     assert page.evaluate(f'''() => Object.values({variable}._layers)
         .filter(l => l instanceof L.TileLayer).every(l => l.options.errorTileUrl !== L.Util.emptyImageUrl)''')
+    # 兜底层按需加载：主底图正常时不挂载 OSM（避免境内超时刷控制台错误），
+    # 主底图失败时才 addLayer，因此地图上的瓦片层数随主底图状态变化。
+    expected_layers = 1 if primary_ok else 2
     for zoom in [6, 10, 5, 20, 6]:
         page.evaluate(f'{variable}.setZoom({zoom}, {{animate: false}})')
         def state():
@@ -269,7 +272,7 @@ def test_basemap_failover_pixels_and_repeated_zoom(page, tmp_path, primary_ok, f
         try:
             page.wait_for_function(f'''() => {{
                 const layers = Object.values({variable}._layers).filter(l => l instanceof L.TileLayer);
-                return layers.length === 2 && layers.every(l => !l._loading
+                return layers.length === {expected_layers} && layers.every(l => !l._loading
                     && Object.values(l._tiles).filter(t => t.current).every(t => t.active && getComputedStyle(t.el).opacity === '1'))
                     && Array.from(document.querySelectorAll('.leaflet-tile')).every(t => t.complete && t.naturalWidth > 0);
             }}''')

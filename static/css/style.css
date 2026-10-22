@@ -1013,6 +1013,7 @@ details > summary { cursor: pointer; }
 .sh-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .sh-name { flex: 1; min-width: 0; font-size: 0.86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-status { font-size: 0.75rem; font-weight: 600; }
+.sh-stance { flex: 0 0 auto; font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; color: var(--ink-3); background: rgba(111, 138, 143, 0.12); border: 1px solid rgba(111, 138, 143, 0.25); cursor: help; }
 .sh-meta { font-size: 0.75rem; color: var(--ink-3); }
 .sh-err { margin-top: 4px; font-size: 0.72rem; color: var(--risk-high); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

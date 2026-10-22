@@ -10,6 +10,7 @@ visualization.map_gen - Folium 地图生成（浅色「晨雾」主题）
 渲染用 HTML 体积约为原始 GeoJSON 的 1/5，显著加快前端加载。
 """
 import copy
+import re
 from html import escape
 from utils.data_contract import finite_number
 import math
@@ -113,9 +114,14 @@ _CDN_TO_LOCAL: Dict[str, str] = {
 
 
 def _localize_cdn(html: str) -> str:
-    """将 Folium 生成的 HTML 中的 CDN URL 替换为本地静态文件路径"""
+    """将 Folium 生成的 HTML 中的 CDN URL 替换为本地静态文件路径；
+    并移除 Folium 面向 Jupyter 的“信任笔记本”提示（生产页面不应出现）。"""
     for cdn_url, local_path in _CDN_TO_LOCAL.items():
         html = html.replace(cdn_url, local_path)
+    html = re.sub(
+        r'<div[^>]*>\s*Make this Notebook Trusted to load map[^<]*</div>',
+        '', html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r'Make this Notebook Trusted to load map[^<]*', '', html)
     return html
 
 
@@ -149,8 +155,11 @@ def _add_basemap(m: folium.Map) -> None:
       - keepBuffer=6: 屏幕外保留 6 圈瓦片缓存（默认 2），
         缩小后再放大立即回填，无需等待网络
 
-    降级链：Esri 失败 → 露出下层 OSM 底图 →
+    降级链：Esri 主底图失败 → 此时才加载 OSM 兜底层 →
     两者均失败 → errorTileUrl 本地浅色占位图（全程无刺眼空白）。
+
+    兜底层默认不挂到地图上：境内访问 tile.openstreetmap.org 普遍超时，
+    无条件预加载会在控制台刷出十几条 ERR_CONNECTION_TIMED_OUT（实测 18 条）。
     """
     # 兜底通道（垫底，不进图层控制面板）
     fallback = folium.TileLayer(
@@ -182,6 +191,16 @@ def _add_basemap(m: folium.Map) -> None:
                 return box;
             };
             control.addTo(map);
+            var fallbackLayer = {{this.fallback}};
+            // 兜底层默认不加载，避免境内 OSM 超时在控制台刷错误
+            map.removeLayer(fallbackLayer);
+            var fallbackOn = false;
+            function enableFallback() {
+                if (fallbackOn) return;
+                fallbackOn = true;
+                map.addLayer(fallbackLayer);
+                bind(fallbackLayer, 'fallback');
+            }
             var failed = {primary: false, fallback: false};
             // 只在主底图失败时提示；兜底源在境内常不可达，单独失败不影响显示。
             function render() {
@@ -193,14 +212,14 @@ def _add_basemap(m: folium.Map) -> None:
                 layer.on('loading', function () { failed[name] = false; });
                 layer.on('tileerror', function () {
                     failed[name] = true;
-                    if (failed.primary) render();
+                    if (name === 'primary') { enableFallback(); render(); }
+                    else if (failed.primary) { render(); }
                 });
                 layer.on('load', function () {
                     if (name === 'primary' || failed.primary) render();
                 });
             }
             bind({{this.primary}}, 'primary');
-            bind({{this.fallback}}, 'fallback');
         })();
         {% endmacro %}
     """)
@@ -345,20 +364,22 @@ def _legend_html() -> str:
 
 
 def _source_note_html(text: str) -> str:
-    """左下角数据来源说明栏"""
+    """左下角数据来源说明栏；左边距避开宽 238px 的 KDE 图例，不遮挡其刻度文字"""
     return (
-        '<div style="position:fixed;bottom:12px;left:60px;z-index:999;'
+        '<div style="position:fixed;bottom:12px;left:262px;z-index:999;'
         'padding:6px 12px;font-size:11px;' + _PANEL_CSS + '">' + text + '</div>'
     )
 
 
 def _kde_legend_html(density=None) -> str:
-    """事件密度色标图例（左下角，避免与风险色阶重叠）"""
+    """报道事件密度色标图例（左下角）；标题显式标注报道驱动，避免误读为实际冲突密度"""
     return (
         '<div class="kde-map-legend" style="position:fixed;bottom:12px;left:12px;z-index:999;'
-        'padding:10px 14px;font-size:11px;width:210px;' + _PANEL_CSS + '">'
-        '<div style="margin-bottom:4px;font-weight:600;color:#24333b">加权事件密度 (KDE)</div>'
-        f'<div>共同带宽 {(density or {}).get("bandwidth_km", "--")} km；'
+        'padding:10px 14px;font-size:11px;width:238px;' + _PANEL_CSS + '">'
+        '<div style="margin-bottom:4px;font-weight:600;color:#24333b">报道事件密度 (GDELT KDE)</div>'
+        '<div style="color:#5b6b73;line-height:1.45;margin-bottom:4px">'
+        '事件需被媒体报道才会进入；热区反映报道关注度，不等于实际冲突密度</div>'
+        f'<div>共享带宽 {(density or {}).get("bandwidth_km", "--")} km；'
         f'色标上限 {(density or {}).get("color_max_per_km2_day", "--")} /km²/天（以上饱和）</div>'
         '<div style="height:8px;margin-top:4px;border-radius:8px;background:'
         f'linear-gradient(to right,{",".join(_KDE_COLORS)})"></div>'
@@ -477,7 +498,7 @@ class RiskMapGenerator:
         )
         GeoJsonPopup(
             fields=["name_cn", "score_text"],
-            labels=True,
+            labels=False,   # labels=True 会把 name_cn/score_text 这类字段键当标签直接显示给用户
             style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(layer)
@@ -602,7 +623,7 @@ class RiskMapGenerator:
         )
         GeoJsonPopup(
             fields=["name_cn", "score_text"],
-            labels=True,
+            labels=False,   # 字段键（name_cn/score_text）不应作为标签展示给用户
             style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(layer)
@@ -759,7 +780,7 @@ class RiskMapGenerator:
             show=False)
         GeoJsonPopup(
             fields=["name_cn", "score_text", "_risk_level", "_trend"],
-            labels=True,
+            labels=False,   # 避免把 _risk_level/_trend 这类内部字段名当标签显示
             style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(choro_layer)
@@ -845,7 +866,7 @@ class RiskMapGenerator:
         )
         GeoJsonPopup(
             fields=["name_cn", "score_text"],
-            labels=True,
+            labels=False,   # 字段键（name_cn/score_text）不应作为标签展示给用户
             style=_POPUP_CSS +
                   "font-size:13px;",
         ).add_to(borders_layer)
@@ -1030,11 +1051,11 @@ class RiskMapGenerator:
         folium.LayerControl(collapsed=False).add_to(m)
         m.get_root().html.add_child(folium.Element(_kde_legend_html(density)))
         m.get_root().html.add_child(folium.Element(_source_note_html(
-            f"事件密度(KDE): GDELT 近{days}天 "
+            f"报道事件密度: GDELT 近{days}天 "
             f"{density.get('event_count', 0)} 条事件 / "
             f"参与计算 {density.get('located_count', 0)} 条 / "
             f"多来源报道 {density.get('reported_multi_source_count', 0)} 条（不代表独立互证）· "
-            "边界: GADM 4.1"
+            "事件需被报道才会进入，热区反映报道关注度而非实际冲突密度 · 边界: GADM 4.1"
         )))
         return _localize_cdn(m._repr_html_())
 
@@ -1077,7 +1098,10 @@ class RiskMapGenerator:
         methods = escape('、'.join(item.get('location_methods', [])) or '未标明')
         events = item.get('events', [])
         evidence = '<br>'.join(escape(f"{e.get('date', '')} | {e.get('event_id', '--')} | {e.get('source', 'gdelt')} | {e.get('source_url', '')}") for e in events[:5])
-        return (f"{label} · {item['risk_score']:.1f} /100；样本 {item.get('sample_count', '--')}；"
+        sample = item.get('sample_count')
+        # 样本过少时显式提示：均值不稳定，避免把单条报道当成地区态势
+        sample_note = '（样本偏少，结论不稳）' if isinstance(sample, int) and sample < 5 else ''
+        return (f"{label} · {item['risk_score']:.1f} /100；样本 {sample if sample is not None else '--'}{sample_note}；"
                 f"来源 {sources}；定位 {methods}；有效日 {item.get('valid_days', '--')}/{item.get('requested_days', '--')}"
                 f"<br>事件证据（最多5条）：{evidence or '无'}")
 

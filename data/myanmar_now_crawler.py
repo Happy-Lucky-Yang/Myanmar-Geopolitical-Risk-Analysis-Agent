@@ -346,6 +346,8 @@ class EnglishNewsCrawler:
         from storage.repository import get_repository
         from utils.date_repair import fix_missing_dates
         fix_missing_dates(news_list)
+        from utils.source_meta import annotate_stance
+        annotate_stance(news_list)
         repo = get_repository()
         if repo is not None:
             repo.save_collected_articles(news_list)

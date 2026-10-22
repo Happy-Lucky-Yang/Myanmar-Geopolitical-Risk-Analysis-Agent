@@ -73,6 +73,20 @@ def test_gdelt_old_permanent_gap_is_skipped(monkeypatch):
     assert rows == [] and watermark == datetime(2026, 1, 1, 3, 0) and len(called) == 12
 
 
+def test_load_raw_news_deduplicates_pipeline_snapshots(tmp_path):
+    """pipeline 每轮写一份全量快照，读取时必须去重，否则记录数随运行次数线性膨胀。"""
+    import json
+    from analyzer.data_loader import DataLoader
+    raw = tmp_path / 'raw'
+    raw.mkdir()
+    row = {'title': 't', 'url': 'https://example.test/a', 'content': 'c',
+           'pub_time': '2026-10-20', 'source': 'The Irrawaddy'}
+    for name in ('myanmar_news_aaa.json', 'myanmar_news_bbb.json', 'myanmar_news_ccc.json'):
+        (raw / name).write_text(json.dumps([row]), encoding='utf-8')
+    loader = DataLoader(str(raw), str(tmp_path / 'processed'), str(tmp_path / 'external'))
+    assert len(loader.load_raw_news()) == 1
+
+
 def test_local_proxy_down_falls_back_to_direct(monkeypatch):
     import utils.config as config
     monkeypatch.setattr(config, '_proxy_probe', {})

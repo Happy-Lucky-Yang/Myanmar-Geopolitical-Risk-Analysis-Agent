@@ -14,6 +14,16 @@
     async function load() {
         const seq=++sequence;
         const area=el('risk-panel-body');area.replaceChildren();add(area,'p','正在读取已保存的月/年度面板…');
+        // 未启用时不发请求：避免控制台 503 与无谓等待，直接给出可操作的说明
+        try {
+            const flags=(await fetchJSON('/api/product/status')).data;
+            if(seq!==sequence)return;
+            if(flags && flags.risk_panels===false){
+                area.replaceChildren();
+                add(area,'p','多源九指标面板未启用（需 ENABLE_RISK_PANELS=true，且依赖 ACLED/OFAC/IDMC/VIIRS 正式数据）；旧日风险仍可在上方查看。');
+                return;
+            }
+        } catch(error){/* 开关接口失败不阻塞，继续尝试读取面板 */}
         const filters=readViewFilters();
         if(filters.source){area.textContent='多源面板不套用单新闻来源筛选，请清空来源。';return;}
         const frequency=el('panel-frequency').value;

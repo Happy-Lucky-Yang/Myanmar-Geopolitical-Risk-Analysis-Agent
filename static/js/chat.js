@@ -277,7 +277,10 @@ function renderChain(data) {
         body.innerHTML = '<span style="color:var(--text-muted)">无推理步骤</span>';
         return;
     }
-    var html = '<div class="muted-note">共 ' + chain.length + ' 步推理（事件识别 → 影响分析 → 趋势研判 → 建议生成）</div>';
+    // 只列实际执行的步骤：写死四步会在中断时误导（例如只跑完 2 步却列出 4 个名称）
+    var stepNames = chain.map(function (s) { return s.name || ('步骤' + s.step); }).join(' → ');
+    var html = '<div class="muted-note">共 ' + chain.length + ' 步推理（' + escapeHtml(stepNames) + '）'
+        + (data.status === 'degraded' ? ' · 未跑完全部 4 步，后续步骤已中断' : '') + '</div>';
     chain.forEach(function (step) {
         html += '<div class="chain-step">';
         html += '<div class="chain-step-head">';

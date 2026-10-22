@@ -14,7 +14,7 @@ from uuid import uuid4
 from utils.data_contract import (RISK_VERSION, RUN_MODES, article_identity, business_date,
                                  canonical_url, fingerprint, json_safe, select_history,
                                  time_window, timestamp_utc, utc_now, valid_risk_record, source_evidence)
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Set, Optional
 
 
@@ -117,7 +117,26 @@ class DataLoader:
                 data = self.load_json(filepath) if filepath.endswith(".json") else self.load_csv(filepath)
                 all_news.extend(data)
 
-        return all_news
+        # 流水线每轮都会写一份全量快照（myanmar_news_<指纹>.json），合并读取时
+        # 同一篇文章会重复出现（实测 10523 条记录仅 1089 个唯一 URL）。
+        # 按与评分层一致的身份口径去重；同一身份保留分析时间最新的版本，
+        # 因为 pipeline 每轮重跑 NER/情感，旧快照可能带着已修正前的实体分类。
+        floor = datetime.min.replace(tzinfo=timezone.utc)
+        seen, unique = {}, []
+        for row in all_news:
+            if not isinstance(row, dict):
+                continue
+            key = article_identity(row)
+            stamp = timestamp_utc(row.get("analyzed_at")) or timestamp_utc(row.get("crawled_at")) or floor
+            if key in seen:
+                index = seen[key]
+                old = timestamp_utc(unique[index].get("analyzed_at")) or timestamp_utc(unique[index].get("crawled_at")) or floor
+                if stamp > old:
+                    unique[index] = row
+                continue
+            seen[key] = len(unique)
+            unique.append(row)
+        return unique
 
     def load_external_data(self, filename: str) -> List[Dict]:
         """加载外部数据（遥感指数、统计公报等）"""

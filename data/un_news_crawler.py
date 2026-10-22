@@ -163,6 +163,8 @@ def collect_un_news(loader):
         known = [row.get('url', '') for row in loader.load_raw_news() if isinstance(row, dict)]
         rows = crawler.crawl(known)
         if rows:
+            from utils.source_meta import annotate_stance
+            annotate_stance(rows)  # 信源立场标注（仅展示用）
             loader.save_articles(rows)
         issue = f'待核验{len(crawler.review_required)}；失败{len(crawler.failures)}'
         tracker.record(SOURCE, not (crawler.review_required or crawler.failures), len(rows),

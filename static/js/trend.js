@@ -277,7 +277,19 @@ function renderChart(chartData) {
             borderWidth: 1,
             padding: [8, 12],
             textStyle: { color: '#24333b', fontSize: 12 },
-            extraCssText: 'border-radius:12px;box-shadow:0 12px 28px -14px rgba(36,51,59,0.35);'
+            extraCssText: 'border-radius:12px;box-shadow:0 12px 28px -14px rgba(36,51,59,0.35);',
+            // 缺测统一用全角破折号，与图谱/位势页的占位符风格一致（ECharts 默认是半角 -）
+            formatter: function (params) {
+                if (!params || !params.length) return '';
+                var lines = [params[0].axisValueLabel || params[0].name || ''];
+                params.forEach(function (p) {
+                    var v = p.value;
+                    var text = (v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v)))
+                        ? '—' : v;
+                    lines.push((p.marker || '') + ' ' + (p.seriesName || '') + ' ' + text);
+                });
+                return lines.join('<br/>');
+            }
         },
         legend: {
             data: (chartData.series || []).map(function (s) { return s.name; }),
@@ -289,7 +301,7 @@ function renderChart(chartData) {
             textStyle: { color: '#576873' }
         },
         grid: {
-            left: '2%', right: '3%', top: 56, bottom: '3%', containLabel: true
+            left: '4%', right: '3%', top: 56, bottom: '3%', containLabel: true
         },
         xAxis: Object.assign({}, axisStyle, {
             type: 'category',
@@ -300,7 +312,9 @@ function renderChart(chartData) {
         yAxis: Object.assign({
             type: 'value',
             name: (chartData.yAxis && chartData.yAxis.name) || '风险分',
-            nameTextStyle: { color: '#576873' },
+            // 轴名默认居中于轴线，左侧会被画布裁掉首字；改为左对齐并留出间距
+            nameTextStyle: { color: '#576873', align: 'left', padding: [0, 0, 6, 0] },
+            nameGap: 12,
             min: 0, max: 100
         }, axisStyle),
         series: (chartData.series || []).map(function (s, index) {

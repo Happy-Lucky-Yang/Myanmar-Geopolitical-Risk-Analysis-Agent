@@ -42,7 +42,9 @@ function degreeMap(edges) {
 }
 
 function showEmpty(msg) {
-    ensureChart().setOption({
+    const chart = ensureChart();
+    chart.dispatchAction({ type: 'hideTip' });   // 清掉上一个视图残留的 tooltip
+    chart.setOption({
         backgroundColor: 'transparent',
         title: { text: msg, left: 'center', top: 'middle', textStyle: { color: '#93a2aa', fontSize: 14, fontWeight: 400 } },
         series: []
@@ -62,13 +64,20 @@ function renderEntityGraph(data, categoryField) {
     });
     // 节点少时放大节点与间距，让结构铺满画布；节点多时保持紧凑。
     const sparse = rawNodes.length < 40;
+    // 节点多时只标注度最高的 LABEL_LIMIT 个，其余悬停才显示，
+    // 否则 600+ 节点的标签会互相压盖成不可读的“毛球”。
+    const LABEL_LIMIT = 50;
+    const labeledIds = new Set(rawNodes.map(n => String(n.id))
+        .sort((x, y) => (deg[y] || 0) - (deg[x] || 0))
+        .slice(0, LABEL_LIMIT));
     const nodes = rawNodes.map(n => ({
         id: String(n.id),
         name: n.name || String(n.id),
         category: catNames.indexOf(entityLabel(n[categoryField] || n.entity_type || '其他')),
         symbolSize: sparse ? Math.min(66, 20 + (deg[n.id] || 0) * 5) : Math.min(46, 10 + (deg[n.id] || 0) * 2.2),
         entity_type: entityLabel(n[categoryField] || n.entity_type || ''),
-        degree: deg[n.id] || 0
+        degree: deg[n.id] || 0,
+        label: { show: sparse || labeledIds.has(String(n.id)) }
     }));
     const idSet = new Set(nodes.map(n => n.id));
     const links = rawEdges.filter(e => idSet.has(String(e.source)) && idSet.has(String(e.target))).map(e => ({
@@ -76,7 +85,9 @@ function renderEntityGraph(data, categoryField) {
         value: e.weight || 1, rel: e.type || '',
         lineStyle: { width: 1.2 + Math.min(5, Math.log2(1 + Math.abs(Number(e.weight) || 1)) * 1.4) }
     }));
-    ensureChart().setOption({
+    const entityChart = ensureChart();
+    entityChart.dispatchAction({ type: 'hideTip' });   // 切视图时清除旧 tooltip，避免文本残留
+    entityChart.setOption({
         backgroundColor: 'transparent',
         tooltip: Object.assign({}, GRAPH_TOOLTIP, {
             formatter: p => {
@@ -92,7 +103,8 @@ function renderEntityGraph(data, categoryField) {
             force: sparse ? { repulsion: 520, edgeLength: [90, 170], gravity: 0.12 } : { repulsion: 240, edgeLength: [60, 150], gravity: 0.08 },
             data: nodes, links: links,
             lineStyle: { color: '#b9c7c3', curveness: 0.14, opacity: 0.7, width: 1.3 },
-            emphasis: { focus: 'adjacency', lineStyle: { width: 3, color: '#3a9a8a' } }
+            emphasis: { focus: 'adjacency', lineStyle: { width: 3, color: '#3a9a8a' },
+                        label: { show: true, fontWeight: 600 } }
         }]
     }, true);
 }
@@ -112,7 +124,9 @@ function renderActorGraph(data) {
         layer: e.layer, mentions: e.mentions, event_count: e.event_count,
         lineStyle: { color: e.layer === 'cooperation' ? '#4ca37c' : (e.layer === 'conflict' ? '#db665e' : '#b9c7c3'), width: Math.min(8, 1 + Math.abs(e.weight) / 2), opacity: 0.8, curveness: 0.18 }
     }));
-    ensureChart().setOption({
+    const actorChart = ensureChart();
+    actorChart.dispatchAction({ type: 'hideTip' });   // 切视图时清除旧 tooltip
+    actorChart.setOption({
         backgroundColor: 'transparent',
         tooltip: Object.assign({}, GRAPH_TOOLTIP, {
             formatter: p => {
@@ -177,6 +191,11 @@ function renderStats(view, data) {
 async function loadGraph() {
     const view = (document.getElementById('graph-view') || {}).value || 'cooccur';
     const f = graphFilters();
+    // 切视图时先清掉侧栏旧数据，避免加载期间把上一个视图的统计当成当前结果
+    ['graph-stats', 'graph-top', 'graph-semantics'].forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.innerHTML = '<p>正在加载所选视图…</p>';
+    });
     let url;
     if (view === 'cooccur') {
         url = `/api/network?domain=observed&days=${f.days}&region=${encodeURIComponent(f.region)}` +

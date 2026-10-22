@@ -429,6 +429,15 @@ class CrawlerScheduler:
         logger.info("[Scheduler] 手动触发: 新闻爬取")
         threading.Thread(target=self._run_crawl_job, daemon=True).start()
 
+    def run_crawl_once(self) -> Dict:
+        """同步执行一轮新闻采集（供服务启动钩子/脚本调用），返回本轮结果。
+
+        与定时任务共用 _crawl_lock：若已有爬取在执行则本次直接跳过，
+        不会并发请求同一个站点。
+        """
+        self._run_crawl_job()
+        return self._last_crawl_result or {}
+
     def trigger_gdelt(self):
         """手动触发一次 GDELT 查询（异步执行，立即返回）"""
         logger.info("[Scheduler] 手动触发: GDELT 查询")

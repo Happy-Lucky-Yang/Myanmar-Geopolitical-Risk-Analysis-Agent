@@ -16,7 +16,7 @@
                 <p class="eyebrow">Risk Atlas</p>
                 <h2>缅甸风险地图</h2>
             </div>
-            <p class="lede">省级事件烈度、事件密度与行政边界叠加展示；灰色为无有效观测。</p>
+            <p class="lede">省级事件烈度、报道事件密度与行政边界叠加展示；灰色为无有效观测。</p>
 
             <div class="sidebar-section">
                 <span class="sidebar-label">查询范围</span>
@@ -33,7 +33,7 @@
                 <label class="lp-item"><input type="radio" name="risk-style" value="none"> 不渲染</label>
 
                 <div class="lp-group">叠加</div>
-                <label class="lp-item"><input type="checkbox" id="lyr-kde"> 事件密度 KDE</label>
+                <label class="lp-item"><input type="checkbox" id="lyr-kde"> 报道事件密度 KDE</label>
                 <div class="lp-item lp-slider">透明度
                     <input type="range" id="kde-opacity" min="20" max="100" value="60">
                 </div>
@@ -44,7 +44,7 @@
             <span class="export-group">导出报告
                 <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">当前筛选 HTML</a>
             </span>
-            <p class="muted-note">省级事件规则烈度不等同于全国风险分；底图故障不影响本地边界与分析图层。</p>
+            <p class="muted-note">省级事件规则烈度不等同于全国风险分；密度层基于 GDELT，事件需被媒体报道才会进入，热区反映报道关注度而非实际冲突密度；底图故障不影响本地边界与分析图层。</p>
         </aside>
 
         <!-- 地图主区域 -->

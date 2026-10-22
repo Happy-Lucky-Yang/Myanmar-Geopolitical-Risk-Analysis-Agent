@@ -655,6 +655,9 @@ class NewsCrawler:
 
         # 自动修复缺失日期（集成到爬虫流水线）
         date_stats = fix_missing_dates(news_list)
+        # 信源立场标注（仅展示用，不参与评分）
+        from utils.source_meta import annotate_stance
+        annotate_stance(news_list)
         if date_stats['fixed'] > 0:
             logger.info(f"[Crawler] 日期修复：{date_stats['fixed']}条 (URL:{date_stats['from_url']}, 内容:{date_stats['from_content']}, 爬取时间:{date_stats['from_crawled']})")
         if date_stats['still_missing'] > 0:
