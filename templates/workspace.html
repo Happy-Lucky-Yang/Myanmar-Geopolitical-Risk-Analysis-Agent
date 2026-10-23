@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>个人工作区 · 缅甸地缘风险智能分析系统</title><link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}?v=mist-2"><link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}?v=mist-2"><link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
+<title>个人工作区 · 缅甸地缘风险智能分析系统</title><link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}?v=shell-2"><link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}?v=mist-2"><link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
 <body>{% include '_nav.html' %}<main class="container console-page">
 <header class="page-hero">
     <div class="hero-text">
@@ -11,11 +11,11 @@
 </header>
 <p id="workspace-status" class="product-status" role="status">检查账户和服务状态…</p>
 <div class="workspace-layout">
-<aside class="card workspace-side"><h3>我的会话</h3><button class="btn btn-primary" id="workspace-new" disabled>新建对话</button><div id="workspace-history" class="workspace-history"></div><button id="workspace-more" class="btn" disabled>更多历史</button></aside>
-<section class="card workspace-main"><div class="workspace-titlebar"><h2 id="workspace-title">选择或新建对话</h2><div class="btn-group"><button id="workspace-rename" class="btn" disabled>重命名</button><button id="workspace-delete" class="btn" disabled>删除会话</button><a id="workspace-export" class="btn btn-secondary" hidden>导出本人会话</a></div></div>
+<aside class="card workspace-side"><h3>我的会话</h3><button class="btn btn-secondary" id="workspace-new" disabled>新建对话</button><div id="workspace-history" class="workspace-history"></div><button id="workspace-more" class="btn" disabled>更多历史</button></aside>
+<section class="card workspace-main"><div class="workspace-titlebar"><h2 id="workspace-title">选择或新建对话</h2><details class="more-actions"><summary>更多操作</summary><div class="btn-group"><button id="workspace-rename" class="btn" disabled>重命名</button><button id="workspace-delete" class="btn" disabled>删除会话</button><a id="workspace-export" class="btn btn-secondary" hidden>导出本人会话</a></div></details></div>
 <div id="workspace-messages" aria-live="polite"></div>
 <form id="workspace-form" class="workspace-form"><label for="workspace-input">问题</label><textarea id="workspace-input" maxlength="2000" placeholder="例如：请结合证据解释这段时间的风险变化" disabled></textarea>
-{% include '_view_filters.html' %}<button id="workspace-send" class="btn btn-primary" disabled>发送并检索证据</button></form>
+<details class="research-filter"><summary>高级筛选（证据时间、地区与来源）</summary>{% include '_view_filters.html' %}</details><button id="workspace-send" class="btn btn-primary" disabled>发送并检索证据</button></form>
 </section></div>
 <details class="card workspace-prefs"><summary>个人偏好（可修改或清除）</summary><form id="preferences-form" class="controls">
 <label>关注地区<input id="preference-region" value="MMR" maxlength="64"></label>
@@ -23,4 +23,4 @@
 <label>解释长度<select id="preference-verbosity"><option value="brief">简明</option><option value="detailed">详细</option></select></label>
 <label><input id="preference-suggestions" type="checkbox">允许根据成功使用次数推荐其他功能（不保存浏览正文）</label>
 <button class="btn" id="preferences-save" disabled>保存偏好</button><button type="button" id="preferences-clear" class="btn" disabled>清除偏好</button></form></details>
-</main><script src="{{ url_for('static',filename='js/common.js') }}?v=mist-2"></script><script src="{{ url_for('static',filename='js/workspace.js') }}?v=mist-2"></script></body></html>
+</main><script src="{{ url_for('static',filename='js/common.js') }}?v=shell-2"></script><script src="{{ url_for('static',filename='js/workspace.js') }}?v=mist-2"></script></body></html>

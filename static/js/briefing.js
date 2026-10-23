@@ -1,7 +1,8 @@
 /* 仪表盘AI区独立加载；失败不影响风险、地图和事件卡片。 */
 (() => {
     const area=document.getElementById('ai-briefing-body'), button=document.getElementById('ai-briefing-request');
-    let generation=0, submission=null;
+    if (!area || !button) return;
+    let generation=0, submission=null, requesting=false;
     function show(text){area.textContent=text;}
     function render(result){
         area.replaceChildren();
@@ -14,11 +15,15 @@
     }
     document.querySelectorAll('.view-filters input,.view-filters select').forEach(n=>n.addEventListener('change',()=>{generation++;show('筛选已变化，请重新请求解释。');}));
     button.onclick=async()=>{
+        if(requesting)return;
+        requesting=true;button.disabled=true;
         const epoch=++generation, filters=readViewFilters();
         const signature=JSON.stringify(filters);
         if(!submission||submission.signature!==signature)submission={signature,key:crypto.randomUUID()};
-        if(filters.source){show('AI综合解释暂不支持单来源，请清空来源。');return;}
-        button.disabled=true;show('正在提交任务…');
+        if(filters.source){requesting=false;button.disabled=false;show('AI综合解释暂不支持单来源，请清空来源。');return;}
+        const permission=await modelPermission('analyst');
+        if(!permission.allowed||!permission.auth?.shared_mode){requesting=false;show(permission.reason||'证据型研判需要共享账户和独立worker。');button.disabled=true;return;}
+        show('正在提交任务…');
         try{
             const user=(await fetchJSON('/api/session')).data.user;
             if(!user)throw new Error('请先登录');
@@ -33,19 +38,25 @@
                 await new Promise(resolve=>setTimeout(resolve,2000));
             }
             if(epoch===generation)show('任务仍在等待。请检查worker；不要反复提交。');
-        }catch(error){if(epoch===generation)show(error.message);}finally{button.disabled=false;}
+        }catch(error){if(epoch===generation)show(error.message);}finally{requesting=false;await loadEligibility(false);}
     };
-    (async()=>{
+    async function loadEligibility(readLatest=true){
+        button.disabled=true;
         try{
             const flags=(await fetchJSON('/api/product/status')).data;
             if(!flags.workspace||!flags.risk_briefing){show('AI研判默认关闭；由管理员完成共享账户、迁移与worker配置后启用。');return;}
-            button.disabled=false;
+            const permission=await modelPermission('analyst');
+            if(!permission.allowed||!permission.auth?.shared_mode){generation++;show(permission.reason||'证据型研判需要共享账户、PostgreSQL和独立worker。');return;}
+            button.disabled=requesting;
+            if(!readLatest||requesting)return;
             const epoch=generation;
             const response=await fetchJSON('/api/workspace/briefings/latest');
             if(epoch!==generation)return;
             const ev=response.data?.result?.evidence, filters=readViewFilters();
             if(ev && !filters.source && ev.region===filters.region && ev.end_date===filters.end_date && ev.days===Number(filters.days))render(response.data.result);
             else show('当前筛选暂无匹配的自动研判；未满足证据门槛时不会生成。可以主动请求历史窗口解释。');
-        }catch(error){show(error.message);}
-    })();
+        }catch(error){button.disabled=true;show(error.message);}
+    }
+    loadEligibility();
+    window.addEventListener('focus',()=>loadEligibility(!requesting));
 })();

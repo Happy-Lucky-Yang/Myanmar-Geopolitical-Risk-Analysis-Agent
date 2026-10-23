@@ -85,6 +85,8 @@ async function fetchJSON(url, options, timeout) {
 /* ---------- 自愿功能推荐：仅记成功功能计数，不记页面轨迹 ---------- */
 let featureRecorded = false;
 async function noteFeatureSuccess(url) {
+    // 全国首页只读四类观测，不记录推荐或自动写工作区使用数据。
+    if (location.pathname === '/dashboard') return;
     const feature = location.pathname.slice(1);
     const endpoints = {dashboard:'/api/report', trend:'/api/trend', map:'/api/regions',
         graph:'/api/network', literature:'/api/literature', workspace:'/api/workspace/requests/'};
@@ -111,6 +113,34 @@ async function noteFeatureSuccess(url) {
             {method:'PUT',headers,body:JSON.stringify({...prefs,suggestions:false})});}catch(_){showToast('关闭偏好未保存，请在个人工作区关闭');}};
         card.append(close); document.querySelector('main')?.append(card);
     } catch (_) { /* 可选推荐失败不影响业务功能。 */ }
+}
+
+/* ---------- 只比较可证明同口径的相邻日，不把缺失版本／权重当一致 ---------- */
+function sameRiskBasis(a,b) {
+    if (!a || !b) return false;
+    const version = r => r.algorithm_version || r.details?.algorithm_version;
+    const origin = r => r.sources || r.details?.sources || [];
+    const coefficients = r => r.details?.weights_used || r.weights_used || {};
+    const sources = r => JSON.stringify(origin(r).slice().sort());
+    const weights = r => JSON.stringify(Object.entries(coefficients(r)).sort(([a],[b]) => a.localeCompare(b)));
+    const basis = r => JSON.stringify([...['calibration_id','parameter_version','normalization_version','dataset_version'].map(k => r[k] ?? r.details?.[k] ?? null),r.parameters?.approved_version ?? r.details?.parameters?.approved_version ?? null]);
+    return !!version(a) && version(a) === version(b) && origin(a).length > 0 && origin(b).length > 0
+        && Object.keys(coefficients(a)).length > 0 && Object.keys(coefficients(b)).length > 0
+        && sources(a) === sources(b) && weights(a) === weights(b) && basis(a) === basis(b);
+}
+
+/* ---------- 模型权限只读查询：权限规则仍由服务端决定 ---------- */
+async function modelPermission(requiredRole) {
+    try {
+        const response = await fetchJSON('/api/session');
+        if (!response.success || !response.data) throw new Error('会话不可读取');
+        const auth = response.data;
+        if (typeof auth.shared_mode !== 'boolean') throw new Error('会话模式无效');
+        if (!auth.shared_mode) return {allowed:true, auth};
+        const roles = {reader:0, analyst:1, admin:2};
+        const allowed = !!auth.user && roles[auth.user.role] >= roles[requiredRole];
+        return {allowed, auth, reason:allowed ? '' : !auth.user ? '请先登录后再执行分析。' : '当前账户为只读或权限不足，请联系管理员。'};
+    } catch (_) { return {allowed:false, reason:'无法核验调用权限，暂不开放生成操作。'}; }
 }
 
 /* ---------- 风险等级映射 ---------- */
@@ -143,13 +173,13 @@ function riskScoreColor(score) {
 /* ---------- 数值格式化 ---------- */
 
 function formatNumber(num, decimals) {
-    if (num === null || num === undefined || !Number.isFinite(Number(num))) return '无数据';
+    if (num === null || num === undefined || num === '' || typeof num === 'boolean' || !Number.isFinite(Number(num))) return '—';
     const d = decimals !== undefined ? decimals : 2;
     return Number(num).toFixed(d);
 }
 
 function formatPercent(num) {
-    if (num === null || num === undefined || !Number.isFinite(Number(num))) return '无数据';
+    if (num === null || num === undefined || num === '' || typeof num === 'boolean' || !Number.isFinite(Number(num))) return '—';
     return (Number(num) * 100).toFixed(1) + '%';
 }
 
@@ -263,11 +293,12 @@ function readViewFilters() {
 
 function syncViewNavigation(filters) {
     var common = {};
-    ['days', 'end_date', 'region', 'source'].forEach(key => { if (filters) common[key] = filters[key]; });
+    ['days', 'end_date', 'region', 'source', 'revision'].forEach(key => { if (filters) common[key] = filters[key]; });
     var query = viewQuery({}, common);
-    document.querySelectorAll('.nav-links a, .sub-nav a').forEach(function (a) {
+    document.querySelectorAll('.nav-links a, .section-sidebar a, .site-menu a').forEach(function (a) {
         var path = new URL(a.href, window.location.href).pathname;
-        if (['/', '/dashboard', '/map', '/trend'].includes(path)) a.href = path + '?' + query;
+        if (path === '/dashboard') { a.href = '/dashboard'; return; }
+        if (['/', '/map', '/trend', '/graph', '/spatial', '/multimodal', '/dashboard/indicators', '/dashboard/events', '/dashboard/data', '/analysis/risk'].includes(path)) a.href = path + (query ? '?' + query : '');
     });
 }
 

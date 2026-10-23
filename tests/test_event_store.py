@@ -2,7 +2,8 @@
 """事件累积库单元测试（临时文件，无网络依赖）"""
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
+from utils.data_contract import business_date, utc_now
 
 import pytest
 
@@ -32,7 +33,7 @@ def _ev(eid, date, lat=16.8, lon=96.2):
 
 def test_append_dedupes_by_event_id(store_path):
     store = EventStore(persist_path=store_path)
-    today = datetime.now().strftime("%Y%m%d")
+    today = business_date(utc_now()).strftime("%Y%m%d")
 
     added1 = store.append([_ev("1", today), _ev("2", today)])
     added2 = store.append([_ev("2", today), _ev("3", today)])  # 2 重复
@@ -45,7 +46,7 @@ def test_append_dedupes_by_event_id(store_path):
 def test_append_fallback_fingerprint_without_id(store_path):
     """无 event_id 的事件按 日期+事件码+位置 指纹去重"""
     store = EventStore(persist_path=store_path)
-    today = datetime.now().strftime("%Y%m%d")
+    today = business_date(utc_now()).strftime("%Y%m%d")
 
     ev = _ev("", today)
     ev.pop("event_id")
@@ -58,7 +59,7 @@ def test_append_fallback_fingerprint_without_id(store_path):
 
 def test_load_filters_by_days(store_path):
     store = EventStore(persist_path=store_path)
-    today = datetime.now()
+    today = business_date(utc_now())
     recent = today.strftime("%Y%m%d")
     old = (today - timedelta(days=20)).strftime("%Y%m%d")
 
@@ -71,7 +72,7 @@ def test_load_filters_by_days(store_path):
 
 def test_history_retained_and_window_filters_old_events(store_path):
     store = EventStore(persist_path=store_path, keep_days=30)
-    today = datetime.now()
+    today = business_date(utc_now())
     store.append([
         _ev("1", today.strftime("%Y%m%d")),
         _ev("2", (today - timedelta(days=60)).strftime("%Y%m%d")),
@@ -84,7 +85,7 @@ def test_history_retained_and_window_filters_old_events(store_path):
 
 def test_persistence_roundtrip(store_path):
     store = EventStore(persist_path=store_path)
-    today = datetime.now().strftime("%Y%m%d")
+    today = business_date(utc_now()).strftime("%Y%m%d")
     store.append([_ev("1", today), _ev("2", today)])
 
     # 新实例从磁盘加载

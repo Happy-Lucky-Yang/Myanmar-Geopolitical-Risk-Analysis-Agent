@@ -20,11 +20,12 @@ import os
 import re
 import logging
 import threading
+from urllib.parse import urlencode
 
 # 确保项目根目录在 sys.path 中，以便各模块相互导入
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, request, jsonify, Response, render_template, g
+from flask import Flask, request, jsonify, Response, render_template, redirect, g
 from flask.json.provider import DefaultJSONProvider
 from utils.data_contract import RISK_VERSION, business_date, calendar_series, coverage_metadata, json_safe, time_window, utc_now
 try:
@@ -174,8 +175,44 @@ def page_trend():
 
 @app.route("/dashboard")
 def page_dashboard():
-    """综合态势仪表盘页面"""
-    return render_template("dashboard.html")
+    """全国默认首页；旧高级筛选链接转入风险明细，保留公开查询。"""
+    keys = ('days', 'end_date', 'region', 'source', 'revision')
+    if any(key in request.args for key in keys):
+        query = {key: request.args[key] for key in keys if key in request.args}
+        query['from'] = 'overview'
+        return redirect('/dashboard/indicators?' + urlencode(query))
+    from utils.research_context import boundary_texture
+    return render_template("dashboard.html", boundary_texture=boundary_texture())
+
+
+@app.route('/dashboard/indicators')
+@app.route('/dashboard/events')
+@app.route('/dashboard/data')
+@app.route('/spatial')
+@app.route('/multimodal')
+@app.route('/analysis/risk')
+@app.route('/research/methodology')
+@app.route('/research/history')
+def page_research():
+    """研究能力的二级入口；只渲染页面，不采集、不调用模型。"""
+    pages = {
+        '/dashboard/indicators': ('indicators', '风险与指标', 'Risk & Indicators', '日风险、贡献和多源研究面板分轨展示；缺测不补零，贡献不等于因果。'),
+        '/dashboard/events': ('events', '事件与证据', 'Events & Evidence', '查看窗口内报道事件与原始出处；记录不等于已证实的独立现实事件。'),
+        '/dashboard/data': ('data', '数据状态', 'Data Quality', '区分观测覆盖、采集运行和来源立场；它们不是结论真实性概率。'),
+        '/spatial': ('spatial', '空间统计', 'Spatial Statistics', '地缘位势、空间自相关与局部检验；有效样本决定可报告边界。'),
+        '/multimodal': ('multimodal', '多源对照', 'Multisource Observations', '完整月份对齐，年度原值独立展示；不合成或复制缺失观测。'),
+        '/analysis/risk': ('risk', '风险解读', 'Risk Interpretation', '基于已保存观测解释分数构成并给出条件化建议；点击后才请求模型。'),
+        '/research/methodology': ('methodology', '指标与计算方法', 'Methods & Provenance', '从原始资料到指标结果，说明筛选、聚合、版本与数据限制。'),
+        '/research/history': ('history', '历史背景', 'Historical Context', '独立参考资料，不代表当前风险，也不用于回填当前观测。'),
+    }
+    view, title, eyebrow, description = pages[request.path]
+    # 公共参数投影只读配置与已存版本，不把完整配置或原始批次传进模板。
+    context = {}
+    if view == 'methodology':
+        from utils.research_context import method_context
+        context = method_context()
+    return render_template('research.html', view=view, title=title, eyebrow=eyebrow,
+                           description=description, **context)
 
 
 @app.route("/graph")
@@ -541,6 +578,9 @@ def geo_potential():
         provinces = _build_province_risk_data()
         result = analyzer.full_analysis({r['province']: r['risk_score'] for r in provinces})
         result['observation_metadata'] = [{k: v for k, v in r.items() if k != 'events'} for r in provinces]
+        if request.args.get('local') == '1':
+            from analyzer.spatial_analysis import spatial_autocorrelation_report
+            result['spatial_report'] = spatial_autocorrelation_report(provinces)
         return jsonify({"success": True, "data": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -565,15 +605,19 @@ def sources_health():
                 continue
             # 附信源立场（仅展示，不影响成功/失败判定）
             data[name] = {**item, 'stance': stance_of(name)}
-        return jsonify({"success": True, "data": data})
+        return jsonify({"success": True, "data": data,
+                        "active_count": len(active), "active_sources": sorted(active)})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
 def _active_source_names() -> set:
     """当前仍在采集的源名集合：核心采集器 + config.yaml 中启用的 RSS 源。"""
-    names = {'缅甸缅华网', 'The Irrawaddy', 'GDELT', 'UN News 中文',
+    names = {'缅甸缅华网', 'The Irrawaddy', 'GDELT',
              'World Bank 经济指标', 'World Bank 夜光代理'}
+    from utils.product_features import enabled
+    if enabled('un_news'):
+        names.add('UN News 中文')
     try:
         for feed in (load_config().get('rss_feeds') or {}).values():
             if isinstance(feed, dict) and feed.get('enabled', True) and feed.get('name'):
@@ -833,6 +877,7 @@ def unified_map():
     """
     try:
         days = request.args.get("days", 7, type=int)
+        compact = request.args.get('compact', '0') == '1'
 
         def _build():
             map_gen = get_map_generator()
@@ -844,7 +889,7 @@ def unified_map():
             density = None
             try:
                 events = _query_events(days)
-                if events:
+                if events and not compact:
                     from analyzer.event_density import (
                         get_event_density_analyzer)
                     cand = get_event_density_analyzer().compute(
@@ -854,12 +899,12 @@ def unified_map():
             except Exception as e:
                 logger.warning(f"[Map] KDE 密度准备失败: {e}")
 
-            if not risk_data and density is None:
+            if not risk_data and density is None and not compact:
                 return map_gen.generate_default_map()
             return map_gen.generate_unified_map(
-                risk_data, density, days=days)
+                risk_data, density, days=days, compact=compact)
 
-        html = _cached_map_html(f"unified:{days}", 300, _build)
+        html = _cached_map_html(f"unified:{days}:compact={compact}", 300, _build)
         return Response(html, mimetype="text/html", headers={'X-Data-Revision': g.map_revision})
 
     except SnapshotChanged as e:

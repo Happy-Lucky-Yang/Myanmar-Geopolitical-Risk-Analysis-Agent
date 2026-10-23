@@ -13,11 +13,11 @@ var dashboardSequence = 0;
 var dashboardSnapshot = null;
 var researchSequence = -1;
 
+var researchView = '';
 document.addEventListener('DOMContentLoaded', function () {
+    researchView = document.body.dataset.researchView || '';
+    if (!researchView) return;
     initViewFilters(loadAll);
-    document.getElementById('research-details').addEventListener('toggle', function () {
-        if (this.open) { loadResearch(); if (mmChart) mmChart.resize(); }
-    });
     loadAll();
 });
 
@@ -27,25 +27,37 @@ async function loadAll() {
     ++alertSequence; ++networkSequence; ++diagnosticSequence; ++multimodalSequence;
     setViewReport(null);
     if (mmChart) mmChart.clear();
-    var ids = ['overview-body', 'focus-events', 'alert-panel', 'source-health-body', 'geo-body', 'autocorr-body', 'network-body', 'diagnostic-body', 'correlation-body', 'history-body'];
+    var ids = ['overview-body', 'focus-events', 'alert-panel', 'geo-body', 'autocorr-body', 'diagnostic-body', 'correlation-body', 'spatial-detail', 'data-coverage', 'daily-records'];
     ids.forEach(id => renderLoading(document.getElementById(id)));
-    document.getElementById('alert-indicator').textContent = '预警状态待更新';
+    if (researchView === 'history') { loadHistory(); return; }
     var filters = readViewFilters();
+    var status = document.getElementById('view-status');
+    if (status) status.textContent = '正在读取已保存观测…';
+    if (researchView === 'data') loadSourceHealth();
+    if (researchView === 'risk') {
+        if (status) status.textContent = '窗口：' + filters.days + '天 · 截至 ' + filters.end_date + '；仅用于证据型窗口研判。';
+        return;
+    }
     try {
-        var response = await fetchJSON('/api/report?' + viewQuery({format:'json'}, filters));
+        var extra = {format:'json'};
+        if (sequence === 1) extra.revision = new URLSearchParams(location.search).get('revision');
+        var response = await fetchJSON('/api/report?' + viewQuery(extra, filters));
         if (sequence !== dashboardSequence) return;
         if (!response.success) throw new Error(response.error || '快照不可用');
         dashboardSnapshot = response.data;
         renderOverview(dashboardSnapshot);
         setViewReport(dashboardSnapshot);
         syncViewNavigation(dashboardSnapshot.filters);
-        window.history.replaceState(null, '', '/dashboard?' + viewQuery({}, dashboardSnapshot.filters));
-        loadAlert();
-        if (document.getElementById('research-details').open) loadResearch();
+        var selectedQuery = new URLSearchParams(location.search);
+        var selection = selectedQuery.get('event_id');
+        window.history.replaceState(null, '', location.pathname + '?' + viewQuery(selection ? {event_id:selection,event_source:selectedQuery.get('event_source')} : {}, dashboardSnapshot.filters));
+        if (status) status.textContent = '截至 ' + dashboardSnapshot.filters.end_date + ' · ' + dashboardSnapshot.filters.days + '天 · 修订 ' + dashboardSnapshot.revision.slice(0, 12);
+        if (researchView === 'data') renderDataCoverage(dashboardSnapshot);
+        loadResearch();
     } catch (e) {
         if (sequence !== dashboardSequence) return;
-        ids.forEach(id => { document.getElementById(id).innerHTML = errBox(e.message); });
-        document.getElementById('alert-indicator').textContent = '当前快照不可用';
+        ids.forEach(id => { var node = document.getElementById(id); if (node) node.innerHTML = errBox(e.message); });
+        if (status) status.textContent = '当前快照不可用；未显示旧筛选结果。';
     }
 }
 
@@ -56,7 +68,9 @@ function dashboardQuery(extra) {
 function loadResearch() {
     if (!dashboardSnapshot || researchSequence === dashboardSequence) return;
     researchSequence = dashboardSequence;
-    loadSourceHealth(); loadGeoPotential(); loadNetwork(); loadDiagnostic(); loadMultimodal(); loadHistory();
+    if (researchView === 'indicators') { loadAlert(); loadDiagnostic(); }
+    if (researchView === 'spatial') loadGeoPotential();
+    if (researchView === 'multimodal') loadMultimodal();
 }
 
 function renderOverview(snapshot) {
@@ -67,7 +81,7 @@ function renderOverview(snapshot) {
     var yesterday = new Date(snapshot.filters.end_date + 'T00:00:00Z');
     yesterday.setUTCDate(yesterday.getUTCDate() - 1);
     var previous = observed.find(r => r.date === yesterday.toISOString().slice(0, 10));
-    var delta = current && previous ? latest.risk_score - previous.risk_score : null;
+    var delta = current && sameRiskBasis(latest,previous) ? latest.risk_score - previous.risk_score : null;
     var html = '<div class="situation">' + situationGaugeHTML(latest, current, snapshot.filters.end_date)
         + '<div class="sit-side"><div class="net-stats sit-kpis">'
         + statChip('较前一日变化（分）', formatNumber(delta, 1))
@@ -81,28 +95,48 @@ function renderOverview(snapshot) {
         + '<p>完整快照：' + escapeHtml(snapshot.snapshot_id) + '；生成时间：' + escapeHtml(snapshot.generated_at) + '</p></details>';
     (snapshot.warnings || []).forEach(w => { html += '<p class="muted-note">' + escapeHtml(w) + '</p>'; });
     var indicators = latest && latest.details && latest.details.indicator_scores || {};
-    var names = {conflict_frequency:'冲突报道频次', sentiment_avg:'情感风险', nightlight_change:'夜光变化', refugee_change:'难民变化', llm_risk:'LLM风险'};
+    var names = {conflict_frequency:'冲突报道频次', sentiment_avg:'情感风险', nightlight_change:'夜光变化', refugee_change:'难民变化', event_severity:'事件严重度', llm_risk:'LLM风险'};
     html += '<h4>已保存的指标贡献' + (latest ? '（' + escapeHtml(latest.date) + '）' : '') + '</h4>';
     Object.entries(indicators).filter(p => p[1].contribution != null).sort((a,b) => b[1].contribution - a[1].contribution).forEach(function (pair) {
         html += metricBarHTML(names[pair[0]] || pair[0], pair[1].contribution * 100, 100);
     });
     html += '<p class="muted-note">缺测不等于低风险；覆盖率不是采集完整率；贡献不表示因果。</p>';
-    document.getElementById('overview-body').innerHTML = html;
+    var overview = document.getElementById('overview-body');
+    if (overview) overview.innerHTML = html;
+    const daily = document.getElementById('daily-records');
+    if (daily) {
+        const byDate = Object.fromEntries(history.map(row => [row.date,row]));
+        const end = new Date(snapshot.filters.end_date + 'T00:00:00Z');
+        let rows = '<table><thead><tr><th>业务日</th><th>风险分／100</th><th>来源</th><th>算法与观测质量</th></tr></thead><tbody>';
+        for (let i=snapshot.filters.days-1;i>=0;i--) {
+            const key = new Date(end.getTime()-i*86400000).toISOString().slice(0,10);
+            const row = byDate[key];
+            rows += '<tr><td>' + key + '</td><td>' + escapeHtml(formatNumber(row?.risk_score,1)) + '</td><td>'
+                + escapeHtml((row?.sources || []).join('、') || '—') + '</td><td>'
+                + escapeHtml(row ? (row.algorithm_version || row.details?.algorithm_version || '版本未提供') : '缺测，不补零') + '</td></tr>';
+        }
+        daily.innerHTML = rows + '</tbody></table>';
+    }
+    if (!document.getElementById('focus-events')) return;
     var events = (snapshot.events || []).slice().sort((a,b) => String(b.date).localeCompare(String(a.date)));
     var eventHTML = '<p class="muted-note">去重事件记录 ' + events.length + ' 条；不是已验证的独立现实事件数量。</p>';
     eventHTML += quadMixHTML(events);
-    events.slice(0, 8).forEach(function (event) {
+    events.forEach(function (event, index) {
         var root = String(event.root_code || '').padStart(2, '0');
         var quad = String(event.quad_class || '');
         var kind = event.event_type || CAMEO_ROOT[root] || '事件类型未标注';
-        eventHTML += '<div class="ev-item quad-' + (QUAD[quad] ? quad : '0') + '"><div class="ev-top"><span class="ev-tag">'
+        var selectedQuery = new URLSearchParams(location.search);
+        var selected = selectedQuery.get('event_id') === String(event.event_id) && (!selectedQuery.get('event_source') || selectedQuery.get('event_source')===event.source);
+        eventHTML += '<div id="evidence-' + index + '" class="ev-item quad-' + (QUAD[quad] ? quad : '0') + (selected ? ' evidence-selected' : '') + '"><div class="ev-top"><span class="ev-tag">'
             + escapeHtml(kind) + '</span><span class="ev-date">' + escapeHtml(event.date) + '</span></div>'
             + '<div class="ev-loc">' + escapeHtml(event.event_location || event.location || '未定位') + '</div>';
         if (event.description) eventHTML += '<p class="ev-desc">' + escapeHtml(event.description) + '</p>';
         var meta = [];
         if (CAMEO_ROOT[root]) meta.push('CAMEO ' + root);
         if (event.num_articles != null && Number.isFinite(Number(event.num_articles))) meta.push('报道 ' + Number(event.num_articles) + ' 篇');
+        meta.push('记录ID ' + (event.event_id || '—'));
         meta.push('来源 ' + (event.source || 'gdelt'));
+        meta.push(event.evidence_verified === true && event.independent_source_count >= 2 ? '已审核独立多源' : '证据未核验（报道量不是独立互证）');
         meta.push(event.location_method || (event.lat != null && event.lon != null ? '坐标待边界匹配' : '未提供定位方法'));
         eventHTML += '<div class="ev-meta">' + escapeHtml(meta.join(' · '));
         var url = event.source_url || event.url;
@@ -111,6 +145,21 @@ function renderOverview(snapshot) {
     });
     if (!events.length) eventHTML += '<p class="muted-note">所选窗口无事件记录，未回填旧闻或演示事件。</p>';
     document.getElementById('focus-events').innerHTML = eventHTML;
+    document.querySelector('.evidence-selected')?.scrollIntoView({block:'center'});
+}
+
+function renderDataCoverage(snapshot) {
+    var latest = (snapshot.history || []).slice().reverse().find(r => isScore(r.risk_score));
+    var details = latest?.details || {};
+    var coverage = latest?.indicator_coverage ?? details.indicator_coverage;
+    var counts = details.source_stances || latest?.source_stances || {};
+    var labels = {domestic:'境内中文',independent:'独立媒体',ethnic:'民族媒体',international:'国际组织',aggregator:'聚合／事件库',official:'官方',military:'军方',unlabeled:'未标注'};
+    var html = '<p>日风险观测：' + escapeHtml(String(snapshot.metadata.valid_days)) + '／' + snapshot.filters.days + '天；最新观测：' + escapeHtml(latest?.date || '—') + '</p>'
+        + '<p>最新观测有效指标权重：' + escapeHtml(formatPercent(coverage)) + '；缺项按有效权重归一，不表示采集完整。</p>'
+        + '<p>窗口来源：' + escapeHtml((snapshot.sources || []).join('、') || '—') + '</p>';
+    html += '<p>最新日新闻立场构成：' + escapeHtml(Object.entries(counts).map(([k,v]) => (labels[k] || k) + ' ' + v + '条').join('；') || '该旧记录未保存立场构成，不能猜测') + '</p>';
+    (snapshot.warnings || []).forEach(w => { html += '<p class="muted-note">' + escapeHtml(w) + '</p>'; });
+    document.getElementById('data-coverage').innerHTML = html;
 }
 
 /* ================= 态势主视觉：风险仪表 + 逐日条码 ================= */
@@ -212,7 +261,7 @@ async function loadSourceHealth() {
     var el = document.getElementById('source-health-body');
     renderLoading(el);
     try {
-        var json = await fetchJSON('/api/sources/health?' + dashboardQuery());
+        var json = await fetchJSON('/api/sources/health');
         if (sequence !== dashboardSequence) return;
         hideLoading(el);
         if (!json.success) { el.innerHTML = errBox(json.error); return; }
@@ -242,6 +291,8 @@ async function loadSourceHealth() {
                 + '<div class="sh-meta">历史成功率 ' + escapeHtml(formatNumber(s.success_rate * 100, 0)) + '% ('
                 + escapeHtml(String(s.recent_success)) + '/' + escapeHtml(String(s.recent_attempts)) + ')'
                 + ' · 上轮 ' + escapeHtml(String(s.last_count)) + ' 条</div>';
+            var last = (s.records || []).slice(-1)[0];
+            html += '<p class="sh-meta">最近运行：' + escapeHtml(last?.time || '未提供') + '；最近成功：' + escapeHtml(s.last_success || '尚无成功') + '</p>';
             if (s.last_error) {
                 html += '<div class="sh-err">' + escapeHtml(s.last_error) + '</div>';
             }
@@ -321,7 +372,7 @@ async function loadGeoPotential() {
     renderLoading(geoEl);
     renderLoading(acEl);
     try {
-        var json = await fetchJSON('/api/geo_potential?' + dashboardQuery());
+        var json = await fetchJSON('/api/geo_potential?' + dashboardQuery({local:1}));
         if (sequence !== dashboardSequence) return;
         hideLoading(geoEl); hideLoading(acEl);
         if (!json.success) { geoEl.innerHTML = acEl.innerHTML = errBox(json.error); return; }
@@ -359,10 +410,27 @@ async function loadGeoPotential() {
             acHtml += '<div class="muted-note">当前未提供可报告热点；样本不足不能解释为不存在聚集。</div>'; 
         }
         acEl.innerHTML = acHtml;
+        var local = d.spatial_report || {};
+        var localEl = document.getElementById('spatial-detail');
+        if (localEl) {
+            var report = '<p>' + escapeHtml(local.reason || '局部统计为描述性检验，不代表因果。') + '</p>';
+            Object.entries(local.by_matrix || {}).forEach(([kind, r]) => { report += '<p>' + escapeHtml(kind) + '：I=' + escapeHtml(formatNumber(r.moran_i, 3)) + '；p=' + escapeHtml(formatNumber(r.p_value, 3)) + '；有效区域 ' + escapeHtml(r.sample_count) + '</p>'; });
+            for (var key of ['lisa','gi_star']) {
+                var result = local[key] || (key === 'gi_star' ? local.gistar : null) || {};
+                report += '<h4>' + (key === 'lisa' ? 'LISA' : 'Getis-Ord Gi*') + '</h4><p>' + escapeHtml(result.reason || result.interpretation || '暂无可报告局部结果') + '</p>';
+                (result.units || []).forEach(r => {
+                    var meaning = key === 'lisa' ? ((r.cluster || '—') + (r.significant ? '（显著）' : '（不显著）')) : (r.hotspot ? '热点（近似z阈值）' : r.coldspot ? '冷点（近似z阈值）' : '未达热点／冷点阈值');
+                    report += '<p>' + escapeHtml(r.region) + '：' + escapeHtml(meaning) + (key === 'lisa' ? '；p=' + escapeHtml(formatNumber(r.p_value,3)) : '；Gi*=' + escapeHtml(formatNumber(r.gi_star,3))) + '</p>';
+                });
+            }
+            localEl.innerHTML = report;
+        }
     } catch (e) {
         if (sequence !== dashboardSequence) return;
         hideLoading(geoEl); hideLoading(acEl);
         geoEl.innerHTML = acEl.innerHTML = errBox(e.message);
+        var localEl = document.getElementById('spatial-detail');
+        if (localEl) localEl.innerHTML = errBox(e.message);
     }
 }
 
@@ -629,8 +697,8 @@ function errBox(msg) {
     return '<div class="error-card"><div class="error-icon">⚠️</div><div class="error-msg">' + escapeHtml(msg || '加载失败') + '</div></div>';
 }
 function statChip(label, value) {
-    var missing = value == null || /无数据|无当前观测|N\/A/.test(String(value));
-    return '<div class="stat-chip' + (missing ? ' stat-missing' : '') + '"><div class="sc-value">' + escapeHtml(String(value != null ? value : 'N/A')) + '</div><div class="sc-label">' + escapeHtml(label) + '</div></div>';
+    var missing = value == null || /无数据|无当前观测|N\/A|^—$/.test(String(value));
+    return '<div class="stat-chip' + (missing ? ' stat-missing' : '') + '"><div class="sc-value">' + escapeHtml(String(value != null ? value : '—')) + '</div><div class="sc-label">' + escapeHtml(label) + '</div></div>';
 }
 function corrChip(label, value) {
     if (value === null || value === undefined || !Number.isFinite(value)) {

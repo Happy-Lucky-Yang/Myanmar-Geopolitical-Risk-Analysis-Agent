@@ -18,8 +18,14 @@ document.addEventListener('DOMContentLoaded', function () {
     if (input) {
         input.addEventListener('input', updateCharCount);
     }
-    // 加载模型列表
+    // 加载模型列表与调用权限；仅GET，不自动分析。
     loadModelList();
+    refreshTextPermission();
+    document.getElementById('model-select')?.addEventListener('change', updateTextModelStatus);
+    document.querySelector('.file-upload-btn')?.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); document.getElementById('file-input').click(); }
+    });
+    window.addEventListener('focus', refreshTextPermission);
     // 文件上传事件
     var fileInput = document.getElementById('file-input');
     if (fileInput) {
@@ -29,6 +35,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
 /* ---------- 模型列表 ---------- */
 var _models = [];
+var textPermission = {allowed:false};
+var textAnalyzing = false;
+async function refreshTextPermission() {
+    textPermission = await modelPermission('analyst');
+    document.getElementById('analyze-btn').disabled = textAnalyzing || !textPermission.allowed;
+    updateTextModelStatus();
+}
+function updateTextModelStatus() {
+    var area = document.getElementById('text-model-status');
+    if (!area) return;
+    var selected = document.getElementById('model-select');
+    var name = selected?.selectedOptions[0]?.textContent || '默认模型';
+    area.textContent = !textPermission.allowed ? textPermission.reason || '正在核验调用权限…'
+        : '所选模型：' + name + '；API费用以供应商政策为准，链式推理可能增加调用次数；点击开始才执行。';
+}
 
 async function loadModelList() {
     var sel = document.getElementById('model-select');
@@ -46,6 +67,7 @@ async function loadModelList() {
                 if (m.id === json.data.default) opt.selected = true;
                 sel.appendChild(opt);
             });
+            updateTextModelStatus();
         }
     } catch (e) {
         sel.innerHTML = '<option value="">默认模型</option>';
@@ -161,10 +183,13 @@ async function analyzeText() {
         return;
     }
 
+    await refreshTextPermission();
+    if (!textPermission.allowed || textAnalyzing) return;
+    textAnalyzing = true;
     var btn = document.getElementById('analyze-btn');
     var resultArea = document.getElementById('result-area');
     btn.disabled = true;
-    btn.textContent = '分析中...';
+    btn.textContent = '分析中…';
     resultArea.style.display = 'none';
 
     // 获取选中的模型
@@ -198,7 +223,8 @@ async function analyzeText() {
     } catch (e) {
         showToast('请求失败: ' + e.message, 'error');
     } finally {
-        btn.disabled = false;
+        textAnalyzing = false;
+        btn.disabled = !textPermission.allowed;
         btn.textContent = '开始分析';
     }
 }

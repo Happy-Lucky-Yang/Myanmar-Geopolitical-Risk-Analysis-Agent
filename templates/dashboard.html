@@ -4,144 +4,51 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>态势总览 · 缅甸地缘风险智能分析系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-2">
-    <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
+    {# 首页不预加载研究图表或模型脚本。 #}
 <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
 <body>
     {% include '_nav.html' %}
 
     <main class="container console-page">
-        <header class="page-hero">
+        <header class="home-header">
+            {% if boundary_texture %}<svg class="home-boundary-texture" viewBox="0 0 100 80" fill="none" stroke="currentColor" stroke-width="0.5" aria-hidden="true" focusable="false">{% for path in boundary_texture %}<path d="{{ path }}"></path>{% endfor %}</svg>{% endif %}
             <div class="hero-text">
-                <p class="eyebrow">Situation Overview</p>
-                <h1>缅甸地缘态势总览</h1>
-                <p class="lede">当前风险、近期事件与指标贡献，一屏读懂。风险分不是发生概率，缺测也不等于低风险。</p>
+                <h1>缅甸地缘态势</h1>
+                <p id="home-range">近30个业务日 · 缅甸全国 · 正在读取截止日…</p>
             </div>
-            <div class="hero-actions">
-                <button class="btn btn-primary" onclick="loadAll()">刷新全部</button>
-                <span class="export-group" title="导出首屏观测快照及其趋势与贡献分析">导出报告
-                    <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">HTML</a>
-                    <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener">DOCX</a>
-                </span>
-            </div>
+            {# 高级筛选、模型、导出在二级页面承接。 #}
         </header>
 
-        <div class="filter-bar">{% include '_view_filters.html' %}</div>
-
-        <div class="console-grid">
-            <section class="card card-feature span-7">
-                <h3>风险、变化与数据覆盖</h3>
-                <div id="overview-body" aria-live="polite"></div>
+        <div class="home-grid">
+            <section class="home-card home-risk-card" aria-labelledby="home-risk-title">
+                <div class="home-card-head"><h2 id="home-risk-title">风险摘要</h2><a class="home-detail-link" id="home-risk-link" href="/dashboard/indicators">查看风险明细 →</a></div>
+                <div id="home-risk" aria-live="polite"><p class="home-skeleton">正在读取已保存观测…</p></div>
+                <p class="home-note">风险指数不是发生概率；缺测不代表低风险。</p>
             </section>
-            <section class="card span-5">
-                <h3>窗口内最近事件与证据</h3>
-                <div id="focus-events"></div>
+            <section class="home-card home-data-card" aria-labelledby="home-data-title">
+                <div class="home-card-head"><h2 id="home-data-title">数据状态</h2><a class="home-detail-link" id="home-data-link" href="/dashboard/data">查看数据来源 →</a></div>
+                <div id="home-data" aria-live="polite"><p class="home-skeleton">正在读取观测覆盖…</p></div>
+                <div id="home-sources" class="home-source-note" aria-live="polite">正在读取全局采集状态…</div>
+                <p class="home-note">覆盖率、采集成功与结论可信度是不同概念。</p>
             </section>
-            <section class="card card-ai span-12" aria-label="AI 风险解读与研判">
-                <div class="ai-head">
-                    <div>
-                        <h3 class="card-title" style="margin-bottom:0.35rem">AI 风险解读 <span class="tag-hint">辅助研判</span></h3>
-                        <p>基于最新正式观测解释分数构成并给条件化建议；贡献不等于因果，建议须人工复核，旧数据不代表当前预警。</p>
-                    </div>
-                    <div class="ai-actions">
-                        <label for="explain-model" style="font-size:0.8rem;color:var(--ink-3);align-self:center">模型</label>
-                        <select id="explain-model" class="model-select" style="font-size:0.82rem;padding:4px 8px;border-radius:8px">
-                            <option value="glm-4-flash">GLM-4-Flash（默认·免费）</option>
-                            <option value="deepseek-chat">DeepSeek-chat</option>
-                        </select>
-                        <button id="risk-explain-btn" class="btn btn-primary">解读最新风险</button>
-                        <button id="ai-briefing-request" class="btn btn-secondary" disabled>解释所选窗口</button>
-                        <a href="/workspace" class="btn btn-secondary">个人工作区</a>
-                    </div>
-                </div>
-                <div id="risk-explain-body" role="status">点击“解读最新风险”，由大模型解释分数构成并给建议；模型不可用时自动降级为规则解读。</div>
-                <details style="margin-top:0.6rem">
-                    <summary style="cursor:pointer;font-size:0.82rem;color:var(--ink-3)">证据型研判（需启用 RISK_BRIEFING 与独立 worker）</summary>
-                    <div id="ai-briefing-body" role="status" style="margin-top:0.5rem">正在检查研判服务…</div>
-                </details>
+            <section class="home-card home-map-card" aria-labelledby="home-map-title">
+                <div class="home-card-head"><h2 id="home-map-title">地区事件烈度</h2><a class="btn btn-primary" id="home-map-link" href="/map">打开完整地图</a></div>
+                <div id="home-map" aria-label="缅甸省级事件规则烈度地图"><p class="home-skeleton">正在读取地图预览…</p></div>
+                <p class="home-map-caption" id="home-map-status">基于GDELT报道事件的省级规则烈度；不等同于全国风险指数。灰色为无有效观测。</p>
+            </section>
+            <section class="home-card home-events-card" aria-labelledby="home-events-title">
+                <div class="home-card-head"><h2 id="home-events-title">关键事件</h2></div>
+                <div id="home-events" aria-live="polite"><p class="home-skeleton">正在读取事件记录…</p></div>
+                <p class="home-note">按日期与规则烈度排序；记录数不等于已证实的独立现实事件数。</p>
+                <a class="home-detail-link" id="home-events-link" href="/dashboard/events">查看全部记录 →</a>
             </section>
         </div>
 
-        <details id="risk-panel-section" class="research-drawer">
-            <summary><span>多源九指标研究面板</span><span class="drawer-hint">月度、年度分别计算；ACLED／OFAC／IDMC／VIIRS按指标分工</span></summary>
-            <section class="card research-band">
-                <p>旧日风险仍为 risk-v2。新版正式数据、审定系数或冻结基准不完整时不合成；代理分不作正式预警。</p>
-                <div class="controls">
-                    <label>周期<select id="panel-frequency"><option value="monthly">月度（完整月）</option><option value="annual">年度（完整年）</option></select></label>
-                    <label>模式<select id="panel-mode"><option value="formal">正式来源（缺项不合成）</option><option value="proxy">显式代理（部分指标）</option></select></label>
-                    <label>基准<select id="panel-calibration"><option value="">自动（有冲突时须选择）</option></select></label>
-                    <button id="panel-refresh" class="btn btn-secondary" type="button">读取面板</button>
-                </div>
-                <div id="risk-panel-body" role="status">展开后读取；不自动抓取或重算。</div>
-            </section>
-        </details>
-
-        <details id="research-details" class="research-drawer">
-            <summary>
-                <span>研究详情</span>
-                <span class="drawer-hint">预警 · 贡献比较 · 空间格局 · 关系网络 · 多源印证 · 历史与数据源；不随报告导出</span>
-            </summary>
-
-            <section class="research-band">
-                <div class="band-head"><span class="band-no">01</span><h3>风险信号</h3><p>预警状态与等长前后期的贡献比较，不作因果解释</p></div>
-                <div class="console-grid">
-                    <div class="card span-5">
-                        <div class="card-title">动态预警</div>
-                        <div id="alert-panel"></div>
-                    </div>
-                    <div class="card span-7">
-                        <div class="card-title">贡献分析 <span class="tag-hint">前后期对照</span></div>
-                        <div id="diagnostic-body"></div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="research-band">
-                <div class="band-head"><span class="band-no">02</span><h3>空间格局</h3><p>战略中心位势、空间聚集与实体共现结构</p></div>
-                <div class="console-grid">
-                    <div class="card span-4">
-                        <div class="card-title">地缘位势 <span class="tag-hint">距离加权 1/d²</span></div>
-                        <div id="geo-body"></div>
-                    </div>
-                    <div class="card span-4">
-                        <div class="card-title">空间自相关 <span class="tag-hint">Moran's I</span></div>
-                        <div id="autocorr-body"></div>
-                    </div>
-                    <div class="card span-4">
-                        <div class="card-title">关系网络 <span class="tag-hint">实体共现</span></div>
-                        <div id="network-body"></div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="research-band">
-                <div class="band-head"><span class="band-no">03</span><h3>多源印证</h3><p>窗口内完整月份；不同量纲分面展示，缺失不补零</p></div>
-                <div class="card">
-                    <div id="multimodal-chart"></div>
-                    <div id="correlation-body"></div>
-                </div>
-            </section>
-
-            <section class="research-band">
-                <div class="band-head"><span class="band-no">04</span><h3>背景与数据</h3><p>独立历史参考库与全局采集运行状态，不随时间窗口裁剪</p></div>
-                <div class="console-grid">
-                    <div class="card span-7">
-                        <div class="card-title">历史事件时间线</div>
-                        <div id="history-body"></div>
-                    </div>
-                    <div class="card span-5">
-                        <div class="card-title">数据源健康</div>
-                        <div id="source-health-body"></div>
-                    </div>
-                </div>
-            </section>
-        </details>
+        {# 首页不预挂载研究功能；导航中的二级页面承接完整能力。 #}
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-2"></script>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=mist-4"></script>
-    <script src="{{ url_for('static', filename='js/briefing.js') }}?v=mist-2"></script>
-    <script src="{{ url_for('static', filename='js/risk_explain.js') }}?v=explain-2"></script>
-    <script src="{{ url_for('static', filename='js/risk_panels.js') }}?v=risk-6"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
+    <script src="{{ url_for('static', filename='js/home.js') }}?v=home-2"></script>
 </body>
 </html>

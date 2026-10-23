@@ -308,7 +308,7 @@ ul { padding-left: 1.2rem; }
     font-size: 0.74rem;
     font-weight: 600;
     letter-spacing: 0.26em;
-    color: var(--jade);
+    color: var(--jade-deep);
     text-transform: uppercase;
 }
 .eyebrow::before {
@@ -451,11 +451,11 @@ ul { padding-left: 1.2rem; }
     transition: color 0.25s, border-color 0.25s, box-shadow 0.25s, filter 0.25s;
 }
 .btn:hover { color: var(--ink); border-color: var(--jade); box-shadow: 0 8px 18px -12px rgba(58, 154, 138, 0.6); }
-.btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.btn:focus-visible { outline: 2px solid var(--jade-deep); outline-offset: 3px; box-shadow: var(--ring); }
 .btn-primary {
     color: #ffffff;
     border-color: transparent;
-    background: linear-gradient(135deg, #47a998, #3b8d9e);
+    background: var(--jade-deep);
     box-shadow: 0 10px 20px -12px rgba(58, 154, 138, 0.85);
 }
 .btn-primary:hover { color: #ffffff; border-color: transparent; filter: brightness(1.05); box-shadow: 0 12px 24px -12px rgba(58, 154, 138, 0.95); }
@@ -1594,3 +1594,32 @@ textarea::placeholder, input::placeholder { color: var(--ink-3); }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* 应用壳基础：顶部一级导航与左侧二级导航，沿用晨雾变量。 */
+:root { --section-width: 208px; }
+.navbar { gap: 20px; padding: 0 24px; }
+.nav-links { margin: 0 0 0 auto; flex-shrink: 0; }
+.nav-links a { font-size: 14px; padding: 8px 16px; min-height: 44px; }
+.section-sidebar { position: fixed; inset: 64px auto 0 0; width: var(--section-width); padding: 28px 16px; background: rgba(247,250,248,.96); border-right: 1px solid var(--line); z-index: 60; overflow-y: auto; }
+.sidebar-heading { font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 0 12px 16px; }
+.section-sidebar ul, .site-menu ul { margin: 0; padding: 0; list-style: none; }
+.section-sidebar li { margin-bottom: 6px; }
+.section-sidebar a { display: flex; gap: 12px; align-items: center; padding: 10px 12px; min-height: 44px; color: var(--ink-2); text-decoration: none; border-radius: 10px; font-size: 14px; }
+.section-sidebar a:hover { background: var(--surface-tint); }
+.section-sidebar a.active { color: var(--jade-deep); font-weight: 600; background: #e4f1eb; box-shadow: inset 3px 0 var(--jade-deep); }
+.nav-icon { flex: 0 0 24px; height: 24px; border: 1px solid var(--line-strong); border-radius: 7px; font-size: 12px; text-align: center; line-height: 22px; }
+.sidebar-footnote { margin: 36px 12px 0; font-size: 12px; color: var(--ink-3); line-height: 1.9; }
+.section-sidebar ~ main { width: calc(100% - var(--section-width)); max-width: none; margin-left: var(--section-width); padding: 16px 24px 32px; min-width: 0; }
+.shell-breadcrumb { margin: 16px 24px 0 calc(var(--section-width) + 24px); color: var(--ink-2); font-size: 12px; }
+body:has(.section-sidebar) > .footer { margin-left: var(--section-width); }
+body.menu-open { overflow: hidden; }
+.nav-menu-toggle, .menu-close { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 9px; background: white; color: var(--ink); cursor: pointer; font: inherit; }
+.nav-menu-toggle { display: none; flex-shrink: 0; font-size: 13px; }
+.site-menu { width: min(360px, calc(100% - 24px)); max-height: calc(100dvh - 32px); margin: auto 12px auto auto; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-solid); color: var(--ink); overflow-y: auto; }
+.site-menu::backdrop { background: rgba(36,51,59,.35); }
+.menu-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 16px; }
+.menu-heading h2 { font-size: 20px; }
+.site-menu details { border-top: 1px solid var(--line); padding: 10px 0; }
+.site-menu summary { padding: 8px; cursor: pointer; font-weight: 600; min-height: 44px; }
+.site-menu a { display: block; padding: 10px 16px; min-height: 44px; color: var(--ink-2); text-decoration: none; border-radius: 8px; }
+.site-menu a[aria-current] { background: var(--surface-tint); color: var(--jade-deep); font-weight: 600; }

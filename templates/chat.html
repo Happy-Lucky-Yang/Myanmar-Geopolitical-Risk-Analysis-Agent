@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>对话分析 · 缅甸地缘风险智能分析系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
 <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
 <body>
     {% include '_nav.html' %}
@@ -29,14 +29,14 @@
         <div class="chat-console">
             <div class="input-area">
                 <div class="input-toolbar">
-                    <div class="toolbar-left">
+                    <details class="model-settings"><summary>模型设置</summary>
                         <label class="toolbar-label" for="model-select">分析模型</label>
                         <select id="model-select" class="model-select">
-                            <option value="">加载中...</option>
-                        </select>
-                    </div>
+                            <option value="">加载中…</option>
+                        </select><p class="muted-note">更换模型可能产生供应商API费用；这里只选择模型，点击“开始分析”才调用。</p>
+                    </details>
                     <div class="toolbar-right">
-                        <label class="file-upload-btn" title="上传文本文件（.txt / .json / .csv / .md）">
+                        <label class="file-upload-btn" tabindex="0" role="button" title="上传文本文件（.txt / .json / .csv / .md）" aria-label="上传文本文件">
                             <input type="file" id="file-input" accept=".txt,.json,.csv,.md" multiple style="display:none">
                             <span class="upload-icon">＋</span> 上传文件
                         </label>
@@ -49,9 +49,10 @@
                     <div class="btn-group">
                         <label class="chain-toggle"><input type="checkbox" id="chain-enable"> 启用链式推理</label>
                         <button class="btn btn-secondary" onclick="fillSampleText()">填充示例</button>
-                        <button id="analyze-btn" class="btn btn-primary" onclick="analyzeText()">开始分析</button>
+                        <button id="analyze-btn" class="btn btn-primary" disabled onclick="analyzeText()">开始分析</button>
                     </div>
                 </div>
+                <p id="text-model-status" class="muted-note" role="status">正在检查模型调用权限；不会自动分析。</p>
                 <p class="muted-note">模型结论须结合证据与不确定性复核；字段完整不等于结论正确。正式观测请到“态势总览”查看。</p>
             </div>
 
@@ -90,8 +91,8 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-2"></script>
-    <script src="{{ url_for('static', filename='js/chat.js') }}?v=mist-4"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=shell-2"></script>
     <script>initViewFilters();</script>
 </body>
 </html>

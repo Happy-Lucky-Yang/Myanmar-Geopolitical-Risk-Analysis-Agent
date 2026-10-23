@@ -55,6 +55,7 @@ def test_trend_canvas_windows_empty_and_report_filters(page, tmp_path):
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.goto('http://offline.test/trend?days=30&end_date=2026-03-01')
     page.wait_for_function("trendChart && trendChart.getOption().xAxis[0].data.length === 37")
+    page.locator('.research-filter > summary').click()
     for days in [60, 90, 30]:
         page.select_option('#days-select', str(days))
         page.wait_for_function('(n) => trendChart.getOption().xAxis[0].data.length === n',
@@ -68,7 +69,7 @@ def test_trend_canvas_windows_empty_and_report_filters(page, tmp_path):
     assert 'days=30' in href and 'end_date=2026-03-01' in href and 'revision=' in href
     page.locator('#trend-chart').screenshot(path=str(tmp_path / 'trend-canvas.png'))
     page.fill('#end_date-filter', '2025-01-01')
-    page.click('button:has-text("刷新")')
+    page.click('button:has-text("读取所选窗口")')
     page.wait_for_selector('.chart-empty-state')
     assert page.evaluate('trendChart.getOption().series.length') == 0
     assert not errors
@@ -112,14 +113,15 @@ def test_dashboard_snapshot_research_canvas_and_source_filters(page, tmp_path, m
         'period_start': '2026-03-01', 'period_end': '2026-04-01'}]))
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
-    page.goto('http://offline.test/dashboard?days=90&end_date=2026-03-31')
+    page.goto('http://offline.test/dashboard/indicators?days=90&end_date=2026-03-31')
     page.wait_for_function('dashboardSnapshot !== null')
-    assert not page.locator('#research-details').get_attribute('open')
+    assert page.locator('#research-details').count() == 0
     assert '0.0' in page.locator('#overview-body').inner_text()
-    assert '夹具事件' in page.locator('#focus-events').inner_text()
     href = page.locator('[data-report-format=html]').get_attribute('href')
     assert 'days=90' in href and 'revision=' in href
-    page.locator('#research-details > summary').click()
+    page.goto('http://offline.test/dashboard/events?days=90&end_date=2026-03-31')
+    page.wait_for_function("document.querySelector('#focus-events').textContent.includes('夹具事件')")
+    page.goto('http://offline.test/multimodal?days=90&end_date=2026-03-31')
     page.wait_for_function('mmChart && mmChart.getOption().series.length === 3')
     assert page.evaluate('mmChart.getOption().series[0].data[2]') == 0
     assert page.evaluate('mmChart.getWidth()') > 200
@@ -127,12 +129,14 @@ def test_dashboard_snapshot_research_canvas_and_source_filters(page, tmp_path, m
     page.locator('#correlation-body summary').click()
     assert '2026-04-01' in page.locator('#correlation-body').inner_text()
     assert 'nW/cm²/sr' in page.locator('#correlation-body').inner_text()
+    page.goto('http://offline.test/dashboard/indicators?days=90&end_date=2026-03-31')
+    page.locator('.research-filter > summary').first.click()
     page.fill('#source-filter', 'fixture')
-    page.locator('button:has-text("刷新全部")').click()
+    page.locator('button:has-text("读取所选窗口")').click()
     page.wait_for_function("dashboardSnapshot && dashboardSnapshot.filters.source === 'fixture'")
     assert '无当前观测' in page.locator('#overview-body').inner_text()
     assert 'source=fixture' in page.locator('[data-report-format=html]').get_attribute('href')
-    page.locator('.nav-links a:has-text("对话分析")').click()
+    page.locator('.nav-links a:has-text("分析工作台")').click()
     assert 'source=fixture' in page.url and 'days=90' in page.url
     assert not errors
 
@@ -146,23 +150,23 @@ def test_dashboard_annual_values_remain_visible_without_monthly_data(page, monke
     monkeypatch.setattr(MultimodalAligner, 'observations', staticmethod(lambda: [row]))
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
-    page.goto('http://offline.test/dashboard?days=365&end_date=2025-12-31&source=fixture')
+    page.goto('http://offline.test/multimodal?days=365&end_date=2025-12-31&source=fixture')
     page.wait_for_function('dashboardSnapshot !== null')
-    page.locator('#research-details > summary').click()
+    page.locator('.research-filter > summary').first.click()
     page.wait_for_selector('#annual-observations tbody tr')
     assert '0.0000 / %' in page.locator('#annual-observations').inner_text()
     assert 'fixture-v1' in page.locator('#annual-observations').inner_text()
     assert '没有完整月份的有效多模态观测' in page.locator('#correlation-body').inner_text()
     assert page.evaluate('!mmChart || mmChart.getOption().series.length === 0')
     page.fill('#source-filter', 'other')
-    page.locator('button:has-text("刷新全部")').click()
+    page.locator('button:has-text("读取所选窗口")').click()
     page.wait_for_function("document.querySelector('#annual-observations')?.textContent.includes('无完整年度')")
     assert page.locator('#annual-observations tbody tr').count() == 0
     page.fill('#source-filter', 'fixture')
-    page.locator('button:has-text("刷新全部")').click()
+    page.locator('button:has-text("读取所选窗口")').click()
     page.wait_for_selector('#annual-observations tbody tr')
     page.fill('#end_date-filter', '2025-12-30')
-    page.locator('button:has-text("刷新全部")').click()
+    page.locator('button:has-text("读取所选窗口")').click()
     page.wait_for_function("dashboardSnapshot && dashboardSnapshot.filters.end_date === '2025-12-30'")
     page.wait_for_function("document.querySelector('#annual-observations')?.textContent.includes('无完整年度')")
     assert page.locator('#annual-observations tbody tr').count() == 0
@@ -170,7 +174,7 @@ def test_dashboard_annual_values_remain_visible_without_monthly_data(page, monke
 
 
 def test_dashboard_latest_snapshot_wins_and_failure_clears_exports(page):
-    page.goto('http://offline.test/dashboard?days=30&end_date=2026-03-31')
+    page.goto('http://offline.test/dashboard/indicators?days=30&end_date=2026-03-31')
     page.wait_for_function('dashboardSnapshot !== null')
     page.evaluate('''() => {
         window.initialSnapshot = dashboardSnapshot;
@@ -195,6 +199,7 @@ def test_map_windows_current_frame_and_kde_recovery(page, tmp_path):
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.goto('http://offline.test/map?days=30&end_date=2026-03-31')
     page.wait_for_function('window._mmLayers && window._mmMap')
+    page.locator('.map-toolbar > summary').click()
     assert page.locator('#lyr-kde').is_disabled()
     get_event_store().append([{'event_id': str(i), 'date': '20260315', 'root_code': '19',
                               'source': 'fixture', 'lat': 16.85 + .05*i, 'lon': 96.2 + .05*i} for i in range(8)])
@@ -205,6 +210,7 @@ def test_map_windows_current_frame_and_kde_recovery(page, tmp_path):
         assert page.evaluate("window._mmMap === document.querySelector('#map-container iframe').contentWindow._mmMap")
     page.check('#lyr-kde')
     assert page.evaluate('window._mmMap.hasLayer(window._mmLayers.kde)')
+    assert page.evaluate("() => {const doc=document.querySelector('#map-container iframe').contentDocument;return doc.querySelector('.basemap-status').getBoundingClientRect().bottom <= doc.querySelector('.kde-map-legend').getBoundingClientRect().top;}")
     page.locator('#map-container').screenshot(path=str(tmp_path / 'map-current-layers.png'))
     assert 'revision=' in page.locator('[data-report-format=html]').get_attribute('href')
     assert not errors

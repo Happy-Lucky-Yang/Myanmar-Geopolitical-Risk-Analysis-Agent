@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>关系图谱 · 缅甸地缘风险智能分析系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
 <body>
@@ -19,8 +19,10 @@
             </div>
         </header>
 
-        <div class="filter-bar">
+        <details class="research-filter"><summary>高级筛选（时间、地区与来源）</summary>
             {% include '_view_filters.html' %}
+        </details>
+        <div class="filter-bar">
             <div class="controls filter-extra">
                 <label>视图
                     <select id="graph-view">
@@ -29,7 +31,7 @@
                         <option value="actors">国家行为体网络（8节点·有向）</option>
                     </select>
                 </label>
-                <button class="btn btn-primary" onclick="loadGraph()">刷新</button>
+                <button class="btn btn-secondary" onclick="loadGraph()">读取视图</button>
             </div>
         </div>
 
@@ -51,7 +53,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-2"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
     <script src="{{ url_for('static', filename='js/graph.js') }}?v=mist-5"></script>
 </body>
 </html>

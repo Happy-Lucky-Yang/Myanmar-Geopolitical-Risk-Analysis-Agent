@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>趋势预测 · 缅甸地缘风险智能分析系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
     <script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
 <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
 <body>
@@ -18,20 +18,20 @@
                 <p class="lede">连续日历窗口内的风险变化、异常点与探索性预测。缺测日留空，不用旧值或零值补齐。</p>
             </div>
             <div class="hero-actions">
-                <span class="export-group">导出报告
+                <details class="more-actions"><summary>更多操作</summary><span class="export-group">导出报告
                     <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">HTML</a>
                     <a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener">DOCX</a>
-                </span>
+                </span></details>
             </div>
         </header>
 
-        <div class="filter-bar">
+        <details class="research-filter"><summary>高级筛选（时间、地区、来源与数据域）</summary>
             {% include '_view_filters.html' %}
             <div class="controls filter-extra">
                 <label>数据域 <select id="domain-filter"><option value="observed">正式观测</option><option value="legacy">旧版历史（不预测）</option></select></label>
-                <button class="btn btn-primary" onclick="loadTrend()">刷新</button>
+                <button class="btn btn-secondary" onclick="loadTrend()">读取所选窗口</button>
             </div>
-        </div>
+        </details>
 
         <div class="console-grid">
             <div class="span-12"><div class="summary-cards" id="summary-cards"></div></div>
@@ -52,7 +52,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-2"></script>
-    <script src="{{ url_for('static', filename='js/trend.js') }}?v=mist-5"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
+    <script src="{{ url_for('static', filename='js/trend.js') }}?v=shell-1"></script>
 </body>
 </html>

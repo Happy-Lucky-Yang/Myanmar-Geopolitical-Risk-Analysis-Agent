@@ -4,7 +4,26 @@
     const select = document.getElementById('explain-model');
     const area = document.getElementById('risk-explain-body');
     if (!btn || !area) return;
-    let sequence = 0;
+    let sequence = 0, permissionSequence = 0, running = false, allowed = false;
+    const callStatus = document.getElementById('risk-call-status');
+    function costNote() {
+        if (!callStatus || !allowed) return;
+        callStatus.textContent = select?.value?.startsWith('deepseek')
+            ? '已选择DeepSeek：调用可能产生API费用，以供应商计费为准；点击生成才调用。'
+            : '已选择GLM-4-Flash：费用与额度以供应商政策为准；点击生成才调用。';
+    }
+    async function refreshPermission() {
+        const epoch = ++permissionSequence;
+        const result = await modelPermission('admin');
+        if (epoch !== permissionSequence) return allowed;
+        allowed = result.allowed; btn.disabled = running || !allowed;
+        if (!allowed && callStatus) callStatus.textContent = result.reason;
+        else costNote();
+        return allowed;
+    }
+    select?.addEventListener('change', costNote);
+    window.addEventListener('focus', refreshPermission);
+    refreshPermission();
 
     function line(text, className) {
         const node = document.createElement('p');
@@ -24,8 +43,8 @@
         area.replaceChildren();
         const answer = data.answer || {};
         const modelLabel = MODEL_LABELS[data.model_version] || data.model_version || '—';
-        const status = data.status === 'ok' ? '' : '（规则解读，未调用大模型）';
-        line(`${data.date || '—'} · 模型 ${modelLabel}${status}` + (data.cached ? ' · 缓存' : ''), 'sh-meta');
+        const modelText = data.status === 'ok' ? `模型 ${modelLabel}` : '规则解读（未调用大模型）';
+        line(`${data.date || '—'} · ${modelText}` + (data.cached ? ' · 缓存' : ''), 'sh-meta');
         if (answer.summary) line(answer.summary);
         if ((answer.top_drivers || []).length) {
             line('主要贡献', 'sh-meta');
@@ -48,9 +67,13 @@
     }
 
     btn.onclick = async () => {
+        if (running) return;
+        const permitted = await refreshPermission();
+        if (!permitted || running) return;
         const epoch = ++sequence;
-        btn.disabled = true;
-        area.textContent = '正在请求解读（默认 GLM-4-Flash，通常数秒）…';
+        running = true; btn.disabled = true;
+        if (select) select.disabled = true;
+        area.textContent = '正在请求解读（' + (select?.selectedOptions[0]?.textContent || '默认模型') + '）…';
         try {
             const payload = {};
             if (select && select.value) payload.model = select.value;
@@ -65,7 +88,10 @@
         } catch (error) {
             if (epoch === sequence) area.textContent = error.message;
         } finally {
-            if (epoch === sequence) btn.disabled = false;
+            if (epoch === sequence) {
+                running = false; btn.disabled = !allowed;
+                if (select) select.disabled = false;
+            }
         }
     };
 })();

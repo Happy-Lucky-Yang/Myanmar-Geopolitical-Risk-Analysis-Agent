@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', function () {
 /* ---------- 预警状态指示灯 ---------- */
 async function loadAlertStatus(filters, sequence) {
     var indicator = document.getElementById('alert-indicator');
+    if (!indicator) return;
     if (filters.domain === 'legacy' || filters.source) {
         if (indicator) indicator.textContent = '当前筛选不适用正式预警';
         return;
@@ -76,7 +77,8 @@ async function loadTrend() {
     renderLoading(summaryEl);
     showChartLoading(chartEl);
     syncReportLinks(null);
-    document.getElementById('alert-indicator').textContent = '预警状态待更新';
+    var indicator = document.getElementById('alert-indicator');
+    if (indicator) indicator.textContent = '预警状态待更新';
     var params = new URLSearchParams({days: days, chart: 'true', domain: document.getElementById('domain-filter').value});
     ['end_date', 'region', 'source'].forEach(function (key) {
         var el = document.getElementById(key + '-filter');

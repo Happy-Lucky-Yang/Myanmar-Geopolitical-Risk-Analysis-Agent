@@ -161,10 +161,14 @@ def _add_basemap(m: folium.Map) -> None:
     兜底层默认不挂到地图上：境内访问 tile.openstreetmap.org 普遍超时，
     无条件预加载会在控制台刷出十几条 ERR_CONNECTION_TIMED_OUT（实测 18 条）。
     """
+    # 基础缩放控件保持可触达尺寸，地图数据图形不改变原有映射。
+    m.get_root().header.add_child(folium.Element(
+        '<style>.leaflet-control-zoom a{width:44px!important;height:44px!important;line-height:44px!important}'
+        '.leaflet-container a.leaflet-popup-close-button{width:44px;height:44px;line-height:44px}</style>'))
     # 兜底通道（垫底，不进图层控制面板）
     fallback = folium.TileLayer(
         tiles=_TILE_FALLBACK_URL, attr=_TILE_FALLBACK_ATTR,
-        max_zoom=20, max_native_zoom=19, control=False,
+        max_zoom=20, max_native_zoom=19, control=False, show=False,
         updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
         errorTileUrl=_TILE_ERROR_URL,
     ).add_to(m)
@@ -186,7 +190,7 @@ def _add_basemap(m: folium.Map) -> None:
             var box;
             control.onAdd = function () {
                 box = L.DomUtil.create('div', 'basemap-status');
-                box.style.cssText = 'background:rgba(255,255,255,0.9);color:#576873;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid #e2e9e6;';
+                box.style.cssText = 'background:rgba(255,255,255,0.9);color:#576873;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid #e2e9e6;margin-bottom:28px;';
                 box.textContent = '底图加载中；分析图层不依赖底图成功';
                 return box;
             };
@@ -685,7 +689,8 @@ class RiskMapGenerator:
     # ============================================================
 
     def generate_unified_map(self, risk_data: List[Dict],
-                             density: Dict = None, days: int = 7) -> str:
+                             density: Dict = None, days: int = 7,
+                             compact: bool = False) -> str:
         """
         生成统一地图：单张地图内含全部可叠加图层，由前端自定义
         图层面板控制开关/互斥/透明度（替代多地图切换）。
@@ -705,6 +710,8 @@ class RiskMapGenerator:
         :param days: 窗口天数（展示用）
         :return: HTML 字符串
         """
+        if compact:
+            return self.generate_home_map(risk_data)
         from data.admin_boundaries import PROVINCE_EN2CN, province_centroids
         from folium.features import GeoJsonPopup, GeoJsonTooltip
 
@@ -934,7 +941,9 @@ class RiskMapGenerator:
             "var m=window._mmMap,l=window._mmLayers;"
             "var r=document.querySelector('.risk-map-legend'),k=document.querySelector('.kde-map-legend');"
             "if(r)r.style.display=m.hasLayer(l.hybrid)||m.hasLayer(l.choropleth)?'':'none';"
-            "if(k)k.style.display=l.kde&&m.hasLayer(l.kde)?'':'none';}"
+            "if(k)k.style.display=l.kde&&m.hasLayer(l.kde)?'':'none';"
+            "var status=document.querySelector('.basemap-status');"
+            "if(status)status.style.marginBottom=k&&l.kde&&m.hasLayer(l.kde)?(k.offsetHeight+20)+'px':'28px';}"
             "window._mmMap.on('layeradd layerremove',syncLegends);syncLegends();"
             "if(window.parent && window.parent !== window){"
             "try{_reg(window.parent);}catch(e){}"
@@ -948,6 +957,63 @@ class RiskMapGenerator:
     # ============================================================
     # 2. 默认地图（无数据时：灰色省界 + 提示）
     # ============================================================
+
+    def generate_home_map(self, risk_data: List[Dict]) -> str:
+        """首页仅保留省级填色与国界；不生成散点、KDE或复杂控制。"""
+        from data.admin_boundaries import PROVINCE_EN2CN
+        from html import escape
+        m = folium.Map(location=MYANMAR_CENTER, zoom_start=4, tiles=None,
+                       scroll_wheel_zoom=False, zoom_snap=0.25)
+        _add_basemap(m)
+        m.get_root().header.add_child(folium.Element(
+            '<style>.leaflet-interactive:focus-visible{outline:3px solid #2b7a70;outline-offset:2px}</style>'))
+        rows = {r.get('province'): r for r in risk_data if finite_number(r.get('risk_score'))}
+        gj = copy.deepcopy(_simplified_boundaries(1))
+        for feature in gj['features']:
+            props = feature['properties']
+            name = PROVINCE_EN2CN.get(props.get('NAME_1'), props.get('NAME_1', ''))
+            row = rows.get(name)
+            props['name_cn'] = escape(name)
+            props['preview_text'] = '无有效观测'
+            props['_preview_color'] = _NO_DATA_FILL
+            if row:
+                score = self._normalize_score(row['risk_score'])
+                count = row.get('sample_count')
+                sample = f'{count}条记录' if finite_number(count) else '样本数未提供'
+                props['preview_text'] = f'规则烈度 {score * 100:.1f}分；{sample}'
+                if finite_number(count) and count < 5:
+                    props['preview_text'] += '（样本偏少，结论不稳）'
+                props['_preview_color'] = risk_color_continuous(score)
+        layer = folium.GeoJson(gj, name='首页省级规则烈度',
+            style_function=lambda f: {'color':'#ffffff','weight':.8,
+                'fillColor':f['properties']['_preview_color'],'fillOpacity':.65},
+            highlight_function=lambda f: {'weight':2,'color':_HIGHLIGHT,'fillOpacity':.85},
+            tooltip=folium.GeoJsonTooltip(fields=['name_cn','preview_text'], labels=False,
+                                         style=_TOOLTIP_CSS),
+            popup=folium.GeoJsonPopup(fields=['name_cn','preview_text'], labels=False,
+                                     style=_POPUP_CSS)).add_to(m)
+        folium.GeoJson(_simplified_boundaries(0), name='国界',
+            style_function=lambda f: {'color':'#6f8a8f','weight':1.2,'fill':False}).add_to(m)
+        m.fit_bounds(layer.get_bounds(), padding=(12, 12))
+        # iframe尺寸随响应式布局改变后重新适配国界，防止预览裁掉南北两端。
+        m.get_root().script.add_child(folium.Element(
+            'setTimeout(function(){'
+            f'var map={m.get_name()},boundary={layer.get_name()};'
+            'function fitPreview(){map.invalidateSize();map.fitBounds(boundary.getBounds(),{padding:[12,12]});}'
+            'fitPreview();window.addEventListener("resize",function(){requestAnimationFrame(fitPreview);});'
+            'boundary.eachLayer(function(region){var node=region.getElement&&region.getElement();'
+            'if(!node)return;var props=region.feature.properties;node.setAttribute("tabindex","0");'
+            'node.setAttribute("role","button");node.setAttribute("aria-label",props.name_cn+"；"+props.preview_text);'
+            'node.addEventListener("focus",function(){region.fire("mouseover",{latlng:region.getBounds().getCenter()},true);});'
+            'node.addEventListener("blur",function(){region.fire("mouseout",{},true);});'
+            'node.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();region.fire("click",{latlng:region.getBounds().getCenter()},true);}});});'
+            '},0);'))
+        m.get_root().html.add_child(folium.Element(
+            '<div class="home-map-legend" style="position:fixed;top:10px;right:10px;z-index:999;'
+            'background:white;padding:5px 8px;border-radius:7px;font-size:11px;color:#24333b">'
+            '规则烈度：低 → 高　<span style="background:linear-gradient(90deg,#286a4c,#895814,#af443c);'
+            'display:inline-block;width:52px;height:6px"></span>　<span style="background:#c8d1cf">　</span> 无有效观测</div>'))
+        return _localize_cdn(m._repr_html_())
 
     def generate_default_map(self) -> str:
         """生成默认地图（无历史数据时展示灰色行政区划）"""

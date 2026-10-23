@@ -1,0 +1,130 @@
+/* 首页和响应式细节；应用壳基础在style.css集中定义。 */
+.menu-label-tablet { display:none; }
+@media (min-width:768px) and (max-width:1023px) {
+    .menu-label-phone { display:none; }
+    .menu-label-tablet { display:inline; }
+}
+.nav-label-hint { position:fixed; z-index:200; padding:8px 12px; color:var(--ink); background:var(--surface-solid); border:1px solid var(--line-strong); border-radius:8px; font-size:14px; pointer-events:none; }
+.more-actions > summary, .model-settings > summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-size:14px; }
+.more-actions, .model-settings { min-width:0; }
+.more-actions[open] .btn-group, .more-actions[open] .export-group { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }
+.model-settings { flex:1; }
+.model-settings[open] label, .model-settings[open] select { margin:8px 8px 8px 0; }
+.section-sidebar ~ main .btn, .section-sidebar ~ main select, .section-sidebar ~ main input:not([type=checkbox]):not([type=radio]):not([type=file]), .file-upload-btn { min-height:44px; }
+.section-sidebar ~ main a:not(.btn):not(.home-event a) { display:inline-flex; align-items:center; min-height:44px; }
+.section-sidebar ~ main summary { min-height:44px; }
+.section-sidebar ~ main label:has(input[type=checkbox]), .section-sidebar ~ main label:has(input[type=radio]) { min-height:44px; }
+.risk-context-note { color:var(--ink-2); font-size:14px; margin:12px 0; }
+#home-risk .home-note { color:var(--ink-3); }
+/* 首页四模块；样本和免责声明不靠裁切或小字号隐藏。 */
+.home-header { padding: 0 0 4px; position: relative; }
+.home-boundary-texture { position:absolute; right:0; top:0; width:18%; max-height:64px; height:100%; opacity:.25; color:var(--jade-deep); pointer-events:none; }
+.home-header h1 { font-size: 24px; }
+.home-header p { color: var(--ink-2); font-size: 13px; margin-top: 5px; }
+.home-grid { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 20px; align-items: stretch; }
+.home-risk-card, .home-map-card { grid-column: span 7; }
+.home-data-card, .home-events-card { grid-column: span 5; }
+.home-card { padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); box-shadow: 0 4px 16px -12px rgba(36,51,59,.2); min-width: 0; }
+.home-card h2 { font-family: var(--font-sans); font-size: 20px; font-weight: 600; margin: 0; }
+.home-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.home-card-head .btn { min-height: 44px; padding: 8px 12px; font-size: 13px; }
+.home-score-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.home-value { font: 600 36px/1.35 var(--font-sans); }
+.home-value small { font-size: 14px; font-weight: 400; color: var(--ink-2); }
+.home-level { font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 6px; background: var(--surface-soft); }
+.home-score-meta { color: var(--ink-2); font-size: 14px; margin-top: 6px; }
+.home-note { color: var(--ink-2); font-size: 12px; line-height: 1.6; margin-top: 8px; }
+.home-warning { color: var(--risk-medium); font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.home-detail-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; }
+.home-data-lines { font-size: 14px; line-height: 1.8; }
+.home-data-lines b { font-weight: 600; }
+.home-source-note { font-size: 12px; color: var(--ink-2); }
+.home-map-card { display: flex; flex-direction: column; height: 400px; min-height: 400px; }
+#home-map { height: 280px; flex: 1; min-height: 240px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+#home-map > div, #home-map iframe { width: 100% !important; height: 100% !important; border: 0; }
+#home-map iframe { display: block; }
+/* Folium的第二层比例容器带padding-bottom:60%，需移除以服从卡片高度。 */
+#home-map > div > div { height: 100% !important; padding-bottom: 0 !important; }
+#home-map .loading-spinner { min-height: 200px; }
+.home-map-caption { margin-top: 8px; color: var(--ink-2); font-size: 12px; line-height: 1.6; }
+.home-events-card { display: flex; flex-direction: column; }
+#home-events { flex: 1; }
+.home-event { border-bottom: 1px solid var(--line); padding: 6px 0; }
+.home-event:first-child { padding-top: 0; }
+.home-event:last-child { border-bottom: 0; }
+.home-event a { display: block; font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; line-height: 1.5; min-height: 44px; padding: 4px 0; }
+.home-event a:hover { color: var(--jade-deep); text-decoration: underline; }
+.home-event small { display: block; font-size: 12px; color: var(--ink-2); }
+.home-event p { font-size: 14px; line-height: 1.6; margin-top: 3px; font-weight: 400; color: var(--ink-2); }
+.home-skeleton { color: var(--ink-2); font-size: 13px; min-height: 70px; padding-top: 8px; }
+.module-error { font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+.module-error button { display: block; margin-top: 10px; }
+.research-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 20px; }
+.research-grid > .full { grid-column: 1/-1; }
+.research-grid .card { margin: 0; }
+.research-filter { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-solid); padding: 10px 16px; }
+.research-filter > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; font-weight: 600; }
+.research-filter .controls { padding: 10px 0; }
+.method-flow { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 14px 0; }
+.method-flow div { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); font-size: 14px; }
+.method-flow small { display: block; margin-top: 6px; color: var(--ink-2); }
+.evidence-selected { outline: 2px solid var(--jade-deep); outline-offset: 4px; }
+.observation-table { max-width: 100%; overflow-x: auto; }
+.method-formula { padding: 12px; margin: 12px 0; font-family: var(--font-mono); background: var(--surface-soft); border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
+/* 完整地图：组导航在左，查询和图层仅在上方工具面板。 */
+.section-sidebar ~ .map-page { display: flex; flex-direction: column; height: auto; min-height: 0; gap: 16px; }
+.map-toolbar { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-solid); padding: 10px 16px; }
+.map-toolbar > summary { cursor: pointer; font-size: 14px; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.map-tool-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; padding: 10px 0; }
+.map-tool-grid .controls { flex-wrap: wrap; }
+.map-tool-grid input, .map-tool-grid select { max-width: 100%; }
+.map-tool-grid .lp-item { display: inline-flex; align-items: center; gap: 8px; margin: 6px 12px 6px 0; font-size: 13px; }
+.map-page .map-wrap { min-height: 460px; height: calc(100vh - 230px); width: 100%; flex: none; }
+.map-page .page-hero { padding-bottom: 0; }
+@media (max-width:1279px) and (min-width:1024px) {
+    :root { --section-width:72px; }
+    .navbar .brand-sub { display: none; }
+    .navbar .nav-brand { font-size: 14px; }
+    .navbar { gap: 12px; padding: 0 16px; }
+    .nav-links a { padding: 8px 12px; }
+    .section-sidebar { padding: 20px 8px; }
+    .section-sidebar a { justify-content: center; padding: 10px; }
+    .section-sidebar .nav-label, .sidebar-heading, .sidebar-footnote { display: none; }
+    .home-map-card { height: 360px; min-height: 360px; }
+}
+@media (max-width:1023px) {
+    :root { --section-width:0px; }
+    .section-sidebar { display: none; }
+    .nav-menu-toggle { display: block; }
+    .navbar { height: auto; min-height: 64px; flex-wrap: wrap; padding: 8px 16px; gap: 8px; }
+    .nav-brand { margin-right: auto; }
+    .navbar .brand-sub { display: none; }
+    .navbar .nav-links { order: 3; display: flex; width: 100%; justify-content: space-between; margin: 0; border-radius: 10px; }
+    .navbar .nav-links a { font-size: 13px; padding: 8px 12px; }
+    .section-sidebar ~ main { width: 100%; margin-left: 0; padding: 16px; }
+    .shell-breadcrumb { margin-left: 16px; }
+    .home-grid, .research-grid, .map-tool-grid { grid-template-columns: minmax(0,1fr); }
+    .home-grid > .home-card { grid-column: 1 / -1; }
+    .home-risk-card { order: 1; } .home-data-card { order: 2; } .home-map-card { order: 3; } .home-events-card { order: 4; }
+    .method-flow { grid-template-columns: minmax(0,1fr); }
+    .home-map-card { height: 420px; min-height: 420px; }
+}
+@media (max-width:767px) {
+    .navbar .nav-links { display: none; }
+    .navbar .nav-brand { font-size: 13px; letter-spacing: 0; gap: 8px; }
+    .navbar .brand-mark { width: 22px; height: 22px; }
+    .navbar { flex-wrap: nowrap; }
+    .home-card { padding: 16px; }
+    .home-header h1 { font-size: 22px; }
+    .home-card-head { flex-wrap: wrap; }
+    .home-map-card { height: 420px; min-height: 420px; }
+    .home-value { font-size: 34px; }
+    .research-grid { gap: 16px; }
+    .hero-actions { width: 100%; }
+}
+@media (min-width:1280px) and (max-height:820px) {
+    .home-map-card { height: 360px; min-height: 360px; }
+    #home-map { min-height: 200px; height: 220px; }
+    .home-card { padding: 14px 18px; }
+    .home-grid { gap: 20px; }
+}

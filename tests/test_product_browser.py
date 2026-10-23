@@ -64,19 +64,20 @@ def test_literature_out_of_order_and_error(page,catalog,monkeypatch):
 def test_grouped_navigation_visual_hierarchy_and_mobile_overflow(page):
     errors=[]
     page.on('pageerror',lambda error:errors.append(str(error)))
-    page.goto('http://offline.test/dashboard?days=30&end_date=2026-03-31')
-    page.wait_for_function('dashboardSnapshot !== null')
+    page.goto('http://offline.test/dashboard')
+    page.wait_for_function('homeSnapshot !== null')
     assert page.locator('.nav-links > li').count()==4
-    assert page.locator('.nav-links').inner_text().splitlines()==['态势总览','时空分析','对话分析','研究资料']
+    assert page.locator('.nav-links').inner_text().splitlines()==['态势总览','时空分析','分析工作台','研究资料']
     assert page.locator('.sub-nav').count()==0
-    assert not page.locator('#research-details').get_attribute('open')
+    assert page.locator('#research-details').count()==0
+    assert page.locator('main .home-card').count()==4
     assert page.evaluate("getComputedStyle(document.body).backgroundColor !== 'rgb(15, 17, 23)'")
     page.goto('http://offline.test/graph?days=30&end_date=2026-03-31')
     page.wait_for_function("document.querySelector('#end_date-filter').value === '2026-03-31'")
-    assert page.locator('.sub-nav a').count()==3
-    assert page.locator('.sub-nav a.active').inner_text()=='关系图谱'
+    assert page.locator('.section-sidebar a').count()==5
+    assert page.locator('.section-sidebar a.active').get_attribute('aria-label')=='关系图谱'
     page.set_viewport_size({'width':390,'height':844})
-    for path in ('/dashboard?days=30&end_date=2026-03-31','/graph?days=30&end_date=2026-03-31','/literature'):
+    for path in ('/dashboard','/graph?days=30&end_date=2026-03-31','/literature'):
         page.goto('http://offline.test'+path)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+2')
     assert not errors
@@ -126,7 +127,7 @@ def test_multisource_fold_read_only_and_responsive(page,monkeypatch,tmp_path):
     RiskStore().save('risk_panels',[score_panel(synthetic_panel())])
     errors=[]
     page.on('pageerror',lambda error:errors.append(str(error)))
-    page.goto('http://offline.test/dashboard?end_date=2026-01-31')
+    page.goto('http://offline.test/dashboard/indicators?end_date=2026-01-31')
     assert not page.locator('#risk-panel-section').get_attribute('open')
     page.click('#risk-panel-section > summary')
     page.wait_for_function("document.querySelector('#risk-panel-body').textContent.includes('正式分未合成')")

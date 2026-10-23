@@ -4,20 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>风险地图 · 缅甸地缘风险智能分析系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=mist-2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
 <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
 <body>
     {% include '_nav.html' %}
 
     <main class="map-page">
-        <!-- 侧边栏：筛选 + 图层 + 导出，地图独占右侧画布 -->
-        <aside class="map-sidebar">
-            <div>
-                <p class="eyebrow">Risk Atlas</p>
-                <h2>缅甸风险地图</h2>
-            </div>
-            <p class="lede">省级事件烈度、报道事件密度与行政边界叠加展示；灰色为无有效观测。</p>
-
+        <!-- 组导航在左，查询和图层在主区工具面板，避免双侧栏。 -->
+        <header class="page-hero"><div class="hero-text"><h1>缅甸风险地图</h1><p class="lede">省级事件烈度、报道事件密度与行政边界叠加展示；灰色为无有效观测。</p></div></header>
+        <details class="map-toolbar"><summary>地图工具（查询、图层与导出）</summary>
+        <div class="map-tool-grid">
             <div class="sidebar-section">
                 <span class="sidebar-label">查询范围</span>
                 {% include '_view_filters.html' %}
@@ -41,11 +37,13 @@
                 <label class="lp-item"><input type="checkbox" id="lyr-country" checked> 国界</label>
             </div>
 
+        </div>
             <span class="export-group">导出报告
                 <a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">当前筛选 HTML</a>
             </span>
-            <p class="muted-note">省级事件规则烈度不等同于全国风险分；密度层基于 GDELT，事件需被媒体报道才会进入，热区反映报道关注度而非实际冲突密度；底图故障不影响本地边界与分析图层。</p>
-        </aside>
+        </details>
+        <p class="muted-note">省级事件规则烈度不等同于全国风险分；密度层基于 GDELT，事件需被媒体报道才会进入，热区反映报道关注度而非实际冲突密度；底图故障不影响本地边界与分析图层。</p>
+        <p id="map-visible-status" class="muted-note" aria-live="polite">正在读取所选窗口地图…</p>
 
         <!-- 地图主区域 -->
         <div class="map-wrap">
@@ -61,7 +59,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=mist-2"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
     <script>
         var mapSequence = 0;
         var layerBindTimer = null;
@@ -74,15 +72,18 @@
             var filters = readViewFilters();
             var container = document.getElementById('map-container');
             var status = document.getElementById('map-query-status');
+            var visibleStatus = document.getElementById('map-visible-status');
             clearInterval(layerBindTimer);
             window._mmMap = window._mmLayers = null;
             document.querySelectorAll('#layer-panel input').forEach(el => { el.disabled = true; });
             status.textContent = '正在加载所选窗口，旧图已清除';
+            visibleStatus.textContent = status.textContent;
             setViewReport(null);
             renderLoading(container);
 
             try {
-                var resp = await fetch('/api/map/unified?' + viewQuery({}, filters), {signal:controller.signal});
+                var expected = sequence === 1 ? new URLSearchParams(location.search).get('revision') : null;
+                var resp = await fetch('/api/map/unified?' + viewQuery({revision:expected}, filters), {signal:controller.signal});
                 if (sequence !== mapSequence) return;
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 var html = await resp.text();
@@ -99,9 +100,11 @@
                 window.history.replaceState(null, '', '/map?' + viewQuery({}, filters));
                 status.textContent = '截至 ' + filters.end_date + ' · ' + filters.days + '个日历日 · 区域 ' + filters.region
                     + ' · 来源 ' + (filters.source || '全部') + ' · 数据版本 ' + (revision || '未提供');
+                visibleStatus.textContent = status.textContent;
             } catch (e) {
                 if (sequence !== mapSequence) return;
                 status.textContent = '请求失败，当前筛选无可用地图；导出已禁用';
+                visibleStatus.textContent = status.textContent;
                 container.innerHTML = '<div class="error-card">'
                     + '<div class="error-icon">🗺️</div>'
                     + '<div class="error-msg">' + escapeHtml('地图加载失败: ' + e.message) + '</div>'

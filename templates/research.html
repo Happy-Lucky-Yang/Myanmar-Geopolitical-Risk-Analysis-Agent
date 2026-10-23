@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} · 缅甸地缘风险智能分析系统</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}?v=shell-2">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+{% if view in ['indicators','multimodal'] %}<script src="{{ url_for('static',filename='vendor/echarts/echarts.min.js') }}"></script>{% endif %}
+</head><body data-research-view="{{ view }}">
+{% include '_nav.html' %}
+<main class="container console-page">
+<header class="page-hero"><div class="hero-text"><p class="eyebrow">{{ eyebrow }}</p><h1>{{ title }}</h1><p class="lede">{{ description }}</p></div>
+{% if view not in ['methodology','history'] %}<div class="hero-actions"><button type="button" class="btn btn-secondary" onclick="loadAll()">读取所选窗口</button></div>{% endif %}
+</header>
+{% if request.args.get('from') == 'overview' %}<p class="muted-note">已打开历史筛选视图；首页固定展示全国近30个业务日。</p>{% endif %}
+{% if view not in ['methodology','history'] %}
+<details class="research-filter"><summary>高级筛选（时间、地区与来源）</summary>{% include '_view_filters.html' %}</details>
+<p id="view-status" class="muted-note" role="status"></p>
+{% endif %}
+<div class="research-grid">
+{% if view == 'indicators' %}
+<section class="card full"><h3>风险、变化与指标贡献</h3><div id="overview-body" aria-live="polite"></div>
+<details class="research-filter"><summary>更多操作：导出所选快照</summary><div class="export-group"><a data-report-format="html" aria-disabled="true" target="_blank" rel="noopener">HTML</a><a data-report-format="docx" aria-disabled="true" target="_blank" rel="noopener">DOCX</a></div></details></section>
+<details class="card full"><summary>逐日观测记录（缺测日留空）</summary><div id="daily-records" class="observation-table"></div></details>
+<section class="card"><h3>动态预警</h3><div id="alert-panel"></div></section>
+<section class="card"><h3>贡献分析（前后期对照）</h3><div id="diagnostic-body"></div></section>
+<details id="risk-panel-section" class="card full"><summary>多源九指标研究面板（月度／年度）</summary>
+<p class="muted-note">旧日风险为risk-v2。新版正式数据、审定系数或冻结基准不完整时不合成；代理分不作正式预警。</p>
+<div class="controls">
+<label>周期<select id="panel-frequency"><option value="monthly">月度（完整月）</option><option value="annual">年度（完整年）</option></select></label>
+<label>模式<select id="panel-mode"><option value="formal">正式来源（缺项不合成）</option><option value="proxy">显式代理（部分指标）</option></select></label>
+<label>基准<select id="panel-calibration"><option value="">自动（有冲突时须选择）</option></select></label>
+<button id="panel-refresh" class="btn btn-secondary" type="button">读取面板</button></div><div id="risk-panel-body" role="status">展开后读取；不自动抓取或重算。</div></details>
+{% elif view == 'events' %}
+<section class="card full"><h3>事件记录与原始出处</h3><p class="muted-note">按事件日期排序；同稿转载不自动构成独立互证。记录数不等于已验证的独立现实事件数。</p><div id="focus-events"></div></section>
+{% elif view == 'data' %}
+<section class="card full"><h3>观测覆盖与来源构成</h3><div id="data-coverage"></div></section>
+<section class="card full"><h3>数据源健康（全局运行，不随窗口裁剪）</h3><p class="muted-note">最近运行成功含备用通道成功和零新增；历史成功率反映长期稳定性，不等于结论可信度。各来源运行时间不同。</p><div id="source-health-body"></div></section>
+{% elif view == 'spatial' %}
+<section class="card"><h3>地缘位势（距离加权1/d²）</h3><p class="muted-note">相对战略关联指标，100表示窗口内相对最高，不是发生概率。距离下限可能使战略中心附近值占优。</p><div id="geo-body"></div></section>
+<section class="card"><h3>空间自相关（Moran's I）</h3><p class="muted-note">描述性空间相关，不代表因果关系；样本不足不能解释为不存在聚集。</p><div id="autocorr-body"></div></section>
+<section class="card full"><h3>局部统计与敏感性</h3><div id="spatial-detail"></div></section>
+{% elif view == 'multimodal' %}
+<section class="card full"><h3>多源对照（完整月配对）</h3><p class="muted-note">不同量纲分面显示；年度代理不复制为月度，至少12个独立配对月观测才计算相关。</p><div id="multimodal-chart"></div><div id="correlation-body"></div></section>
+{% elif view == 'history' %}
+<section class="card full"><h3>独立历史参考库</h3><p class="muted-note">这是背景资料，不是当前窗口的采集记录，不回填首页风险或关键事件。</p><div id="history-body"></div></section>
+{% elif view == 'risk' %}
+<section class="card full"><h3>AI风险解读（辅助研判）</h3><p class="muted-note">轻量解读仅解释最新已保存日观测，不套用下方窗口生成历史结论；贡献不等于因果，建议须人工复核。</p>
+<details class="research-filter"><summary>模型设置与使用说明</summary><label for="explain-model">模型</label><select id="explain-model"><option value="glm-4-flash">GLM-4-Flash（默认）</option><option value="deepseek-chat">DeepSeek-chat</option></select><p class="muted-note">GLM-4-Flash按供应商政策提供；DeepSeek可能产生API费用。点击生成才调用模型；不可用时明确显示规则降级，实际模型随结果返回。</p></details>
+<p id="risk-call-status" class="risk-context-note" role="status">正在检查调用权限和模型费用说明…</p><button id="risk-explain-btn" class="btn btn-primary" type="button" disabled>解读最新风险</button><div id="risk-explain-body" role="status">尚未请求解读，不会自动调用大模型。</div></section>
+<section class="card full"><h3>证据型窗口研判</h3><p class="muted-note">需要共享账户、已启用的研判能力与独立worker；未满足条件时只说明原因。</p><button id="ai-briefing-request" class="btn btn-secondary" disabled>解释所选窗口</button><div id="ai-briefing-body" role="status">正在检查研判服务…</div><a href="/workspace">进入个人工作区 →</a></section>
+{% elif view == 'methodology' %}
+<section class="card full"><h3>从GDELT抽取缅甸：实际处理链</h3>
+<div class="method-flow"><div>1. 原始事件文件<small>每15分钟发布的export CSV；保留GlobalEventID、SQLDATE、CAMEO、行为体与原始URL。</small></div><div>2. 缅甸发生地筛选<small>ActionGeo_CountryCode=BM；筛选事件发生在缅甸，不等于全部涉及缅甸的海外事件。</small></div><div>3. 去重与定位<small>按来源事件ID去重；坐标检查与行政边界核验，无法定位的记录不硬填地图。</small></div><div>4. 分类与配对<small>CAMEO根码与QuadClass用于规则烈度；行为体国家字段用于国家对关系。</small></div><div>5. 周期聚合<small>同一窗口汇总记录；报道次数不是独立现实事件数，多来源字段不自动证明独立互证。</small></div><div>6. 分版本展示<small>日risk-v2、实验risk-v3、月／年度risk-v4保持分轨，不能拼接成一条同口径曲线。</small></div></div>
+<p class="muted-note">发生地筛选使用ActionGeo_CountryCode的FIPS码BM；关系配对使用Actor1CountryCode／Actor2CountryCode（如MMR、CHN、USA），发生地与行为体国家不能混用。</p><p class="muted-note">文件批次发布时间不等于事件发生日；必须按SQLDATE归集。不用最新批次中的旧事件声称完整历史覆盖。</p></section>
+<section class="card full"><h3>日风险risk-v2：五维观测</h3><p>冲突报道关键词比例、情感风险、夜光变化、难民变化、事件严重度；缺测剔除后对有效权重重新归一。只依据已有数据，不把代理或缺测冒充真实观测。</p>
+<div class="method-formula">R = 100 × Σ（标准化指标值 × 有效归一权重）；有效归一权重 = 原权重／有效原权重之和</div>
+<div class="observation-table"><table><thead><tr><th>指标</th><th>配置权重</th><th>含义与限制</th></tr></thead><tbody>
+{% for key, label, note in [('conflict_frequency','冲突报道频次','关键词命中新闻比例，不等于独立冲突事件数'),('sentiment_avg','情感风险','文本情感的观测派生，不是公众情绪调查'),('nightlight_change','夜光变化','须真实外部观测；WB电力不冒充VIIRS'),('refugee_change','难民变化','须声明真实观测，缺失不补零'),('event_severity','事件严重度','真实外部观测或独立实验代理必须区分')] %}<tr><td>{{ label }}</td><td>{{ weights.get(key, '未配置') }}</td><td>{{ note }}</td></tr>{% endfor %}
+</tbody></table></div><p class="muted-note">上表是当前配置原权重，不是专家已审定的共识；实际使用权重与缺项见“风险与指标”。</p><a href="/dashboard/indicators#risk-panel-section">查看已保存面板的参数与冻结基准版本 →</a></section>
+<section class="card full"><h3>九指标与正式来源分工</h3><div class="observation-table"><table><thead><tr><th>指标</th><th>主来源</th><th>缺测与代理边界</th></tr></thead><tbody>
+<tr><td>中缅／周边／西方／中美博弈</td><td>GDELT行为体国家对</td><td>Goldstein报道量加权，缺国家对不解释为关系良好</td></tr><tr><td>冲突频次／事件严重度</td><td>ACLED</td><td>需授权；GDELT规则烈度不等于伤亡测度</td></tr><tr><td>夜光变化</td><td>VIIRS</td><td>需真实同产品月观测，年度电力不复制到月度</td></tr><tr><td>流离失所</td><td>IDMC</td><td>存量变化与流量分别保存</td></tr><tr><td>国际制裁</td><td>OFAC法律措施</td><td>需核验生效日和审定系数，名单对象数不是措施数</td></tr></tbody></table></div>
+<p>新正式月／年度总分要求九项输入、审定参数和冻结基准完整；缺项不合成。显式代理面板可按有效权重归一，但不是正式预警。</p><p class="muted-note">国家权重表、参数λ／μ与标准化基准必须审定留档。可复现、代码断言通过不等于已完成现实有效性验证。</p></section>
+<section class="card full" id="method-parameters"><h3>配置权重、审定系数与冻结基准（只读）</h3>
+<p class="muted-note">{{ parameters_note }}</p>
+{% set geo_labels = {'conflict_frequency':'冲突频次','china_myanmar_relation':'中缅关系','china_us_rivalry':'中美博弈','event_severity':'事件严重度','nightlight_change':'夜光变化','neighbor_relation':'周边关系','displacement':'流离失所','western_relation':'西方关系','intl_sanction':'国际制裁'} %}
+<details><summary>risk-v3九项配置权重（实验路径，不替换正式日分）</summary><div class="observation-table"><table><thead><tr><th>指标</th><th>计算键</th><th>配置权重</th></tr></thead><tbody>{% for key,value in weights_v3.items() %}<tr><td>{{ geo_labels.get(key,key) }}</td><td>{{ key }}</td><td>{{ value }}</td></tr>{% endfor %}</tbody></table></div></details>
+<h4>已保存审定系数</h4>
+{% for item in parameters %}<details><summary>{{ item.version }}</summary><p>λ：{{ item['lambda'] }}</p><p>μ：{{ item['mu'] }}</p></details>{% else %}<p>暂无可展示的已保存审定参数，未回填默认λ／μ。</p>{% endfor %}
+<h4>冻结基准版本</h4>
+{% for item in calibrations %}<details><summary>{{ item.description or '未提供说明' }} · {{ item.id[:12] }}（{{ item.frequency }}／{{ item.mode }}）</summary><p>完整基准标识：{{ item.id }}</p></details>{% else %}<p>暂无可展示的已保存冻结基准，不自动选取历史拟合。</p>{% endfor %}
+</section>
+<section class="card full"><h3>地图与风险指数是不同测度</h3><p>地图省级值是已定位报道事件的规则烈度均值×100；全国日风险由文本与可用外部观测合成。地缘位势为省级烈度×战略中心距离影响，再作相对缩放；内比都100不等于最高冲突风险。</p><p>空间相关、实体共现、Shapley贡献均不证明因果；来源健康、日覆盖、指标权重覆盖也不是真实性概率。</p><a href="/guide">阅读各模块操作与边界 →</a></section>
+{% endif %}
+</div></main>
+<script src="{{ url_for('static',filename='js/common.js') }}?v=shell-2"></script>
+{% if view != 'methodology' %}<script src="{{ url_for('static',filename='js/dashboard.js') }}?v=research-2"></script>{% endif %}
+{% if view == 'indicators' %}<script src="{{ url_for('static',filename='js/risk_panels.js') }}?v=risk-6"></script>{% endif %}
+{% if view == 'risk' %}<script src="{{ url_for('static',filename='js/risk_explain.js') }}?v=explain-3"></script><script src="{{ url_for('static',filename='js/briefing.js') }}?v=brief-4"></script>{% endif %}
+</body></html>
