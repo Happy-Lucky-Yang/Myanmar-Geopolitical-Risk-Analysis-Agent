@@ -35,6 +35,11 @@ def test_home_does_not_mount_advanced_controls():
     assert not any('risk_explain' in s or 'briefing.js' in s or 'risk_panels.js' in s for s in scripts)
     texture=soup.select_one('.home-boundary-texture')
     assert texture and texture.get('aria-hidden')=='true' and texture.select('path')
+    # SVG只作装饰，窄侧栏仍以完整名称提供无障碍导航，不加载外部图标库。
+    for link in soup.select('.section-sidebar a'):
+        assert link.get('aria-label')
+        assert link.select_one('.nav-icon[aria-hidden="true"] svg path')
+        assert not link.select_one('.nav-icon').get_text(strip=True)
 
 
 def test_compact_map_no_kde_computation_or_scatter(monkeypatch):
@@ -107,6 +112,41 @@ def test_home_four_modules_default_queries_no_writes_and_layout(page, snapshot):
     query = parse_qs(urlsplit(next(url for url in apis if '/api/report?' in url)).query)
     assert query['days'] == ['30'] and query['region'] == ['MMR']
     assert not errors
+
+
+@pytest.mark.browser
+def test_visual_hierarchy_and_discoverable_disclosures(page, snapshot):
+    mount_home(page, snapshot)
+    # 深色导航的品牌、普通菜单及选中菜单均满足正文对比度。
+    ratios = page.evaluate('''() => {
+        const lum = color => {
+            const v=color.match(/[\\d.]+/g).slice(0,3).map(n=>{
+                const x=Number(n)/255;
+                return x<=.04045?x/12.92:Math.pow((x+.055)/1.055,2.4);
+            });
+            return .2126*v[0]+.7152*v[1]+.0722*v[2];
+        };
+        const nav=getComputedStyle(document.querySelector('.navbar')).backgroundColor;
+        return ['.nav-brand','.nav-links a:not(.active)','.nav-links a.active'].map(s=>{
+            const c=getComputedStyle(document.querySelector(s));
+            const bg=c.backgroundColor==='rgba(0, 0, 0, 0)'?nav:c.backgroundColor;
+            const a=lum(c.color),b=lum(bg);
+            return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+        });
+    }''')
+    assert min(ratios) >= 4.5
+    assert page.locator('.home-risk-card').evaluate('(n)=>getComputedStyle(n).backgroundImage') != 'none'
+    page.goto('http://offline.test/graph')
+    summary = page.locator('.research-filter > summary')
+    assert page.locator('#days-select').is_hidden()
+    before = summary.evaluate('(n)=>getComputedStyle(n,"::after").transform')
+    assert summary.evaluate('(n)=>getComputedStyle(n,"::after").borderRightWidth') != '0px'
+    summary.focus()
+    page.keyboard.press('Enter')
+    assert page.locator('#days-select').is_visible()
+    assert summary.evaluate('(n)=>getComputedStyle(n,"::after").transform') != before
+    page.keyboard.press('Enter')
+    assert page.locator('#days-select').is_hidden()
 
 
 @pytest.mark.browser
