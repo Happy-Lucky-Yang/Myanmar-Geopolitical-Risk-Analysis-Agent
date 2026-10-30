@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var domain = document.getElementById('domain-filter');
     domain.value = new URLSearchParams(window.location.search).get('domain') || 'observed';
     domain.addEventListener('change', loadTrend);
+    updateFilterSummary();
     loadTrend();
 });
 

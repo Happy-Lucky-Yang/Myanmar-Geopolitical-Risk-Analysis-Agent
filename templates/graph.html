@@ -19,8 +19,9 @@
             </div>
         </header>
 
-        <details class="research-filter"><summary>高级筛选（时间、地区与来源）</summary>
+        <details class="research-filter view-options-panel"><summary>高级筛选<span class="filter-selection" data-filter-summary></span></summary>
             {% include '_view_filters.html' %}
+            <div class="filter-actions"><span>修改后自动读取；拖拽节点、滚轮缩放即可探索。</span><button class="btn btn-secondary" onclick="loadGraph()">重新读取</button></div>
         </details>
         <div class="filter-bar">
             <div class="controls filter-extra">
@@ -31,7 +32,7 @@
                         <option value="actors">国家行为体网络（8节点·有向）</option>
                     </select>
                 </label>
-                <button class="btn btn-secondary" onclick="loadGraph()">读取视图</button>
+                <span class="control-hint">选择视图后自动更新</span>
             </div>
         </div>
 
@@ -53,7 +54,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=clarity-1"></script>
     <script src="{{ url_for('static', filename='js/graph.js') }}?v=mist-5"></script>
 </body>
 </html>

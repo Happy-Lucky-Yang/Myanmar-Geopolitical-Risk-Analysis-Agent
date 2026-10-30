@@ -16,6 +16,7 @@
             <div class="hero-text">
                 <h1>缅甸地缘态势</h1>
                 <p id="home-range">近30个业务日 · 缅甸全国 · 正在读取截止日…</p>
+                <p class="home-reading-guide">先了解风险与数据，再查看地图和事件证据。</p>
             </div>
             {# 高级筛选、模型、导出在二级页面承接。 #}
         </header>
@@ -38,17 +39,16 @@
                 <p class="home-map-caption" id="home-map-status">基于GDELT报道事件的省级规则烈度；不等同于全国风险指数。灰色为无有效观测。</p>
             </section>
             <section class="home-card home-events-card" aria-labelledby="home-events-title">
-                <div class="home-card-head"><h2 id="home-events-title">关键事件</h2></div>
+                <div class="home-card-head"><h2 id="home-events-title">关键事件</h2><a class="home-detail-link" id="home-events-link" href="/dashboard/events">查看全部记录 →</a></div>
                 <div id="home-events" aria-live="polite"><p class="home-skeleton">正在读取事件记录…</p></div>
                 <p class="home-note">按日期与规则烈度排序；记录数不等于已证实的独立现实事件数。</p>
-                <a class="home-detail-link" id="home-events-link" href="/dashboard/events">查看全部记录 →</a>
             </section>
         </div>
 
         {# 首页不预挂载研究功能；导航中的二级页面承接完整能力。 #}
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
-    <script src="{{ url_for('static', filename='js/home.js') }}?v=home-2"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=clarity-1"></script>
+    <script src="{{ url_for('static', filename='js/home.js') }}?v=clarity-1"></script>
 </body>
 </html>

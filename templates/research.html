@@ -9,11 +9,11 @@
 {% include '_nav.html' %}
 <main class="container console-page">
 <header class="page-hero"><div class="hero-text"><p class="eyebrow">{{ eyebrow }}</p><h1>{{ title }}</h1><p class="lede">{{ description }}</p></div>
-{% if view not in ['methodology','history'] %}<div class="hero-actions"><button type="button" class="btn btn-secondary" onclick="loadAll()">读取所选窗口</button></div>{% endif %}
+{# 低频重读操作收进筛选，标题区只负责说明页面用途。 #}
 </header>
 {% if request.args.get('from') == 'overview' %}<p class="muted-note">已打开历史筛选视图；首页固定展示全国近30个业务日。</p>{% endif %}
 {% if view not in ['methodology','history'] %}
-<details class="research-filter"><summary>高级筛选（时间、地区与来源）</summary>{% include '_view_filters.html' %}</details>
+<details class="research-filter view-options-panel"><summary>高级筛选<span class="filter-selection" data-filter-summary></span></summary>{% include '_view_filters.html' %}<div class="filter-actions"><span>修改后自动读取；不会触发采集或重算。</span><button type="button" class="btn btn-secondary" onclick="loadAll()">重新读取</button></div></details>
 <p id="view-status" class="muted-note" role="status"></p>
 {% endif %}
 <div class="research-grid">
@@ -47,7 +47,7 @@
 <section class="card full"><h3>AI风险解读（辅助研判）</h3><p class="muted-note">轻量解读仅解释最新已保存日观测，不套用下方窗口生成历史结论；贡献不等于因果，建议须人工复核。</p>
 <details class="research-filter"><summary>模型设置与使用说明</summary><label for="explain-model">模型</label><select id="explain-model"><option value="glm-4-flash">GLM-4-Flash（默认）</option><option value="deepseek-chat">DeepSeek-chat</option></select><p class="muted-note">GLM-4-Flash按供应商政策提供；DeepSeek可能产生API费用。点击生成才调用模型；不可用时明确显示规则降级，实际模型随结果返回。</p></details>
 <p id="risk-call-status" class="risk-context-note" role="status">正在检查调用权限和模型费用说明…</p><button id="risk-explain-btn" class="btn btn-primary" type="button" disabled>解读最新风险</button><div id="risk-explain-body" role="status">尚未请求解读，不会自动调用大模型。</div></section>
-<section class="card full"><h3>证据型窗口研判</h3><p class="muted-note">需要共享账户、已启用的研判能力与独立worker；未满足条件时只说明原因。</p><button id="ai-briefing-request" class="btn btn-secondary" disabled>解释所选窗口</button><div id="ai-briefing-body" role="status">正在检查研判服务…</div><a href="/workspace">进入个人工作区 →</a></section>
+<details class="card full evidence-workflow"><summary>进阶：证据型窗口研判<span class="disclosure-hint">按需展开</span></summary><p class="muted-note">需要共享账户、已启用的研判能力与独立worker；未满足条件时只说明原因。</p><button id="ai-briefing-request" class="btn btn-secondary" disabled>解释所选窗口</button><div id="ai-briefing-body" role="status">正在检查研判服务…</div><a href="/workspace">进入个人工作区 →</a></details>
 {% elif view == 'methodology' %}
 <section class="card full"><h3>从GDELT抽取缅甸：实际处理链</h3>
 <div class="method-flow"><div>1. 原始事件文件<small>每15分钟发布的export CSV；保留GlobalEventID、SQLDATE、CAMEO、行为体与原始URL。</small></div><div>2. 缅甸发生地筛选<small>ActionGeo_CountryCode=BM；筛选事件发生在缅甸，不等于全部涉及缅甸的海外事件。</small></div><div>3. 去重与定位<small>按来源事件ID去重；坐标检查与行政边界核验，无法定位的记录不硬填地图。</small></div><div>4. 分类与配对<small>CAMEO根码与QuadClass用于规则烈度；行为体国家字段用于国家对关系。</small></div><div>5. 周期聚合<small>同一窗口汇总记录；报道次数不是独立现实事件数，多来源字段不自动证明独立互证。</small></div><div>6. 分版本展示<small>日risk-v2、实验risk-v3、月／年度risk-v4保持分轨，不能拼接成一条同口径曲线。</small></div></div>
@@ -72,7 +72,7 @@
 <section class="card full"><h3>地图与风险指数是不同测度</h3><p>地图省级值是已定位报道事件的规则烈度均值×100；全国日风险由文本与可用外部观测合成。地缘位势为省级烈度×战略中心距离影响，再作相对缩放；内比都100不等于最高冲突风险。</p><p>空间相关、实体共现、Shapley贡献均不证明因果；来源健康、日覆盖、指标权重覆盖也不是真实性概率。</p><a href="/guide">阅读各模块操作与边界 →</a></section>
 {% endif %}
 </div></main>
-<script src="{{ url_for('static',filename='js/common.js') }}?v=shell-2"></script>
+<script src="{{ url_for('static',filename='js/common.js') }}?v=clarity-1"></script>
 {% if view != 'methodology' %}<script src="{{ url_for('static',filename='js/dashboard.js') }}?v=research-2"></script>{% endif %}
 {% if view == 'indicators' %}<script src="{{ url_for('static',filename='js/risk_panels.js') }}?v=risk-6"></script>{% endif %}
 {% if view == 'risk' %}<script src="{{ url_for('static',filename='js/risk_explain.js') }}?v=explain-3"></script><script src="{{ url_for('static',filename='js/briefing.js') }}?v=brief-4"></script>{% endif %}

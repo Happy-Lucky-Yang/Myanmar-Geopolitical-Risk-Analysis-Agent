@@ -30,6 +30,14 @@ function homeEventSeverity(event) {
     if (String(event.quad_class) === '3') return Math.max(base || 0,.4);
     return base ?? -1;
 }
+function homeDataFact(label, value, unit) {
+    const fact = createEl('div','home-data-fact');
+    fact.append(createEl('dt','',label));
+    const amount = createEl('dd');
+    amount.append(createEl('strong','',value), createEl('small','',unit));
+    fact.append(amount);
+    return fact;
+}
 function renderHomeSnapshot(snapshot) {
     const records = (snapshot.history || []).filter(r => typeof r.risk_score === 'number' && Number.isFinite(r.risk_score)).slice().sort((a,b) => String(a.date).localeCompare(String(b.date)));
     const latest = records.at(-1);
@@ -57,10 +65,14 @@ function renderHomeSnapshot(snapshot) {
     const missing = Object.entries(details.indicator_scores || latest?.indicator_scores || {}).filter(([,r]) => r.quality === 'missing' || r.value == null).length;
     if (typeof coverage === 'number' && coverage < .9999) risk.append(createEl('p','home-warning',`输入不完整${missing ? '：' + missing + '项指标缺测' : ''}，只按有效权重合成。`));
     const data = document.getElementById('home-data'); data.replaceChildren();
-    data.append(createEl('p','home-data-lines',`日风险观测：${snapshot.metadata?.valid_days ?? records.length}／30个业务日`));
-    data.append(createEl('p','home-data-lines',`最新观测有效指标权重：${typeof coverage === 'number' ? homeNumber(coverage*100) + '%' : '—（未提供）'}`));
-    if (!current) data.append(createEl('p','home-warning',latest ? '截止日缺测，最新观测已过期，不能作为当前预警。' : '截止日缺测，窗口内无有效风险观测。'));
-    if (typeof coverage === 'number' && coverage < .9999) data.append(createEl('p','home-warning','部分指标缺测；当前日分不是完整九指标正式评价。'));
+    const facts = createEl('dl','home-data-facts');
+    facts.append(homeDataFact('日风险观测',String(snapshot.metadata?.valid_days ?? records.length),'／30个业务日'),
+        homeDataFact('最新观测有效指标权重', typeof coverage === 'number' ? homeNumber(coverage*100) : '—', typeof coverage === 'number' ? '%' : '未提供'));
+    data.append(facts);
+    const qualityNotes = [];
+    if (!current) qualityNotes.push(latest ? '截止日缺测，历史值不能作为当前预警。' : '截止日缺测，窗口内无有效风险观测。');
+    if (typeof coverage === 'number' && coverage < .9999) qualityNotes.push('指标不全，当前日分不是完整九指标正式评价。');
+    if (qualityNotes.length) data.append(createEl('p','home-warning',qualityNotes.join('')));
     (snapshot.warnings || []).forEach(w => data.append(createEl('p','home-warning',w)));
     document.getElementById('home-range').textContent = `近30个业务日 · 截至 ${snapshot.filters.end_date} · 缅甸全国`;
     for (const [id,path] of [['home-risk-link','/dashboard/indicators'],['home-data-link','/dashboard/data'],['home-events-link','/dashboard/events'],['home-map-link','/map']]) document.getElementById(id).href = homeDetailPath(path);
@@ -75,8 +87,14 @@ function renderHomeSnapshot(snapshot) {
         const link = createEl('a');
         link.href = homeDetailPath('/dashboard/events',{event_id:event.event_id,event_source:event.source});
         const verified = event.evidence_verified === true && event.independent_source_count >= 2;
-        link.append(createEl('small','',`${event.date || '日期未提供'} · 来源 ${event.source || 'GDELT'} · ${verified ? '已审核独立多源' : '未核验'}`));
-        link.append(createEl('span','',`${location} · ${kind}`));
+        const eventMeta = createEl('small','home-event-meta',`${event.date || '日期未提供'} · ${event.source || 'GDELT'} · ${verified ? '已审核独立多源' : '未核验'}`);
+        link.append(eventMeta);
+        link.append(createEl('span','home-event-title',`${location} · ${kind}`));
+        if (event.event_id != null) {
+            const identity = createEl('span','home-event-identity',`#${event.event_id}`);
+            identity.title = '来源内记录编号；不同编号不代表已证实的不同现实事件。';
+            eventMeta.append(identity);
+        }
         if (event.description) link.append(createEl('p','',String(event.description).slice(0,80) + (event.description.length > 80 ? '…' : '')));
         row.append(link); area.append(row);
     });

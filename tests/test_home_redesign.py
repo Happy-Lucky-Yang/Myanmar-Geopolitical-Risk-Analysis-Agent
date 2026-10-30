@@ -9,6 +9,47 @@ PAGES = ['/dashboard', '/dashboard/indicators', '/dashboard/events', '/dashboard
          '/spatial', '/multimodal', '/analysis/risk', '/research/methodology', '/research/history']
 
 
+@pytest.mark.browser
+def test_clarity_filters_show_scope_and_keep_actions_collapsed(page):
+    page.goto('http://offline.test/graph?days=14&end_date=2026-03-31')
+    page.wait_for_function("document.querySelector('[data-filter-summary]').textContent.includes('近14天')")
+    summary = page.locator('[data-filter-summary]')
+    assert '2026-03-31' in summary.inner_text() and '缅甸全国' in summary.inner_text()
+    assert page.locator('main button:visible').count() == 0
+    page.locator('.view-options-panel > summary').click()
+    page.select_option('#days-select', '7')
+    page.fill('#source-filter', '<img src=x onerror=alert(1)>')
+    page.locator('#source-filter').dispatch_event('change')
+    page.locator('.view-options-panel > summary').click()
+    assert '近7天' in summary.inner_text() and '<img' in summary.inner_text()
+    assert summary.locator('img').count() == 0
+    assert page.locator('.filter-actions button').is_hidden()
+    for width in (1440, 1024, 768, 390):
+        page.set_viewport_size({'width':width, 'height':900})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+2')
+    page.goto('http://offline.test/analysis/risk')
+    assert page.locator('.hero-actions button').count() == 0
+    assert page.locator('#risk-explain-btn').is_visible()
+    assert page.locator('#ai-briefing-request').is_hidden()
+    page.locator('.evidence-workflow > summary').click()
+    assert page.locator('#ai-briefing-request').is_visible()
+    assert page.locator('#risk-call-status').is_visible()
+    page.goto('http://offline.test/trend?domain=legacy&days=30')
+    page.wait_for_function("document.querySelector('[data-filter-summary]').textContent.includes('旧版历史')")
+
+
+@pytest.mark.browser
+def test_home_data_facts_and_event_identifiers(page, snapshot):
+    mount_home(page, snapshot)
+    assert page.locator('.home-data-facts dt').all_text_contents() == ['日风险观测', '最新观测有效指标权重']
+    assert page.locator('.home-data-facts strong').all_text_contents() == ['2', '40.0']
+    assert page.locator('.home-reading-guide').is_visible()
+    assert page.locator('.home-event-identity').count() == 3
+    assert '#3' in page.locator('.home-event-identity').first.inner_text()
+    assert page.locator('main .btn-primary').count() == 1
+    assert page.locator('main .home-detail-link').count() == 3
+
+
 def test_new_pages_and_legacy_query_redirect():
     from app import app
     client = app.test_client()
@@ -105,7 +146,7 @@ def test_home_four_modules_default_queries_no_writes_and_layout(page, snapshot):
         page.set_viewport_size({'width':width,'height':height})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2')
         if width >= 1280:
-            assert page.locator('.home-grid').bounding_box()['y'] + page.locator('.home-grid').bounding_box()['height'] <= height
+            assert page.locator('.home-grid').bounding_box()['y'] + page.locator('.home-grid').bounding_box()['height'] <= height, page.locator('.home-card').evaluate_all('(nodes)=>nodes.map(n=>({title:n.querySelector("h2").textContent,height:n.offsetHeight}))')
     apis = [url for method,url in calls if '/api/' in url]
     assert all(method == 'GET' for method,url in calls)
     assert all('/api/report?' in url or '/api/map/unified?' in url or '/api/sources/health' in url for url in apis)

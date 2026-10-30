@@ -302,6 +302,18 @@ function syncViewNavigation(filters) {
     });
 }
 
+function updateFilterSummary() {
+    const filters = readViewFilters();
+    const region = document.getElementById('region-filter');
+    const options = region?.list?.options;
+    const label = options ? Array.from(options).find(o => o.value === filters.region)?.label : null;
+    const domain = document.getElementById('domain-filter');
+    const parts = [`近${filters.days}天`, `截至 ${filters.end_date || '日期未提供'}`,
+        filters.region === 'MMR' ? '缅甸全国' : (label || filters.region), filters.source || '全部来源'];
+    if (domain) parts.push(domain.selectedOptions[0]?.textContent || domain.value);
+    document.querySelectorAll('[data-filter-summary]').forEach(node => { node.textContent = parts.join(' · '); });
+}
+
 function initViewFilters(onChange) {
     var query = new URLSearchParams(window.location.search);
     ['days', 'end_date', 'region', 'source'].forEach(function (key) {
@@ -317,13 +329,15 @@ function initViewFilters(onChange) {
             var date = Object.fromEntries(parts.map(p => [p.type, p.value]));
             el.value = date.year + '-' + date.month + '-' + date.day;
         }
-        el.addEventListener('change', function () { syncViewNavigation(readViewFilters()); if (onChange) onChange(); });
+        el.addEventListener('change', function () { updateFilterSummary(); syncViewNavigation(readViewFilters()); if (onChange) onChange(); });
     });
     document.querySelectorAll('[data-report-format]').forEach(function (a) {
         a.addEventListener('click', function (event) {
             if (a.getAttribute('aria-disabled') === 'true') event.preventDefault();
         });
     });
+    document.getElementById('domain-filter')?.addEventListener('change', updateFilterSummary);
+    updateFilterSummary();
     syncViewNavigation(readViewFilters());
 }
 
@@ -358,6 +372,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             rows.forEach(row => {const option = createEl('option'); option.value = row.code; option.label = row.name; list.append(option);});
             input.setAttribute('list', list.id); input.insertAdjacentElement('afterend', list);
         }
+        updateFilterSummary();
     } catch (_) { /* 辅助列表失败不阻止原页面查询。 */ }
 });
 

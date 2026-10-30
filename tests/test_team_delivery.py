@@ -12,6 +12,22 @@ from scripts.stage_team_delivery import (ReviewStore, asset_for, encoded, extrac
                                         sha256, zone_statistics)
 
 
+def test_moved_package_checksums_no_overwrite_or_escape(tmp_path):
+    from scripts.crosscheck_qc_package import verify_checksums
+    folder = tmp_path / '04_复现与校验'
+    folder.mkdir()
+    asset = tmp_path / '资料.csv'
+    asset.write_text('月份,质量\n202001,待审', encoding='utf-8')
+    manifest = folder / 'checksums.sha256'
+    manifest.write_text(sha256(asset) + '  资料.csv\n', encoding='utf-8')
+    assert verify_checksums(tmp_path) == {'files_checked':1, 'mismatches':[]}
+    asset.write_text('changed', encoding='utf-8')
+    assert verify_checksums(tmp_path)['mismatches'] == ['资料.csv']
+    manifest.write_text('a' * 64 + '  ../outside.csv\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='越界'):
+        verify_checksums(tmp_path)
+
+
 def test_review_store_idempotent_and_no_promotion(tmp_path):
     source = tmp_path / 'example.md'
     source.write_text('参考材料', encoding='utf-8')
@@ -128,6 +144,52 @@ def test_dry_run_documents_does_not_create_database(tmp_path):
     assert not (output / 'review.sqlite3').exists()
     assert sha256(text) == digest
     assert first == process_documents(source, output)
+
+
+def test_qc_package_flags_partial_months_and_checks_hashes(tmp_path):
+    """非整月产品必须被标出并隔离；清单哈希与已入库资产逐条比对。"""
+    from scripts.stage_team_delivery import qc_package_audit
+    package = tmp_path / 'QC'
+    folder = package / '02_三项补充' / '01_原始产品文件名清单'
+    folder.mkdir(parents=True)
+    manifest = folder / 'source_manifest.csv'
+    manifest.write_text(
+        'ym,source_file,period_days,period_flag,status,tif_sha256\n'
+        '202405,SVDNB_npp_20240501-20240528_75N060E_vcmslcfg_v10_c1.tgz,28,partial,delivered,' + 'a' * 64 + '\n'
+        '202406,SVDNB_npp_20240604-20240630_75N060E_vcmslcfg_v10_c2.tgz,27,partial,delivered,' + 'b' * 64 + '\n'
+        '202407,SVDNB_npp_20240701-20240731_75N060E_vcmslcfg_v10_c3.tgz,31,full,delivered,' + 'c' * 64 + '\n',
+        encoding='utf-8')
+    output = tmp_path / 'team_delivery_review'
+    store = ReviewStore(output)
+    try:
+        raster = tmp_path / 'MMR_VNL_202405.tif'
+        raster.write_bytes(b'fixture')
+        asset = {**asset_for(tmp_path, raster, 'a' * 64, 'raster')}
+        store.save(asset, [{'kind': 'nightlight_candidate', 'location': '202405:MMR', 'status': 'pending_review',
+                            'region': 'MMR', 'period_start': '2024-05-01', 'period_end': '2024-06-01',
+                            'statistics': {}, 'flags': []}])
+        result = qc_package_audit(tmp_path, output, package, store)
+        assert result['partial_period_months'] == ['202405', '202406']
+        assert result['tif_hash_matched'] == 1 and result['tif_hash_mismatched'] == []
+        assert result['corrections_recorded'] == 2
+        assert qc_package_audit(tmp_path, output, package, store)['corrections_recorded'] == 0
+        rows = [json.loads(r[0]) for r in store.conn.execute(
+            "SELECT payload FROM pending_records WHERE kind='period_correction'")]
+        assert {r['location'] for r in rows} == {'202405', '202406'}
+        assert all(r['status'] == 'quarantined' and r['eligible_for_scoring'] is False for r in rows)
+        june = next(r for r in rows if r['location'] == '202406')
+        assert june['actual_product_start'] == '2024-06-04' and june['actual_product_days'] == 27
+        may = next(r for r in rows if r['location'] == '202405')
+        assert may['previously_recorded_as_full_month'] is True
+        assert may['previously_recorded_period'] == ['2024-05-01', '2024-06-01']
+        # 天数与文件名不自洽时必须报错，不默认信任清单列。
+        manifest.write_text('ym,source_file,period_days,period_flag,status,tif_sha256\n'
+                            '202405,SVDNB_npp_20240501-20240528_75N060E_vcmslcfg_v10_c1.tgz,31,partial,delivered,'
+                            + 'a' * 64 + '\n', encoding='utf-8')
+        with pytest.raises(ValueError, match='天数'):
+            qc_package_audit(tmp_path, output, package, store)
+    finally:
+        store.close()
 
 
 def test_raster_audit_commit_rejects_changed_input_and_retries_safely(tmp_path):

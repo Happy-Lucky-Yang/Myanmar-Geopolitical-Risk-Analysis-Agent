@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import csv
 from datetime import date, datetime, timezone
 import hashlib
 import io
@@ -478,6 +479,74 @@ def commit_raster_audit(root, output, audit_path, store):
     return {'raster_files_verified': len(reports), 'new_records': inserted, 'originals_hash_rechecked': True}
 
 
+def qc_package_audit(root, output, package, store=None):
+    """收录QC补充包并暴露周期更正：不改已入库记录，仅追加更正。
+
+    本轮发现部分月份的原始产品时段短于自然月，而首轮候选统计已按完整自然月登记。
+    这类月份不得当作完整月观测使用，因此单独生成隔离的更正记录。
+    """
+    package = package.resolve(strict=True)
+    manifest_path = package / '02_三项补充' / '01_原始产品文件名清单' / 'source_manifest.csv'
+    with manifest_path.open(encoding='utf-8-sig', newline='') as handle:
+        manifest = {row['ym']: row for row in csv.DictReader(handle)}
+    local = {}
+    database = output / 'review.sqlite3'
+    if database.is_file():
+        connection = sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            for (payload,) in connection.execute(
+                    "SELECT payload FROM pending_records WHERE kind='nightlight_candidate'"):
+                row = json.loads(payload)
+                if row['region'] == 'MMR':
+                    local[row['period_start'][:7].replace('-', '')] = row
+            rasters = {Path(json.loads(p)['path']).stem.replace('MMR_VNL_', ''): json.loads(p)
+                       for (p,) in connection.execute("SELECT payload FROM assets WHERE kind='raster'")}
+        finally:
+            connection.close()
+    else:
+        rasters = {}
+    hash_matched, hash_mismatched = 0, []
+    for month, row in manifest.items():
+        declared = (row.get('tif_sha256') or '').strip().lower()
+        asset = rasters.get(month)
+        if not declared or asset is None:
+            continue
+        if declared == asset['sha256'].lower():
+            hash_matched += 1
+        else:
+            hash_mismatched.append(month)
+    corrections = []
+    for month, row in sorted(manifest.items()):
+        if row.get('period_flag') != 'partial':
+            continue
+        source = row.get('source_file', '')
+        match = re.search(r'_(\d{8})-(\d{8})_', source)
+        if not match:
+            raise ValueError(f'{month}标为非整月但文件名未给出实际时段')
+        start, end = (date(int(v[:4]), int(v[4:6]), int(v[6:])) for v in match.groups())
+        days = (end - start).days + 1
+        if str(days) != (row.get('period_days') or '').strip():
+            raise ValueError(f'{month}文件名天数与清单不一致')
+        previous = local.get(month)
+        corrections.append({
+            'kind': 'period_correction', 'location': month, 'status': 'quarantined',
+            'actual_product_start': start.isoformat(), 'actual_product_end': end.isoformat(),
+            'actual_product_days': days, 'source_file': source,
+            'previously_recorded_period': [previous['period_start'], previous['period_end']] if previous else None,
+            'previously_recorded_as_full_month': previous is not None,
+            'reason': 'source product covers fewer days than the calendar month; not a complete monthly observation',
+            'effect': 'excluded from complete-month comparison, year-over-year and monthly aggregation until re-specified'})
+    inserted = 0
+    if store is not None:
+        asset = asset_for(package.parent, manifest_path, sha256(manifest_path), 'manifest')
+        inserted = store.save(asset, corrections)
+    return {'manifest_rows': len(manifest), 'review_national_months': len(local),
+            'tif_hash_matched': hash_matched, 'tif_hash_mismatched': hash_mismatched,
+            'partial_period_months': [c['location'] for c in corrections],
+            'corrections_recorded': inserted, 'package_sha256': sha256(manifest_path),
+            'note': 'package reviewed read-only; corrections appended without rewriting earlier records'}
+
+
 def verify_store(root, output):
     """只读数据库回读：数量、校验摘要、原件、候选质量与表格口径。"""
     connection = sqlite3.connect((output / 'review.sqlite3').as_uri() + '?mode=ro', uri=True)
@@ -553,8 +622,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', type=Path, required=True)
     parser.add_argument('--output-root', type=Path, required=True)
-    parser.add_argument('--phase', choices=('documents', 'rasters', 'commit-rasters', 'verify'), required=True)
+    parser.add_argument('--phase', choices=('documents', 'rasters', 'commit-rasters', 'verify', 'qc-package'), required=True)
     parser.add_argument('--audit-summary', type=Path)
+    parser.add_argument('--package', type=Path)
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
     root = args.source_root.resolve(strict=True)
@@ -567,6 +637,10 @@ def main():
     try:
         if args.phase == 'verify':
             result = verify_store(root, output)
+        elif args.phase == 'qc-package':
+            if not args.package:
+                parser.error('qc-package需要--package')
+            result = qc_package_audit(root, output, args.package, store)
         elif args.phase == 'commit-rasters':
             if not args.apply or not args.audit_summary:
                 parser.error('提交已审影像需要--apply与--audit-summary')

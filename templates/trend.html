@@ -25,7 +25,7 @@
             </div>
         </header>
 
-        <details class="research-filter"><summary>高级筛选（时间、地区、来源与数据域）</summary>
+        <details class="research-filter view-options-panel"><summary>高级筛选<span class="filter-selection" data-filter-summary></span></summary>
             {% include '_view_filters.html' %}
             <div class="controls filter-extra">
                 <label>数据域 <select id="domain-filter"><option value="observed">正式观测</option><option value="legacy">旧版历史（不预测）</option></select></label>
@@ -52,7 +52,7 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/common.js') }}?v=shell-2"></script>
-    <script src="{{ url_for('static', filename='js/trend.js') }}?v=shell-1"></script>
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=clarity-1"></script>
+    <script src="{{ url_for('static', filename='js/trend.js') }}?v=clarity-1"></script>
 </body>
 </html>
