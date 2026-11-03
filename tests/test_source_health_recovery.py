@@ -1,6 +1,8 @@
 """数据源健康恢复：双通道回退、状态判定、停用源隐藏、GDELT 上报合并、UN News 频率。"""
 from types import SimpleNamespace
 
+import pytest
+
 PROXY = {'http': 'http://127.0.0.1:7890', 'https': 'http://127.0.0.1:7890'}
 
 
@@ -34,6 +36,34 @@ def test_direct_request_falls_back_to_proxy_when_needed(monkeypatch):
     monkeypatch.setattr(en.requests, 'get', fake_get)
     resp = crawler._request('https://www.irrawaddy.com/news/burma')
     assert resp.status_code == 200 and seen[0] == PROXY
+
+
+def test_gdelt_csv_channel_falls_back_when_direct_dns_fails(monkeypatch):
+    """CSV 主通道必须与 DOC API／RSS 一样支持双通道，否则一次 DNS 抖动就整轮拉空。"""
+    import data.gdelt_files as files
+    monkeypatch.setattr('utils.config.get_proxy', lambda: dict(PROXY))
+    seen = []
+
+    def fake_get(url, **kwargs):
+        seen.append(kwargs.get('proxies'))
+        if not kwargs.get('proxies'):
+            raise files.requests.exceptions.ConnectionError('direct DNS broken')
+        return SimpleNamespace(status_code=200, text='ok', content=b'')
+    monkeypatch.setattr(files.requests, 'get', fake_get)
+    resp = files._request_with_fallback('http://data.gdeltproject.org/gdeltv2/lastupdate.txt', 20)
+    assert resp.status_code == 200
+    assert seen[0] == PROXY and None not in seen  # 代理通道成功即返回，不再打直连
+
+
+def test_gdelt_csv_channel_raises_when_every_channel_fails(monkeypatch):
+    import data.gdelt_files as files
+    monkeypatch.setattr('utils.config.get_proxy', lambda: {})
+
+    def fake_get(url, **kwargs):
+        raise files.requests.exceptions.ConnectionError('no route')
+    monkeypatch.setattr(files.requests, 'get', fake_get)
+    with pytest.raises(files.requests.exceptions.ConnectionError):
+        files._request_with_fallback('http://data.gdeltproject.org/gdeltv2/x.export.CSV.zip', 5)
 
 
 def test_health_status_recovers_after_recent_success(tmp_path):

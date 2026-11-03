@@ -80,11 +80,33 @@ ROOT_INFO = {
 }
 
 
+def _request_with_fallback(url: str, timeout):
+    """按“配置代理 → 直连”顺序取回响应，任一通道成功即算采到。
+
+    CSV 通道此前只用直连：本机 DNS 抖动或境外网络受限时会整轮拉空，
+    而 DOC API、RSS 与英文媒体早已接入双通道兜底，这里保持同一口径。
+    返回首个可用响应（含 404，交由调用方按缺失语义处理）；全部失败则抛出最后一次异常。
+    """
+    from utils.net import channel_for, note_fallback, proxy_channels
+
+    channels = proxy_channels()
+    host = url.split("/")[2] if "//" in url else url
+    last_error = None
+    for attempt in range(len(channels)):
+        try:
+            return requests.get(url, timeout=timeout, proxies=channel_for(attempt, channels))
+        except requests.RequestException as error:
+            last_error = error
+            if attempt + 1 < len(channels):
+                note_fallback(host)
+    raise last_error
+
+
 def _get_latest_batch_ts(base_url: str = None) -> Optional[datetime]:
     """从 lastupdate.txt 解析最新已发布批次的时间戳（权威来源）"""
     base = (base_url or GDELT_FILES_BASE).rstrip("/") + "/"
     try:
-        resp = requests.get(base + "lastupdate.txt", timeout=20)
+        resp = _request_with_fallback(base + "lastupdate.txt", 20)
         resp.raise_for_status()
         # 首行: <size> <md5> <url>，url 形如 .../20260806041500.export.CSV.zip
         url = resp.text.strip().splitlines()[0].split()[-1]
@@ -260,7 +282,7 @@ def fetch_myanmar_events(max_files: int = 672, target_events: int = 200,
             logger.info(f"[GDELT-CSV] 已达目标事件数 {target_events}，提前停止")
             break
         try:
-            resp = requests.get(url, timeout=(15, timeout))
+            resp = _request_with_fallback(url, (15, timeout))
             if resp.status_code == 404:
                 permanent = latest is not None and batch_ts is not None and latest - batch_ts >= GAP_GRACE
                 gaps += 1
