@@ -4,7 +4,7 @@ analyzer.event_density - 事件核密度估计（KDE）分析
 基于 GDELT 事件经纬度生成"地缘紧张热点"连续密度面：
 - 权重：事件严重度（data.gdelt_files.event_severity_weight，
   冲突事件对密度的贡献高于外交事件，与风险指标口径一致）
-- 带宽：scipy Scott 法则（随样本量自适应，加权版本）
+- 带宽：固定各向同性高斯核（bandwidth_km，默认 50 km），不随样本量自适应
 - 掩膜：GADM 4.1 国界（L0），国境之外的密度置零
   （用 matplotlib.path 做点在多边形内判定，避免引入 shapely 依赖）
 
@@ -162,7 +162,7 @@ class EventDensityAnalyzer:
                 "window_days": days,
             }
 
-        # 加权核密度估计（Scott 带宽，随样本量自适应）
+        # 加权核密度估计：固定带宽高斯核 × 事件严重度权重（非 Scott 自适应）
         from pyproj import Transformer
         projection = '+proj=laea +lat_0=19 +lon_0=96 +datum=WGS84 +units=m +no_defs'
         transform = Transformer.from_crs('EPSG:4326', projection, always_xy=True)

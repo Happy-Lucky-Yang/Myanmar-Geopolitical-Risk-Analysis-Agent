@@ -69,7 +69,7 @@ python scripts/evaluate_acceptance.py --ner-gold data/static/ner_annotations/ner
 
 **落地情况**：
 1. `data/gdelt_files.py` 事件行已含经纬度（CSV 第 56/57 列，越界坐标自动置 None）
-2. `analyzer/event_density.py`：严重度加权 KDE（Scott 带宽自适应）+ GADM L0 国界掩膜
+2. `analyzer/event_density.py`：严重度加权 KDE（固定 50 km 各向同性高斯核，带宽由 config 控制）+ GADM L0 国界掩膜
    （matplotlib.path 点在多边形判定，未新增依赖）；与指标计算共用严重度口径
 3. `GET /api/map/events?days=N`：优先复用 CSV 通道事件缓存（12h），无缓存同步拉取
 4. 风险地图页新增"地图类型"切换（省级风险 / 事件密度），叠加真实国界与省界
