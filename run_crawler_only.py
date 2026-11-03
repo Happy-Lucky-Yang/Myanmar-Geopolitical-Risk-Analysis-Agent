@@ -1,195 +1,163 @@
-"""
-一键运行爬虫 - 面向非工程师成员的简化入口
+"""一键运行爬虫 - 面向非工程师成员的简化入口。
 
-使用方法：
-  python run_crawler_only.py              # 单次爬取（所有源）
-  python run_crawler_only.py --schedule   # 定时爬取模式（前台运行，Ctrl+C 停止）
-  python run_crawler_only.py --gdelt      # 仅查询 GDELT 数据
-  python run_crawler_only.py --rss        # 仅爬取 RSS 新闻源
+用法：
+  python run_crawler_only.py --help          查看全部模式（不会开始爬取）
+  python run_crawler_only.py                 单次爬取全部启用来源
+  python run_crawler_only.py --rss           仅 RSS 聚合与独立媒体
+  python run_crawler_only.py --gdelt         仅 GDELT 事件与指标
+  python run_crawler_only.py --source 缅华网 仅指定来源
+  python run_crawler_only.py --schedule      前台常驻定时调度（Ctrl+C 停止）
+  python run_crawler_only.py --dry-run       只报告将做什么与数据落点，不联网
+
+设计约束：
+- 非交互环境（CI、计划任务、管道）不得因等待回车而挂起，故不使用 input()。
+- 数据实际落点由 utils.config.get_data_paths() 决定（可能是仓库外的 DATA_ROOT），
+  打印路径必须来自该函数，不能写死 data/raw，否则成员会误以为数据丢失。
+- 来源名称取自 config，不在提示文案里硬编码已停用的站点。
 """
-import sys
-import os
+from __future__ import annotations
+
+import argparse
 import json
-import time
+import logging
+import sys
 
-# 确保项目根目录在路径中
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils.config import get_data_paths, load_config
 
-print("=" * 50)
-print("  缅甸新闻爬虫 - 一键运行")
-print("=" * 50)
 
-# 检查依赖
-missing = []
-for pkg in ["requests", "bs4", "yaml"]:
-    try:
-        __import__(pkg)
-    except ImportError:
-        missing.append(pkg)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description='缅甸新闻爬虫一键入口', formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='默认单次爬取全部启用来源；任何模式都不会触发分析流水线或大模型调用。')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--schedule', action='store_true', help='前台常驻定时调度，Ctrl+C 停止')
+    mode.add_argument('--gdelt', action='store_true', help='仅查询 GDELT 事件并计算指标')
+    mode.add_argument('--rss', action='store_true', help='仅爬取 RSS 聚合与独立媒体')
+    mode.add_argument('--source', help='仅爬取指定来源名称（见 --list-sources）')
+    parser.add_argument('--list-sources', action='store_true', help='列出当前启用来源后退出')
+    parser.add_argument('--dry-run', action='store_true', help='只打印计划与数据落点，不联网')
+    parser.add_argument('--days', type=int, default=7, help='GDELT 查询天数（默认 7）')
+    parser.add_argument('--json', action='store_true', help='以 JSON 输出结果，便于脚本消费')
+    return parser
 
-if missing:
-    print(f"\n[错误] 缺少依赖包，请先运行：")
-    print(f"  pip install requests beautifulsoup4 lxml pyyaml")
-    print(f"\n安装完成后重新运行本脚本即可。")
-    input("\n按回车键退出...")
-    sys.exit(1)
 
-# 创建数据目录
-os.makedirs(os.path.join("data", "raw"), exist_ok=True)
+def active_sources() -> dict:
+    """来源清单来自配置，避免把已停用站点写死在文案里。"""
+    config = load_config()
+    feeds = {key: feed for key, feed in (config.get('rss_feeds') or {}).items()
+             if isinstance(feed, dict) and feed.get('enabled', True)}
+    return {'缅华网': 'data.crawler.NewsCrawler.crawl_all_sources',
+            '英文媒体（Irrawaddy 等）': 'data.myanmar_now_crawler.EnglishNewsCrawler.crawl_all',
+            **{feed.get('name', key): f'data.rss_crawler.{key}' for key, feed in feeds.items()},
+            'GDELT': 'data.gdelt_crawler.GDELTNewsCrawler.crawl'}
 
-# 解析命令行参数
-args = sys.argv[1:]
 
-if "--schedule" in args:
-    # === 定时调度模式 ===
-    print("\n[模式] 定时调度（缅华网 + GDELT + 分析流水线）")
-    print("[提示] 按 Ctrl+C 停止\n")
+def report(result: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    print('=' * 50)
+    for key, value in result.items():
+        print(f'  {key}: {value}')
+    print('=' * 50)
 
-    from data.scheduler import get_scheduler
-    scheduler = get_scheduler()
-    scheduler.start()
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n正在停止...")
-        scheduler.stop()
-        print("已停止")
-        input("\n按回车键退出...")
+def crawl_once(only: str | None, days: int) -> dict:
+    """逐源独立容错：单源失败不阻断其余来源，但失败必须显式出现在结果里。"""
+    collected, failures = {}, {}
+    targets = {'mhwmm': only in (None, '缅华网'),
+               'english': only in (None, '英文媒体（Irrawaddy 等）'),
+               'rss': only in (None, 'RSS', 'rss') or (only or '').startswith('Google') or (only or '').startswith('Kachin') or (only or '').startswith('UN'),
+               'gdelt': only in (None, 'GDELT')}
+    if only and only not in ('RSS',) and not any(targets.values()):
+        targets['rss'] = True   # 未识别的名称先交给按名称过滤的 RSS 通道处理
 
-elif "--gdelt" in args:
-    # === 仅 GDELT 查询 ===
-    print("\n[模式] 仅 GDELT 全球事件数据库查询")
+    if targets['mhwmm']:
+        try:
+            from data.crawler import NewsCrawler
+            crawler = NewsCrawler()
+            news = crawler.crawl_all_sources()
+            crawler.save_news(news)
+            collected['缅华网'] = len(news)
+        except Exception as error:
+            failures['缅华网'] = f'{type(error).__name__}: {error}'
 
-    try:
-        from data.gdelt_crawler import get_gdelt_crawler
-        gdelt = get_gdelt_crawler()
-
-        print("\n[1/2] 正在查询 GDELT 事件数据（7天）...")
-        news = gdelt.crawl(timespan_days=7)
-        filepath = gdelt.save_news(news)
-
-        print(f"\n[2/2] 计算风险指标...")
-        metrics = gdelt.get_risk_metrics(timespan_days=7)
-
-        print(f"\n{'=' * 50}")
-        print(f"  GDELT 查询完成！")
-        print(f"  文章数: {metrics['article_count']}")
-        print(f"  冲突数: {metrics['conflict_count']}")
-        print(f"  冲突频率: {metrics['conflict_frequency']:.2%}")
-        print(f"  平均风险: {metrics['avg_tone_risk']:.2f}")
-        print(f"  事件摘要: {metrics['event_summary']}")
-        if filepath:
-            print(f"  保存至: {os.path.abspath(filepath)}")
-        print(f"{'=' * 50}")
-
-    except Exception as e:
-        print(f"\n[错误] GDELT 查询失败: {e}")
-        print("请检查网络连接后重试。")
-
-    input("\n按回车键退出...")
-
-elif "--rss" in args:
-    # === 仅 RSS 新闻源 ===
-    print("\n[模式] RSS 新闻源爬取（Frontier Myanmar + DVB）")
-
-    try:
-        from data.rss_crawler import get_rss_crawler
-        rss = get_rss_crawler()
-        news = rss.crawl_all()
-        filepath = rss.save_news(news)
-
-        print(f"\n{'=' * 50}")
-        print(f"  RSS 爬取完成！")
-        print(f"  共获取: {len(news)} 条新闻")
-        if filepath:
-            print(f"  保存至: {os.path.abspath(filepath)}")
-        print(f"{'=' * 50}")
-
-        if news:
-            print("\n新闻列表预览：")
-            for i, item in enumerate(news[:15]):
-                title = item.get("title", "无标题")[:50]
-                source = item.get("source", "未知")
-                print(f"  {i+1:2d}. [{source}] {title}")
-            if len(news) > 15:
-                print(f"  ... 共 {len(news)} 条")
-
-    except Exception as e:
-        print(f"\n[错误] RSS 爬取失败: {e}")
-        print("请检查网络连接后重试。")
-
-    input("\n按回车键退出...")
-
-else:
-    # === 单次爬取模式（所有数据源） ===
-    try:
-        all_news = []
-
-        # 1. 缅华网
-        print("\n[1/4] 爬取缅华网...")
-        from data.crawler import NewsCrawler
-        crawler = NewsCrawler()
-        news = crawler.crawl_all_sources()
-        crawler.save_news(news)
-        all_news.extend(news)
-        print(f"  ✅ 缅华网: {len(news)} 条")
-
-        # 2. 英文媒体
-        print("\n[2/4] 爬取英文媒体 (Myanmar Now + Irrawaddy)...")
+    if targets['english']:
         try:
             from data.myanmar_now_crawler import get_english_crawler
-            en_crawler = get_english_crawler()
-            en_news = en_crawler.crawl_all()
-            en_crawler.save_news(en_news)
-            all_news.extend(en_news)
-            print(f"  ✅ 英文媒体: {len(en_news)} 条")
-        except Exception as e:
-            print(f"  ⚠️ 英文媒体失败: {e}")
+            crawler = get_english_crawler()
+            news = crawler.crawl_all()
+            crawler.save_news(news)
+            collected['英文媒体'] = len(news)
+        except Exception as error:
+            failures['英文媒体'] = f'{type(error).__name__}: {error}'
 
-        # 3. RSS 源
-        print("\n[3/4] 爬取 RSS 新闻源 (Frontier Myanmar + DVB)...")
+    if targets['rss']:
         try:
             from data.rss_crawler import get_rss_crawler
-            rss = get_rss_crawler()
-            rss_news = rss.crawl_all()
-            rss.save_news(rss_news)
-            all_news.extend(rss_news)
-            print(f"  ✅ RSS 源: {len(rss_news)} 条")
-        except Exception as e:
-            print(f"  ⚠️ RSS 源失败: {e}")
+            crawler = get_rss_crawler()
+            news = crawler.crawl_all()
+            crawler.save_news(news)
+            collected['RSS 源'] = len(news)
+        except Exception as error:
+            failures['RSS 源'] = f'{type(error).__name__}: {error}'
 
-        # 4. GDELT
-        print("\n[4/4] 查询 GDELT 全球事件数据库...")
+    if targets['gdelt']:
         try:
             from data.gdelt_crawler import get_gdelt_crawler
-            gdelt = get_gdelt_crawler()
-            gdelt_news = gdelt.crawl(timespan_days=7)
-            gdelt.save_news(gdelt_news)
-            all_news.extend(gdelt_news)
-            print(f"  ✅ GDELT: {len(gdelt_news)} 条")
-        except Exception as e:
-            print(f"  ⚠️ GDELT 失败: {e}")
+            crawler = get_gdelt_crawler()
+            news = crawler.crawl(timespan_days=days)
+            crawler.save_news(news)
+            collected['GDELT'] = len(news)
+            if only in (None, 'GDELT'):
+                collected['GDELT 指标'] = json.dumps(
+                    crawler.get_risk_metrics(timespan_days=days), ensure_ascii=False)[:200]
+        except Exception as error:
+            failures['GDELT'] = f'{type(error).__name__}: {error}'
 
-        print(f"\n{'=' * 50}")
-        print(f"  全部爬取完成！共获取: {len(all_news)} 条新闻")
-        print(f"  数据保存至: {os.path.abspath(os.path.join('data', 'raw'))}")
-        print(f"{'=' * 50}")
+    paths = get_data_paths()
+    return {'采集条数': collected, '失败来源': failures or '无',
+            '数据落点': paths['raw'], '指标落点': paths['processed'],
+            '下一步': '运行 python run_full_pipeline.py --skip-crawl --skip-llm 重算日指标'}
 
-        if all_news:
-            print("\n新闻列表预览：")
-            for i, item in enumerate(all_news[:15]):
-                title = item.get("title", "无标题")[:40]
-                source = item.get("source", "未知")
-                pub_time = item.get("pub_time", "")[:10]
-                print(f"  {i+1:2d}. [{source:15s}] [{pub_time}] {title}")
-            if len(all_news) > 15:
-                print(f"  ... 共 {len(all_news)} 条")
 
-    except Exception as e:
-        print(f"\n[错误] 爬虫运行失败: {e}")
-        print("请检查网络连接后重试。")
+def main(argv=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
-    input("\n按回车键退出...")
+    if args.list_sources:
+        print(json.dumps(list(active_sources().keys()), ensure_ascii=False, indent=2))
+        return 0
 
+    paths = get_data_paths()
+    print(f'数据落点（由 DATA_ROOT/config 决定，非仓库内 data/）：{paths["root"]}')
+
+    if args.dry_run:
+        report({'模式': 'dry-run（未联网）', '启用来源': list(active_sources()),
+                '将写入': paths['raw']}, args.json)
+        return 0
+
+    if args.schedule:
+        from data.scheduler import get_scheduler
+        scheduler = get_scheduler()
+        scheduler.start()
+        print('定时调度已启动，按 Ctrl+C 停止。')
+        try:
+            import time
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            scheduler.stop()
+            print('已停止调度。')
+        return 0
+
+    only = 'GDELT' if args.gdelt else ('RSS' if args.rss else args.source)
+    result = crawl_once(only, args.days)
+    report(result, args.json)
+    # 有来源失败时返回非零，便于计划任务与脚本发现，而不是静默“跑完了”
+    return 1 if result['失败来源'] != '无' else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -24,6 +24,8 @@ import json
 import logging
 import os
 import re
+import tempfile
+import threading
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -468,9 +470,25 @@ def relevant_literature(index, module=None, indicator=None, topic=None, limit=10
 # 持久化 + 配置解析 + 单例
 # ------------------------------------------------------------------
 def save_index(index, path):
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(index, f, ensure_ascii=False, indent=2)
+    """原子落盘：先写同目录临时文件再替换，避免并发或中断留下撕裂 JSON。
+
+    与 storage/risk_store.py 的提交方式保持一致；缓存损坏虽可自愈重建，
+    但半截文件会让并发请求误报“缓存读取失败”并触发重复的全量重建。
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    if os.path.islink(directory):
+        raise ValueError('知识库缓存目录不能是链接')
+    fd, temporary = tempfile.mkstemp(dir=directory, prefix='kb-index-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(index, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        # 失败时保留临时文件供人工核查，不覆盖已有可用缓存
+        raise
     return path
 
 
@@ -548,11 +566,15 @@ class KnowledgeBase:
 
 
 _kb_singleton = None
+_kb_lock = threading.Lock()
 
 
 def get_knowledge_base(force_reload=False):
-    """知识库单例（惰性加载索引缓存）。"""
+    """知识库单例（惰性加载索引缓存，线程安全）。"""
     global _kb_singleton
     if _kb_singleton is None or force_reload:
-        _kb_singleton = KnowledgeBase()
+        with _kb_lock:
+            # 双检：等锁期间可能已由其他线程建好，避免重复解析源表与重复写缓存
+            if _kb_singleton is None or force_reload:
+                _kb_singleton = KnowledgeBase()
     return _kb_singleton

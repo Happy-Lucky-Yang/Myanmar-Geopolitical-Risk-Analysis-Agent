@@ -234,6 +234,54 @@ def test_save_load_roundtrip(tmp_path, index):
     assert json.loads(p.read_text(encoding="utf-8"))["records"][0]["id"] == "lit-0001"
 
 
+def test_save_index_is_atomic_and_leaves_no_temp(tmp_path, index):
+    """落盘走同目录临时文件+替换：成功后无残留，失败不破坏已有缓存。"""
+    target = tmp_path / "idx.json"
+    kb.save_index(index, str(target))
+    assert json.loads(target.read_text(encoding="utf-8"))["record_count"] == index["record_count"]
+    assert not list(tmp_path.glob("kb-index-*.tmp"))
+
+    before = target.read_text(encoding="utf-8")
+
+    original_dump = kb.json.dump
+    try:
+        def partial_dump(data, fp, **kw):
+            fp.write("{")
+            raise OSError("模拟中断")
+        kb.json.dump = partial_dump
+        with pytest.raises(OSError):
+            kb.save_index(index, str(target))
+    finally:
+        kb.json.dump = original_dump
+
+    assert target.read_text(encoding="utf-8") == before   # 旧缓存未被半截内容覆盖
+
+
+def test_get_knowledge_base_builds_once_under_threads(monkeypatch):
+    """单例必须线程安全：并发首次获取不能重复构造。"""
+    import threading
+    import time
+    builds = []
+    start = threading.Barrier(4)     # 对齐线程，让它们同时进入 get_knowledge_base
+
+    class Slow(kb.KnowledgeBase):
+        def __init__(self, *args, **kwargs):
+            builds.append(threading.current_thread().name)
+            time.sleep(0.2)          # 构造窗口：无锁时其余线程会看到 None 并重复构造
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(kb, "KnowledgeBase", Slow)
+    monkeypatch.setattr(kb, "_kb_singleton", None)
+    threads = [threading.Thread(target=lambda: (start.wait(timeout=10), kb.get_knowledge_base()))
+               for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=20)
+    assert not any(t.is_alive() for t in threads)
+    assert len(builds) == 1, builds
+
+
 def test_load_or_build_degrades_and_caches(tmp_path):
     # 无源表 → 空索引优雅降级
     empty = kb.load_or_build_index({"source_xlsx": "", "index_path": str(tmp_path / "none.json")})

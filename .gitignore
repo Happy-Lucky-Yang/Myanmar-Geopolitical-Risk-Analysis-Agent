@@ -56,6 +56,9 @@ node_modules/
 
 # ---------- 临时文件 ----------
 # 治理清单包含本地文件路径，仅保存在对应授权目录
+# 演讲稿 PDF 为生成物且体积大；可编辑源 docs/speech_script.html 仍入库，
+# 需要版本化 PDF 时删除下行并用 scripts/render_speech_pdf.py 重新生成
+*.pdf
 inventory-*.json
 *.tmp
 .test-run*/
