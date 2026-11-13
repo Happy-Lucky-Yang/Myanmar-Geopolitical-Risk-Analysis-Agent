@@ -295,10 +295,10 @@ function syncViewNavigation(filters) {
     var common = {};
     ['days', 'end_date', 'region', 'source', 'revision'].forEach(key => { if (filters) common[key] = filters[key]; });
     var query = viewQuery({}, common);
-    document.querySelectorAll('.nav-links a, .section-sidebar a, .site-menu a').forEach(function (a) {
+    document.querySelectorAll('.nav-links a, .nav-dropdown a, .site-menu a').forEach(function (a) {
         var path = new URL(a.href, window.location.href).pathname;
         if (path === '/dashboard') { a.href = '/dashboard'; return; }
-        if (['/', '/map', '/trend', '/graph', '/spatial', '/multimodal', '/dashboard/indicators', '/dashboard/events', '/dashboard/data', '/analysis/risk'].includes(path)) a.href = path + (query ? '?' + query : '');
+        if (['/', '/map', '/trend', '/graph', '/spatial', '/multimodal', '/remote-sensing', '/dashboard/indicators', '/dashboard/events', '/dashboard/data', '/analysis/risk'].includes(path)) a.href = path + (query ? '?' + query : '');
     });
 }
 

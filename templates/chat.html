@@ -34,6 +34,7 @@
                         <select id="model-select" class="model-select">
                             <option value="">加载中…</option>
                         </select><p class="muted-note">更换模型可能产生供应商API费用；这里只选择模型，点击“开始分析”才调用。</p>
+                        <label class="chain-toggle"><input type="checkbox" id="chain-enable"> 启用链式推理</label>
                     </details>
                     <div class="toolbar-right">
                         <label class="file-upload-btn" tabindex="0" role="button" title="上传文本文件（.txt / .json / .csv / .md）" aria-label="上传文本文件">
@@ -47,7 +48,6 @@
                 <div class="input-footer">
                     <span id="char-count" class="char-count">0 / 20000</span>
                     <div class="btn-group">
-                        <label class="chain-toggle"><input type="checkbox" id="chain-enable"> 启用链式推理</label>
                         <button class="btn btn-secondary" onclick="fillSampleText()">填充示例</button>
                         <button id="analyze-btn" class="btn btn-primary" disabled onclick="analyzeText()">开始分析</button>
                     </div>

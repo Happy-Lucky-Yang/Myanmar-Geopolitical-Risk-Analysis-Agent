@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>缅甸地缘风险智能分析系统 · 综合态势（V4 两级导航 · 2026-10）</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #f3f6f4; --surface-solid: #ffffff; --surface-tint: #edf5f2;
+  --line: #e2e9e6; --line-strong: #cddad5;
+  --ink: #24333b; --ink-2: #576873;
+  --jade: #3a9a8a; --jade-deep: #2b7a70; --jade-soft: rgba(58,154,138,0.12);
+  --nav-ink: #12262e; --nav-bg: #1d3a44;
+  --risk-medium: #895814; --risk-medium-bg: rgba(221,151,59,0.14);
+}
+body { background: var(--bg); color: var(--ink); line-height: 1.6; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
+.navbar { background: var(--nav-bg); display: flex; align-items: center; height: 58px; padding: 0 26px; }
+.nav-brand { color: #fff; font-size: 1rem; font-weight: 700; margin-right: 34px; }
+.nav-brand span { color: #9ed6c6; font-size: 0.72rem; font-weight: 400; margin-left: 8px; letter-spacing: 0.1em; }
+.nav-links { list-style: none; display: flex; gap: 6px; }
+.nav-links a { color: #cfdee5; text-decoration: none; font-size: 0.88rem; padding: 7px 16px; border-radius: 8px; }
+.nav-links a.active { background: rgba(158,214,198,0.16); color: #9ed6c6; font-weight: 600; }
+.layout { display: flex; min-height: calc(100vh - 58px); }
+.sidebar {
+  width: 216px; flex: 0 0 216px; background: var(--surface-solid);
+  border-right: 1px solid var(--line); padding: 18px 12px;
+}
+.sidebar h4 { font-size: 0.7rem; color: var(--ink-2); letter-spacing: 0.14em; margin: 6px 10px 8px; }
+.sidebar a {
+  display: flex; align-items: center; gap: 9px; color: var(--ink-2); text-decoration: none;
+  font-size: 0.85rem; padding: 9px 12px; border-radius: 10px; margin-bottom: 2px;
+}
+.sidebar a .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+.sidebar a:hover { background: var(--surface-tint); color: var(--ink); }
+.sidebar a.active { background: var(--jade-soft); color: var(--jade-deep); font-weight: 600; }
+.sidebar a.active .dot { background: var(--jade); }
+.main { flex: 1; padding: 22px 26px; }
+.page-head h1 { font-size: 1.45rem; font-weight: 700; }
+.page-head p { color: var(--ink-2); font-size: 0.85rem; margin-top: 3px; }
+.home-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 18px; }
+.home-card {
+  background: var(--surface-solid); border: 1px solid var(--line); border-radius: 16px;
+  padding: 18px 20px; box-shadow: 0 5px 18px rgba(36,51,59,0.05);
+}
+.home-card h2 { font-size: 0.9rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+.home-card h2 a { font-size: 0.75rem; color: var(--jade-deep); text-decoration: none; font-weight: 500; }
+.score { font-size: 2.2rem; font-weight: 800; color: var(--risk-medium); margin-top: 8px; }
+.score small { font-size: 0.8rem; font-weight: 600; background: var(--risk-medium-bg); color: var(--risk-medium); border-radius: 999px; padding: 2px 10px; vertical-align: middle; margin-left: 8px; }
+.meta { color: var(--ink-2); font-size: 0.78rem; margin-top: 6px; }
+.map-box {
+  margin-top: 10px; height: 168px; border-radius: 12px; position: relative; overflow: hidden;
+  background:
+    radial-gradient(circle at 62% 38%, rgba(217,122,74,0.5), transparent 26%),
+    radial-gradient(circle at 40% 60%, rgba(221,151,59,0.42), transparent 30%),
+    radial-gradient(circle at 55% 72%, rgba(58,154,138,0.35), transparent 34%),
+    linear-gradient(160deg, #dfe9e4, #cfdcd6);
+  border: 1px solid var(--line);
+}
+.map-box::after {
+  content: '风险地图 · 省级填色 + KDE 事件密度'; position: absolute; left: 10px; bottom: 8px;
+  font-size: 0.7rem; color: var(--ink-2); background: rgba(255,255,255,0.82); padding: 2px 8px; border-radius: 6px;
+}
+.evt { padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 0.83rem; }
+.evt:last-child { border-bottom: none; }
+.evt .d { color: var(--ink-2); font-size: 0.72rem; }
+.src { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.src:last-child { border-bottom: none; }
+.src .ok { color: var(--jade-deep); font-weight: 600; }
+.src .warn { color: var(--risk-medium); font-weight: 600; }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-brand">缅甸地缘风险智能分析系统<span>GEO-RISK ATLAS</span></div>
+  <ul class="nav-links">
+    <li><a href="/dashboard" class="active">态势总览</a></li>
+    <li><a href="/map">时空分析</a></li>
+    <li><a href="/">分析工作台</a></li>
+    <li><a href="/literature">研究资料</a></li>
+  </ul>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h4>态势总览</h4>
+    <a href="/dashboard" class="active"><span class="dot"></span>综合态势</a>
+    <a href="/dashboard/indicators"><span class="dot"></span>风险与指标</a>
+    <a href="/dashboard/events"><span class="dot"></span>事件与证据</a>
+    <a href="/dashboard/data"><span class="dot"></span>数据状态</a>
+    <h4>本组其他</h4>
+    <a href="/map"><span class="dot"></span>风险地图</a>
+    <a href="/trend"><span class="dot"></span>趋势分析</a>
+  </aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>综合态势</h1>
+      <p>近 30 天 · 缅甸全国 · 截止 2026-10-22 · 版本 rev-20261022</p>
+    </div>
+    <div class="home-grid">
+      <div class="home-card">
+        <h2>全国日风险<a href="/dashboard/indicators">明细 →</a></h2>
+        <div class="score">42.0<small>中风险</small></div>
+        <div class="meta">较前日 +2.0 · 有效指标权重 40.0 · 不是发生概率</div>
+      </div>
+      <div class="home-card">
+        <h2>风险地图<a href="/map">全屏 →</a></h2>
+        <div class="map-box"></div>
+      </div>
+      <div class="home-card">
+        <h2>关键事件<a href="/dashboard/events">全部 →</a></h2>
+        <div class="evt">若开邦村庄冲突，居民向边境转移<br><span class="d">#3 · 2026-10-22 · 缅华网 · CAMEO 19</span></div>
+        <div class="evt">掸邦北部检查站袭击<br><span class="d">#2 · 2026-10-21 · GDELT · CAMEO 18</span></div>
+        <div class="evt">内比都安保等级上调<br><span class="d">#1 · 2026-10-20 · Google News · CAMEO 17</span></div>
+      </div>
+      <div class="home-card">
+        <h2>数据状态<a href="/dashboard/data">详情 →</a></h2>
+        <div class="src"><span>缅华网</span><span class="ok">健康 · 4h 前</span></div>
+        <div class="src"><span>GDELT</span><span class="ok">健康 · 6h 前</span></div>
+        <div class="src"><span>Irrawaddy</span><span class="warn">超时 · 直连降级</span></div>
+        <div class="src"><span>覆盖率（30d）</span><span class="ok">90%</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

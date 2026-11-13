@@ -309,12 +309,37 @@ Content-Type: `text/html`
 
 ## 6. 前端页面路由
 
-| 路径     | 页面       | 说明 |
-|----------|------------|------|
-| `/`      | chat.html  | 对话分析：输入文本 → 结构化分析结果 |
-| `/map`   | map.html   | 风险地图：双模式（省界分级填色 / 事件密度 KDE） |
+### 主页面
+
+| 路径 | 页面 | 说明 |
+|------|------|------|
+| `/` | chat.html | 对话分析：输入文本 → 结构化分析结果 |
+| `/map` | map.html | 风险地图：双模式（省界分级填色 / 事件密度 KDE） |
 | `/trend` | trend.html | 趋势预测：ECharts 折线图 |
-| `/dashboard` | dashboard.html | 综合态势：预警、位势、网络和多源融合 |
+| `/dashboard` | dashboard.html | 综合态势首屏：当前风险、贡献、覆盖与事件证据 |
+| `/graph` | graph.html | 关系网络图谱（ECharts 力导向图） |
+| `/guide` | guide.html | 使用说明：架构、数据域、算法边界 |
+| `/literature` | literature.html | 文献中心：分页搜索、主题/模块筛选 |
+| `/workspace` | workspace.html | 个人工作区：会话历史、追问、简报、偏好 |
+| `/login` | login.html | 登录页面（共享模式） |
+
+### 仪表盘二级页面
+
+| 路径 | 页面 | 说明 |
+|------|------|------|
+| `/dashboard/indicators` | dashboard.html | 风险与指标：日风险、贡献和多源研究面板 |
+| `/dashboard/events` | dashboard.html | 事件与证据：窗口内报道事件与原始出处 |
+| `/dashboard/data` | dashboard.html | 数据状态：观测覆盖、采集运行和来源立场 |
+
+### 研究子页面
+
+| 路径 | 页面 | 说明 |
+|------|------|------|
+| `/spatial` | research.html | 空间统计：地缘位势、空间自相关与局部检验 |
+| `/multimodal` | research.html | 多源对照：完整月份对齐、年度原值 |
+| `/analysis/risk` | research.html | 风险解读：基于已保存观测解释分数构成 |
+| `/research/methodology` | research.html | 指标与计算方法：从原始资料到结果 |
+| `/research/history` | research.html | 历史背景：独立参考资料 |
 
 ---
 
@@ -334,6 +359,7 @@ Content-Type: `text/html`
 | GET | `/api/kg/query` | 查询知识图谱 |
 | POST | `/api/kg/seed` | 写入知识图谱种子数据 |
 | GET | `/api/network` | 关系网络分析 |
+| GET | `/api/network/actors` | 8 节点行为体关系网络（Goldstein 净值有向加权） |
 | GET | `/api/report` | 导出 HTML/DOCX 或 JSON 快照；支持通用筛选与 revision |
 
 `/api/analyze` 的 `data.warnings` 列出 NER、情感、LLM、持久化及贡献分析降级原因。它不采集GDELT、不使用年度代理、不写Neo4j或正式预警。共享模式持久化失败会使任务失败；任务异常日志只记录类型和任务ID，不回显用户输入。
@@ -407,7 +433,496 @@ Content-Type: `text/html`
 
 ---
 
-## 8. 快速测试命令
+## 8. 会话与安全接口
+
+> 以下接口仅在共享模式（`SHARED_MODE=true`）下可用。本地免登录模式无需调用。
+
+### `GET /api/session`
+
+获取当前会话状态与 CSRF token。无需登录即可调用。
+
+#### 响应示例（未登录）
+
+```json
+{
+  "success": true,
+  "data": {
+    "shared_mode": true,
+    "csrf_token": "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ABCD",
+    "user": null
+  }
+}
+```
+
+#### 响应示例（已登录）
+
+```json
+{
+  "success": true,
+  "data": {
+    "shared_mode": true,
+    "csrf_token": "nEwToKeNaFtErLoGiN0123456789ABCDEFghij",
+    "user": {
+      "id": "u-xxxxxxxx",
+      "username": "analyst1",
+      "role": "analyst"
+    }
+  }
+}
+```
+
+### `POST /api/login`
+
+登录。请求体须含 `username` 和 `password`；须携带 Cookie 和 `X-CSRF-Token` header。限流：每 IP 10 次 / 300 秒。
+
+#### 请求体
+
+```json
+{
+  "username": "analyst1",
+  "password": "secure-password-here"
+}
+```
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "csrf_token": "nEwToKeNaFtErLoGiN0123456789ABCDEFghij"
+  }
+}
+```
+
+#### 错误响应
+
+```json
+{"success": false, "error": "用户名或密码错误"}
+```
+
+### `POST /api/logout`
+
+登出，清除会话。无请求体。
+
+```json
+{"success": true}
+```
+
+### `GET /api/jobs/<job_id>`
+
+查询异步任务状态（仅共享模式）。`data` 包含 `status`（queued / running / done / failed）和结果摘要。
+
+### `GET /api/analyses/<run_id>`
+
+获取本人或已共享的分析记录详情。
+
+### `POST /api/analyses/<run_id>/share`
+
+共享或撤回共享分析记录。仅记录所有者可操作。
+
+```json
+{"shared": true}
+```
+
+---
+
+## 9. 产品功能接口
+
+> 以下接口由 `product_api.py` Blueprint 提供。文献相关接口需 `ENABLE_LITERATURE=true`。
+
+### `GET /api/product/status`
+
+返回所有功能开关状态。无需登录。
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "literature": false,
+    "workspace": false,
+    "risk_panels": false,
+    "risk_briefing": false,
+    "auto_briefing": false,
+    "un_news": false,
+    "shared_mode": false
+  }
+}
+```
+
+### `GET /api/view-options`
+
+返回前端筛选器可选的区域和来源列表。无需登录。
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "regions": [
+      {"code": "MMR", "name": "缅甸全国"},
+      {"code": "MMR001", "name": "克钦邦"},
+      {"code": "MMR002", "name": "掸邦"}
+    ],
+    "sources": ["缅华网", "GDELT", "Google News (en)", "Google News (zh)"],
+    "warnings": []
+  }
+}
+```
+
+---
+
+## 10. 文献中心接口
+
+> 需 `ENABLE_LITERATURE=true`。由 `product_api.py` 提供。
+
+### `GET /api/literature`
+
+分页检索文献。支持筛选参数。
+
+#### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| q | string | "" | 搜索关键词（题名/作者/摘要） |
+| offset | int | 0 | 分页偏移 |
+| limit | int | 20 | 每页条数 |
+| category | string | null | 主题分类 |
+| module | string | null | 对应技术模块 |
+| indicator | string | null | 对应指标 |
+| topic | string (可重复) | null | 研究主题标签 |
+| core_only | string | "false" | 是否仅核心文献 |
+| year_from | int | null | 起始年份 |
+| year_to | int | null | 结束年份 |
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "KB-001",
+        "title": "缅甸北部冲突的地缘环境分析",
+        "authors": ["张三"],
+        "year": 2024,
+        "abstract": "本文分析了……",
+        "category": "地缘冲突",
+        "module": "风险评分",
+        "indicator": "冲突频次",
+        "topics": ["地缘位势与影响力测算"],
+        "core": true,
+        "link_type": "doi",
+        "link_url": "https://doi.org/10.xxxx/example"
+      }
+    ],
+    "total": 645,
+    "offset": 0,
+    "limit": 20,
+    "overview": {
+      "total_records": 645,
+      "categories": {"地缘冲突": 120, "经济分析": 85},
+      "modules": {"风险评分": 200, "态势研判": 150},
+      "year_range": [2018, 2026]
+    }
+  }
+}
+```
+
+### `GET /api/literature/<record_id>`
+
+获取单条文献的完整公开字段。
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "KB-001",
+    "title": "缅甸北部冲突的地缘环境分析",
+    "authors": ["张三"],
+    "year": 2024,
+    "abstract": "本文分析了……",
+    "category": "地缘冲突",
+    "module": "风险评分",
+    "indicator": "冲突频次",
+    "topics": ["地缘位势与影响力测算"],
+    "core": true,
+    "link_type": "doi",
+    "link_url": "https://doi.org/10.xxxx/example",
+    "tags": ["缅甸", "克钦", "冲突"]
+  }
+}
+```
+
+---
+
+## 11. 个人工作区接口
+
+> 需 `ENABLE_WORKSPACE=true` + 共享模式 + PostgreSQL。由 `workspace_api.py` 提供。
+> 所有请求须携带登录会话Cookie；`owner_id` 由服务端从会话确定，客户端不得指定。
+
+### `GET /api/workspace/conversations`
+
+获取当前用户的会话列表。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| offset | int | 0 | 分页偏移 |
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "conv-xxxxxxxx",
+      "title": "克钦邦冲突分析",
+      "created_at": "2026-10-01T10:00:00",
+      "updated_at": "2026-10-20T14:30:00",
+      "message_count": 6
+    }
+  ]
+}
+```
+
+### `POST /api/workspace/conversations`
+
+创建新会话。
+
+```json
+{"title": "新对话"}
+```
+
+#### 响应（201）
+
+```json
+{"success": true, "data": {"id": "conv-newid"}}
+```
+
+### `GET /api/workspace/conversations/<cid>`
+
+获取单个会话详情（含消息列表）。
+
+### `PATCH /api/workspace/conversations/<cid>`
+
+重命名会话。`{"title": "新标题"}`（1～160 字符）。
+
+### `DELETE /api/workspace/conversations/<cid>`
+
+删除会话。
+
+### `GET /api/workspace/conversations/<cid>/export`
+
+导出会话为 JSON 文件（Content-Disposition: attachment）。
+
+### `POST /api/workspace/conversations/<cid>/messages`
+
+在指定会话中发送 AI 研判请求。需 `ENABLE_RISK_BRIEFING=true`。
+
+#### 请求体
+
+```json
+{
+  "question": "请分析近期克钦邦的冲突态势",
+  "days": 30,
+  "region": "MMR001"
+}
+```
+
+须携带 `Idempotency-Key` header（1～128 字符）防止重复提交。
+
+#### 响应（202）
+
+```json
+{
+  "success": true,
+  "data": {
+    "request_id": "req-xxxxxxxx",
+    "status": "queued",
+    "message": "已入队；需独立worker运行，未启动时不会生成回答"
+  }
+}
+```
+
+### `POST /api/workspace/briefings`
+
+请求独立简报（不绑定特定会话）。参数同上。
+
+### `GET /api/workspace/requests/<rid>`
+
+查询研判请求的结果。
+
+### `GET /api/workspace/preferences`
+
+获取当前用户偏好设置。
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "region": "MMR",
+    "language": "zh-CN",
+    "theme": "light"
+  }
+}
+```
+
+### `PUT /api/workspace/preferences`
+
+更新偏好。请求体为键值对。
+
+### `PUT /api/workspace/messages/<mid>/feedback`
+
+为消息提交反馈评分。
+
+### `DELETE /api/workspace/messages/<mid>/feedback`
+
+撤回反馈。
+
+### `POST /api/workspace/usage`
+
+记录功能使用事件。`{"feature": "risk_briefing"}`
+
+### `POST /api/workspace/suggestion`
+
+获取系统推荐建议。
+
+### `GET /api/workspace/briefings/latest`
+
+获取最新自动研判简报结果。
+
+---
+
+## 12. 多源风险面板接口
+
+> 需 `ENABLE_RISK_PANELS=true`。由 `risk_api.py` 提供。
+> 写操作（`POST /api/risk_panels/build`）还需共享模式 + admin 角色。
+
+### `GET /api/risk_panels`
+
+查询月/年度风险面板。
+
+#### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| frequency | string | "monthly" | 面板频率：monthly / annual |
+| count | int | 12/5 | 查询期数数量 |
+| end_date | string | null | 截止日期 |
+| mode | string | "formal" | 模式：formal / proxy |
+| region | string | "MMR" | 区域代码 |
+| calibration_id | string | null | 校准基准 ID |
+| panel_revision | string | null | 客户端缓存版本，不一致返回 409 |
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "panels": [
+      {
+        "period_start": "2026-09-01",
+        "period_end": "2026-09-30",
+        "score": 58.3,
+        "status": "computed",
+        "algorithm_version": "risk-v4-multisource",
+        "calibration_id": "calib-001"
+      }
+    ],
+    "revision": "rev-xxxxxxxx",
+    "filters": {"frequency": "monthly", "count": 12, "mode": "formal", "region": "MMR"},
+    "algorithm_version": "risk-v4-multisource",
+    "unit": "风险分（非概率）",
+    "calibrations": [
+      {"id": "calib-001", "frequency": "monthly", "mode": "formal", "description": "审定基准 v1"}
+    ],
+    "note": "新月/年面板独立于旧日风险；正式缺项不合成，代理不作正式预警。"
+  }
+}
+```
+
+缺测期返回 `score: null` 和 `status: "not_computed"`，附原因说明。
+
+### `GET /api/risk_sources/status`
+
+查询各外部数据源的加载状态与批次信息。
+
+#### 响应示例
+
+```json
+{
+  "success": true,
+  "data": {
+    "acled": {
+      "enabled": false,
+      "status": "not_loaded",
+      "reason": "需要myACLED授权；未获批时仅可选GDELT代理"
+    },
+    "ofac": {
+      "enabled": false,
+      "status": "not_loaded",
+      "reason": "官方法律措施须有可靠生效日/类型；不以SDN对象数代替"
+    },
+    "idmc": {
+      "enabled": false,
+      "status": "not_loaded",
+      "reason": "导入官方GIDD文件；年度全国统计不复制到邦省/月度"
+    },
+    "viirs": {
+      "enabled": false,
+      "status": "not_loaded",
+      "reason": "本轮不联网下载；需真实月分区亮度，WB另作年度代理"
+    }
+  }
+}
+```
+
+### `POST /api/risk_panels/build`
+
+发起面板计算任务。需 admin 角色 + 共享模式 + `ENABLE_RISK_PANELS=true`。
+
+#### 请求体
+
+```json
+{
+  "frequency": "monthly",
+  "count": 12,
+  "end_date": "2026-10-31",
+  "mode": "formal",
+  "region": "MMR",
+  "parameters": {
+    "lambda": {"conflict_frequency": 0.25, "sentiment_avg": 0.20},
+    "approved_version": "v4-multisource-r1"
+  }
+}
+```
+
+可携带 `Idempotency-Key` header 防重复提交。
+
+#### 响应（202）
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "job-xxxxxxxx"
+  }
+}
+```
+
+---
+
+## 13. 快速测试命令
 以下用于本机免登录模式；共享模式需带会话 Cookie 和 CSRF header。POST分析可能调用已配置的LLM，执行前确认数据可以发送给该服务。
 
 ```bash

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>缅甸地缘风险分析 - 对话分析（V1 初始原型 · 2026-06）</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f5f7fa; color: #333; line-height: 1.6;
+}
+.navbar {
+  background: #1a1a2e; color: #fff; padding: 0 2rem;
+  display: flex; align-items: center; height: 60px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.nav-brand { font-size: 1.2rem; font-weight: 600; margin-right: 2rem; }
+.nav-links { list-style: none; display: flex; gap: 1rem; }
+.nav-links a {
+  color: #ccc; text-decoration: none; padding: 0.5rem 1rem;
+  border-radius: 4px; transition: all 0.3s; font-size: 0.95rem;
+}
+.nav-links a:hover, .nav-links a.active { background: #16213e; color: #fff; }
+.container { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+.analysis-section { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.analysis-section h2 { font-size: 1.4rem; margin-bottom: 0.3rem; color: #1a1a2e; }
+.subtitle { color: #888; font-size: 0.9rem; margin-bottom: 1.2rem; }
+textarea {
+  width: 100%; border: 1px solid #ddd; border-radius: 4px; padding: 0.8rem;
+  font-size: 0.95rem; font-family: inherit; resize: vertical; color: #333;
+}
+.btn-row { display: flex; gap: 1rem; margin-top: 1rem; }
+button {
+  padding: 0.6rem 1.4rem; border: none; border-radius: 4px; cursor: pointer;
+  font-size: 0.95rem; color: #fff; background: #1a1a2e;
+}
+button.secondary { background: #6c757d; }
+.result-area { margin-top: 1.5rem; border-top: 1px solid #eee; padding-top: 1.2rem; }
+.result-area h3 { font-size: 1.1rem; margin-bottom: 1rem; color: #1a1a2e; }
+.result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.result-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 1rem; }
+.result-card h4 { font-size: 0.9rem; color: #555; margin-bottom: 0.6rem; }
+.result-card .value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+.result-card .value.warn { color: #e67e22; }
+.tag { display: inline-block; background: #e9ecef; color: #495057; border-radius: 3px; padding: 1px 8px; font-size: 0.8rem; margin: 2px 4px 2px 0; }
+.tag.loc { background: #d1ecf1; color: #0c5460; }
+.tag.org { background: #d4edda; color: #155724; }
+footer { text-align: center; color: #aaa; font-size: 0.8rem; padding: 1.5rem 0 2rem; }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-brand">缅甸地缘风险智能分析系统</div>
+  <ul class="nav-links">
+    <li><a href="/" class="active">对话分析</a></li>
+    <li><a href="/map">风险地图</a></li>
+    <li><a href="/trend">趋势预测</a></li>
+  </ul>
+</nav>
+
+<main class="container">
+  <section class="analysis-section">
+    <h2>新闻文本分析</h2>
+    <p class="subtitle">粘贴缅甸相关新闻文本，点击分析按钮获取结构化结果</p>
+    <div class="input-area">
+      <textarea rows="6">缅甸若开邦地区近日局势紧张，多个村庄发生冲突事件，当地居民向边境地区转移。联合国人道主义事务协调厅表示关切，呼吁各方保持克制。缅华网报道，冲突已持续三日，造成部分基础设施损毁。</textarea>
+      <div class="btn-row">
+        <button>开始分析</button>
+        <button class="secondary">填充示例文本</button>
+      </div>
+    </div>
+    <div class="result-area">
+      <h3>分析结果</h3>
+      <div class="result-grid">
+        <div class="result-card">
+          <h4>命名实体</h4>
+          <span class="tag loc">若开邦</span><span class="tag loc">缅甸</span>
+          <span class="tag org">联合国人道主义事务协调厅</span><span class="tag org">缅华网</span>
+        </div>
+        <div class="result-card">
+          <h4>情感分析</h4>
+          <div class="value warn">0.21</div>
+          <div style="font-size:0.8rem;color:#888;">负面倾向（SnowNLP）</div>
+        </div>
+        <div class="result-card">
+          <h4>风险评分</h4>
+          <div class="value warn">61.5</div>
+          <div style="font-size:0.8rem;color:#888;">中风险（规则引擎 v1）</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>缅甸地缘风险智能分析原型系统 v1.0 · 2026-06</footer>
+</body>
+</html>

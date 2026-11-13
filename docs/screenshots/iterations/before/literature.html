@@ -1,0 +1,29 @@
+﻿<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>鏂囩尞涓績 路 缂呯敻鍦扮紭椋庨櫓鏅鸿兘鍒嗘瀽绯荤粺</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}?v=shell-2">
+<link rel="stylesheet" href="{{ url_for('static',filename='css/product.css') }}?v=mist-2"><link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
+<body>{% include '_nav.html' %}<main class="container console-page">
+<header class="page-hero">
+    <div class="hero-text">
+        <p class="eyebrow">Literature</p>
+        <h1>鏂囩尞涓績</h1>
+        <p class="lede">娴忚鍥㈤槦鏁寸悊鐨勯褰曚笌鎽樿锛岃拷婧洓妯″潡涓庝節鎸囨爣鐨勭爺绌朵緷鎹€傚苟闈炴瘡绡囧潎宸插畬鎴愯川閲忓鏍革紝涔熶笉鏄叏鏂囨暟鎹簱銆?/p>
+    </div>
+</header>
+<p id="catalog-summary" class="catalog-summary" role="status">姝ｅ湪璇诲彇绱㈠紩鐘舵€佲€?/p>
+<form id="catalog-form" class="filter-bar catalog-form">
+    <div class="controls">
+        <label class="catalog-query">妫€绱㈤鍚嶃€佷綔鑰呮垨鎽樿<input id="catalog-q" maxlength="300" placeholder="渚嬪锛氱┖闂磋嚜鐩稿叧"></label>
+        <label>涓婚<select id="catalog-topic"><option value="">鍏ㄩ儴涓婚</option></select></label>
+        <label>妯″潡<select id="catalog-module"><option value="">鍏ㄩ儴妯″潡</option><option value="geo_potential">鍦扮紭浣嶅娍</option><option value="spatial">绌洪棿缁熻</option><option value="network">鍏崇郴缃戠粶</option><option value="diagnostic">璇婃柇褰掑洜</option></select></label>
+        <label>鎸囨爣<select id="catalog-indicator"><option value="">鍏ㄩ儴鎸囨爣</option></select></label>
+        <label>璧峰骞翠唤<input id="catalog-from" type="number" min="1800" max="2100"></label>
+        <label>缁撴潫骞翠唤<input id="catalog-to" type="number" min="1800" max="2100"></label>
+        <label><input id="catalog-core" type="checkbox">浠呮牳蹇冩爣璁?/label>
+        <button class="btn btn-primary">鎼滅储</button>
+    </div>
+</form>
+<div id="catalog-results" class="product-list" aria-live="polite"></div>
+<div class="controls pager"><button id="catalog-prev" class="btn" disabled>涓婁竴椤?/button><span id="catalog-page"></span><button id="catalog-next" class="btn" disabled>涓嬩竴椤?/button></div>
+</main><script src="{{ url_for('static',filename='js/common.js') }}?v=clarity-1"></script><script src="{{ url_for('static',filename='js/literature.js') }}?v=mist-5"></script></body></html>

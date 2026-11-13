@@ -1,13 +1,13 @@
-{# 顶部选择功能组，左侧选择子页面；根路由保留文本分析兼容。 #}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/shell.css') }}?v=clarity-1">
-<script src="{{ url_for('static', filename='js/navigation.js') }}?v=shell-2" defer></script>
+{# 顶部导航：品牌 + 一级菜单（左对齐），hover 展开子页面下拉面板。 #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/shell.css') }}?v=dropdown-1">
+<script src="{{ url_for('static', filename='js/navigation.js') }}?v=dropdown-1" defer></script>
 {% set groups = [
     ('态势总览', '/dashboard', [('/dashboard', '综合态势'), ('/dashboard/indicators', '风险与指标'), ('/dashboard/events', '事件与证据'), ('/dashboard/data', '数据状态')]),
-    ('时空分析', '/map', [('/map', '风险地图'), ('/trend', '趋势分析'), ('/graph', '关系图谱'), ('/spatial', '空间统计'), ('/multimodal', '多源对照')]),
+    ('时空分析', '/map', [(None, '地图与趋势'), ('/map', '风险地图'), ('/trend', '趋势分析'), ('/graph', '关系图谱'), (None, '统计与对照'), ('/spatial', '空间统计'), ('/multimodal', '多源对照'), ('/remote-sensing', '遥感影像')]),
     ('分析工作台', '/', [('/', '文本分析'), ('/analysis/risk', '风险解读'), ('/workspace', '个人工作区')]),
-    ('研究资料', '/literature', [('/literature', '文献中心'), ('/research/methodology', '指标与计算方法'), ('/research/history', '历史背景'), ('/guide', '使用说明')]),
+    ('研究资料', '/literature', [('/literature', '文献中心'), ('/research/methodology', '指标与计算方法'), ('/research/history', '历史背景')]),
+    ('帮助', '/guide', [('/guide', '使用说明')]),
 ] %}
-{# 本地图标为自绘SVG；装饰图形不替代导航文字和可访问名称。 #}
 {% set icons = {
     '/dashboard':'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
     '/dashboard/indicators':'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
@@ -18,6 +18,7 @@
     '/graph':'M12 5L5 17h14z M12 2a3 3 0 1 0 0 6a3 3 0 1 0 0-6 M5 14a3 3 0 1 0 0 6a3 3 0 1 0 0-6 M19 14a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
     '/spatial':'M12 2v20 M2 12h20 M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14',
     '/multimodal':'M3 4h7v16H3z M14 4h7v16h-7z M6 8h1 M17 8h1 M6 12h1 M17 12h1',
+    '/remote-sensing':'M12 3v18 M3 12h18 M5 5l14 14 M19 5L5 19',
     '/':'M4 3h16v14H9l-5 4z M8 7h8 M8 11h5',
     '/analysis/risk':'M12 3l9 4v5c0 5-9 10-9 10S3 17 3 12V7z M12 7v6 M12 16v1',
     '/workspace':'M3 6h7l2 3h9v11H3z M3 6V4h7l2 2',
@@ -26,9 +27,7 @@
     '/research/history':'M4 8a9 9 0 1 1-1 7 M4 3v5h5 M12 7v6l4 2',
     '/guide':'M3 4c3-1 6 0 9 2c3-2 6-3 9-2v15c-3-1-6 0-9 2c-3-2-6-3-9-2z M12 6v15'
 } %}
-{% set current = namespace(label=None, pages=[]) %}
-{% for label, href, pages in groups %}{% for path, _ in pages %}{% if request.path == path %}{% set current.label = label %}{% set current.pages = pages %}{% endif %}{% endfor %}{% endfor %}
-<nav class="navbar" aria-label="主要导航">
+<nav class="navbar" aria-label="主导航">
     <a class="nav-brand" href="/dashboard">
         <span class="brand-mark" aria-hidden="true"></span>
         <span>缅甸地缘风险智能分析系统</span>
@@ -36,26 +35,32 @@
     </a>
     <ul class="nav-links">
         {% for label, href, pages in groups %}
-        <li><a href="{{ href }}"{% if current.label == label %} class="active" aria-current="{{ 'page' if request.path == href else 'true' }}"{% endif %}>{{ label }}</a></li>
+        {% set ns = namespace(active=false) %}
+        {% for path, _ in pages %}{% if request.path == path %}{% set ns.active = true %}{% endif %}{% endfor %}
+        <li class="nav-item{% if ns.active %} active{% endif %}">
+            <a href="{{ href }}"{% if ns.active %} aria-current="page"{% endif %}>{{ label }}</a>
+            <div class="nav-dropdown" role="menu">
+                {% for path, page_label in pages %}
+                {% if path %}
+                <a href="{{ path }}" role="menuitem" aria-label="{{ page_label }}"{% if request.path == path %} aria-current="page" class="dropdown-active"{% endif %}>
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="{{ icons.get(path, icons['/dashboard']) }}"></path></svg></span>
+                    <span>{{ page_label }}</span>
+                </a>
+                {% else %}
+                <span class="dropdown-heading" aria-hidden="true">{{ page_label }}</span>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </li>
         {% endfor %}
     </ul>
-    <button type="button" class="nav-menu-toggle" aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false"><span class="menu-label-phone">菜单</span><span class="menu-label-tablet">本组菜单</span></button>
+    <button type="button" class="nav-menu-toggle" aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false">菜单</button>
 </nav>
-<aside class="section-sidebar" aria-label="{{ current.label }}二级导航">
-    <p class="sidebar-heading">{{ current.label }}</p>
-    <nav><ul>
-    {% for path, label in current.pages %}
-        <li><a href="{{ path }}" title="{{ label }}" aria-label="{{ label }}"{% if request.path == path %} class="active" aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="{{ icons.get(path, icons['/dashboard']) }}"></path></svg></span><span class="nav-label">{{ label }}</span></a></li>
-    {% endfor %}
-    </ul></nav>
-    <p class="sidebar-footnote">观测有出处<br>解释有边界</p>
-</aside>
-{% if request.path != '/dashboard' %}<p class="shell-breadcrumb">{{ current.label }} / {% for path, label in current.pages %}{% if request.path == path %}{{ label }}{% endif %}{% endfor %}</p>{% endif %}
 <dialog id="site-menu" class="site-menu" aria-labelledby="site-menu-title">
     <div class="menu-heading"><h2 id="site-menu-title">功能导航</h2><button type="button" class="menu-close" aria-label="关闭功能导航">关闭</button></div>
     {% for label, href, pages in groups %}
-    <details{% if current.label == label %} open{% endif %}><summary>{{ label }}</summary><nav aria-label="{{ label }}菜单"><ul>
-        {% for path, name in pages %}<li><a href="{{ path }}"{% if request.path == path %} aria-current="page"{% endif %}>{{ name }}</a></li>{% endfor %}
+    <details{% for path, _ in pages %}{% if request.path == path %} open{% endif %}{% endfor %}><summary><a href="{{ href }}">{{ label }}</a></summary><nav aria-label="{{ label }}菜单"><ul>
+        {% for path, page_label in pages %}{% if path %}<li><a href="{{ path }}"{% if request.path == path %} aria-current="page"{% endif %}>{{ page_label }}</a></li>{% endif %}{% endfor %}
     </ul></nav></details>
     {% endfor %}
 </dialog>

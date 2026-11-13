@@ -1,0 +1,13 @@
+{
+  "name": "ui-action-diet",
+  "displayName": "界面操作瘦身审计",
+  "version": "0.1.0",
+  "description": "Audit and reduce visible UI actions (buttons, links, selects) with progressive disclosure so users see one primary action per view.",
+  "descriptionZh": "盘点并精简界面可见操作（按钮/链接/下拉），用渐进披露让每屏只突出一个主操作，解决“按钮太多不知道点哪”的问题。",
+  "author": { "name": "Qoder" },
+  "logo": "./assets/avatar.svg",
+  "keywords": ["qoder-plugin", "skill", "ux", "progressive-disclosure", "ui-audit"],
+  "category": "developer-tools",
+  "tags": ["skill", "ux-audit"],
+  "skills": "./skills/"
+}

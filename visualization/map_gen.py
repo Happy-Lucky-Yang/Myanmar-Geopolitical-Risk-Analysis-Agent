@@ -10,6 +10,7 @@ visualization.map_gen - Folium 地图生成（浅色「晨雾」主题）
 渲染用 HTML 体积约为原始 GeoJSON 的 1/5，显著加快前端加载。
 """
 import copy
+import os
 import re
 from html import escape
 from utils.data_contract import finite_number
@@ -126,26 +127,54 @@ def _localize_cdn(html: str) -> str:
 
 
 # ============================================================
-# 底图容错：双通道瓦片 + Leaflet 韧性选项（修复缩放空白板块）
+# 底图容错：天地图 TK 优先 + Esri/OSM 双通道兜底 + Leaflet 韧性选项
 # ============================================================
-# 主底图：Esri Light Gray Canvas（无需密钥，境内直连可达）。
-# CARTO 公共瓦片现返回“API KEY REQUIRED”水印图（HTTP 200），
-# 无法触发降级，已停用。
-_TILE_PRIMARY_URL = (
+# 天地图 WMTS（tk 从环境变量 TDT_TK 读取，浏览器端 key，防护靠域名白名单）
+# 矢量底图 vec_w + 矢量注记 cva_w，EPSG:3857；子域名 t0~t7
+_TDT_SUBDOMAINS = "01234567"
+_TDT_ATTR = "\u00a9 \u5929\u5730\u56fe"
+
+# Esri Light Gray Canvas（无需密钥，境内直连可达，作为天地图不可用时的兜底）
+_ESRI_URL = (
     "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"
     "World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
 )
-_TILE_PRIMARY_ATTR = "Tiles \u00a9 Esri \u2014 Esri, HERE, Garmin, \u00a9 OpenStreetMap contributors"
+_ESRI_ATTR = "Tiles \u00a9 Esri \u2014 Esri, HERE, Garmin, \u00a9 OpenStreetMap contributors"
 # 兜底源：OpenStreetMap（不同供应商，海外/云端可达）
-_TILE_FALLBACK_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-_TILE_FALLBACK_ATTR = "\u00a9 OpenStreetMap contributors"
+_OSM_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+_OSM_ATTR = "\u00a9 OpenStreetMap contributors"
 # 双通道均失败时的本地浅色占位瓦
 _TILE_ERROR_URL = "/static/images/tile-fallback-light.png"
+# 透明 1x1 PNG（用于 errorTileUrl，不遮挡已加载底图）
+_TRANSPARENT_1PX = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBg"
+    "AAAABQABpfZFQAAAAABJRU5ErkJggg=="
+)
+
+
+def _tianditu_url(layer: str, tk: str) -> str:
+    """
+    拼接天地图 WMTS 瓦片地址。
+
+    {s}/{x}/{y}/{z} 留给 Leaflet 运行时替换（{s} 须配合 subdomains=_TDT_SUBDOMAINS），
+    注意 TILEROW={y}、TILECOL={x}，不能写反。
+
+    :param layer: 'vec' 矢量底图 或 'cva' 矢量注记
+    :param tk:    天地图浏览器端 tk
+    :return:      可直接传给 folium.TileLayer(tiles=...) 的 URL 模板
+    """
+    url_type = "vec_w" if layer == "vec" else "cva_w"
+    return (
+        f"https://t{{s}}.tianditu.gov.cn/{url_type}/wmts?SERVICE=WMTS&REQUEST=GetTile"
+        f"&VERSION=1.0.0&LAYER={layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles"
+        f"&TILEMATRIX={{z}}&TILEROW={{y}}&TILECOL={{x}}&tk={tk}"
+    )
 
 
 def _add_basemap(m: folium.Map) -> None:
     """
-    为地图添加容错底图：Esri 浅灰主通道 + OpenStreetMap 兜底通道。
+    为地图添加容错底图：天地图 TK 可用时优先使用天地图矢量底图+注记，
+    Esri 浅灰作兜底；TK 不可用时保持 Esri 主通道 + OSM 备用通道。
 
     三项 Leaflet 韧性选项修复"放大缩小出现大量空白板块"：
       - updateWhenZooming=False: 缩放动画期间不清空瓦片网格，
@@ -155,31 +184,61 @@ def _add_basemap(m: folium.Map) -> None:
       - keepBuffer=6: 屏幕外保留 6 圈瓦片缓存（默认 2），
         缩小后再放大立即回填，无需等待网络
 
-    降级链：Esri 主底图失败 → 此时才加载 OSM 兜底层 →
-    两者均失败 → errorTileUrl 本地浅色占位图（全程无刺眼空白）。
+    降级链（有 TK）：天地图主底图失败 → Esri 兜底层 →
+    两者均失败 → 透明占位瓦 + 本地边界照常显示。
+    降级链（无 TK）：Esri 主底图失败 → OSM 兜底层 →
+    两者均失败 → 同上。
 
-    兜底层默认不挂到地图上：境内访问 tile.openstreetmap.org 普遍超时，
-    无条件预加载会在控制台刷出十几条 ERR_CONNECTION_TIMED_OUT（实测 18 条）。
+    兜底层默认不挂到地图上：境内访问对应瓦片服务器可能超时，
+    无条件预加载会在控制台刷出 ERR_CONNECTION_TIMED_OUT。
     """
+    tdt_tk = os.environ.get("TDT_TK", "").strip()
+
     # 基础缩放控件保持可触达尺寸，地图数据图形不改变原有映射。
     m.get_root().header.add_child(folium.Element(
         '<style>.leaflet-control-zoom a{width:44px!important;height:44px!important;line-height:44px!important}'
         '.leaflet-container a.leaflet-popup-close-button{width:44px;height:44px;line-height:44px}</style>'))
-    # 兜底通道（垫底，不进图层控制面板）
-    fallback = folium.TileLayer(
-        tiles=_TILE_FALLBACK_URL, attr=_TILE_FALLBACK_ATTR,
-        max_zoom=20, max_native_zoom=19, control=False, show=False,
-        updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
-        errorTileUrl=_TILE_ERROR_URL,
-    ).add_to(m)
-    # 主浅色底图（不透明瓦片，正常加载时完全覆盖兜底层）
-    primary = folium.TileLayer(
-        tiles=_TILE_PRIMARY_URL, attr=_TILE_PRIMARY_ATTR,
-        max_zoom=20, max_native_zoom=16, control=False,
-        keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
-        # 不使用 Leaflet 的 emptyImageUrl：内部将它视为取消加载，不能完成瓦片状态。
-        errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==",
-    ).add_to(m)
+
+    if tdt_tk:
+        # ── 天地图主底图：矢量底图 vec_w + 矢量注记 cva_w ──
+        # 注记层在底图之上，control=False 不显示在图层面板
+        # zIndex=3：主底图失败挂上 Esri 兜底层时，注记仍压在最上方
+        folium.TileLayer(
+            tiles=_tianditu_url("cva", tdt_tk), attr=_TDT_ATTR, subdomains=_TDT_SUBDOMAINS,
+            max_zoom=18, control=False, name="天地图注记", zIndex=3,
+            keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
+            errorTileUrl=_TRANSPARENT_1PX,
+        ).add_to(m)
+        primary = folium.TileLayer(
+            tiles=_tianditu_url("vec", tdt_tk), attr=_TDT_ATTR, subdomains=_TDT_SUBDOMAINS,
+            max_zoom=18, control=False, name="天地图矢量底图", zIndex=2,
+            keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
+            errorTileUrl=_TRANSPARENT_1PX,
+        ).add_to(m)
+        # Esri 兜底通道（垫底，不进图层控制面板）
+        fallback = folium.TileLayer(
+            tiles=_ESRI_URL, attr=_ESRI_ATTR,
+            max_zoom=20, max_native_zoom=16, control=False, show=False,
+            updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
+            errorTileUrl=_TILE_ERROR_URL,
+        ).add_to(m)
+    else:
+        # ── 无 TK：保持原 Esri 主通道 + OSM 备用通道 ──
+        # 兜底通道（垫底，不进图层控制面板）
+        fallback = folium.TileLayer(
+            tiles=_OSM_URL, attr=_OSM_ATTR,
+            max_zoom=20, max_native_zoom=19, control=False, show=False,
+            updateWhenIdle=True, updateWhenZooming=False, keepBuffer=4,
+            errorTileUrl=_TILE_ERROR_URL,
+        ).add_to(m)
+        # 主浅色底图（不透明瓦片，正常加载时完全覆盖兜底层）
+        primary = folium.TileLayer(
+            tiles=_ESRI_URL, attr=_ESRI_ATTR,
+            max_zoom=20, max_native_zoom=16, control=False,
+            keepBuffer=6, updateWhenZooming=False, updateWhenIdle=True,
+            errorTileUrl=_TRANSPARENT_1PX,
+        ).add_to(m)
+
     from branca.element import MacroElement, Template
     status = MacroElement()
     status._template = Template("""
@@ -196,7 +255,7 @@ def _add_basemap(m: folium.Map) -> None:
             };
             control.addTo(map);
             var fallbackLayer = {{this.fallback}};
-            // 兜底层默认不加载，避免境内 OSM 超时在控制台刷错误
+            // 兜底层默认不加载，避免境内超时在控制台刷错误
             map.removeLayer(fallbackLayer);
             var fallbackOn = false;
             function enableFallback() {
@@ -206,9 +265,9 @@ def _add_basemap(m: folium.Map) -> None:
                 bind(fallbackLayer, 'fallback');
             }
             var failed = {primary: false, fallback: false};
-            // 只在主底图失败时提示；兜底源在境内常不可达，单独失败不影响显示。
+            // 只在主底图失败时提示；兜底源单独失败不影响显示。
             function render() {
-                box.textContent = !failed.primary ? '底图已加载'
+                box.textContent = !failed.primary ? '底图已加载{{this.source_label}}'
                     : failed.fallback ? '底图不可用：仍显示本地边界和分析图层'
                     : '主底图部分失败，正在显示备用底图';
             }
@@ -229,6 +288,7 @@ def _add_basemap(m: folium.Map) -> None:
     """)
     status.primary = primary.get_name()
     status.fallback = fallback.get_name()
+    status.source_label = "（天地图）" if tdt_tk else ""
     m.add_child(status)
 
 

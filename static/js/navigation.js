@@ -34,25 +34,4 @@
         const rect = dialog.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
     });
-    const compactSidebar = matchMedia('(min-width:1024px) and (max-width:1279px)');
-    const hint = document.createElement('div');
-    hint.id = 'nav-label-hint'; hint.className = 'nav-label-hint';
-    hint.setAttribute('role', 'tooltip'); hint.hidden = true; document.body.append(hint);
-    function hideHint() { hint.hidden = true; }
-    document.querySelectorAll('.section-sidebar a').forEach(link => {
-        link.removeAttribute('title');
-        const show = () => {
-            if (!compactSidebar.matches) return;
-            const box = link.getBoundingClientRect();
-            hint.textContent = link.getAttribute('aria-label');
-            hint.style.left = '80px'; hint.style.top = box.top + 'px'; hint.hidden = false;
-        };
-        link.addEventListener('focus', show); link.addEventListener('mouseenter', show);
-        link.addEventListener('blur', hideHint); link.addEventListener('mouseleave', hideHint);
-    });
-    window.addEventListener('resize', () => {
-        hideHint();
-        if (compactSidebar.matches && document.activeElement.matches('.section-sidebar a')) document.activeElement.dispatchEvent(new Event('focus'));
-    });
-    // 菜单文字由CSS断点直接切换，避免resize事件延迟造成旧标签闪现。
 })();

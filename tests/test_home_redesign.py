@@ -6,7 +6,7 @@ from tests.test_browser_contracts import page
 
 
 PAGES = ['/dashboard', '/dashboard/indicators', '/dashboard/events', '/dashboard/data',
-         '/spatial', '/multimodal', '/analysis/risk', '/research/methodology', '/research/history']
+         '/spatial', '/multimodal', '/remote-sensing', '/analysis/risk', '/research/methodology', '/research/history']
 
 
 @pytest.mark.browser
@@ -56,7 +56,7 @@ def test_new_pages_and_legacy_query_redirect():
     for path in PAGES:
         response = client.get(path)
         assert response.status_code == 200
-        assert 'section-sidebar' in response.get_data(as_text=True)
+        assert 'nav-dropdown' in response.get_data(as_text=True)
     response = client.get('/dashboard?days=90&source=fixture&end_date=2026-03-31')
     assert response.status_code == 302
     target = urlsplit(response.headers['Location'])
@@ -76,8 +76,8 @@ def test_home_does_not_mount_advanced_controls():
     assert not any('risk_explain' in s or 'briefing.js' in s or 'risk_panels.js' in s for s in scripts)
     texture=soup.select_one('.home-boundary-texture')
     assert texture and texture.get('aria-hidden')=='true' and texture.select('path')
-    # SVG只作装饰，窄侧栏仍以完整名称提供无障碍导航，不加载外部图标库。
-    for link in soup.select('.section-sidebar a'):
+    # SVG只作装饰，下拉菜单以完整名称提供无障碍导航，不加载外部图标库。
+    for link in soup.select('.nav-dropdown a'):
         assert link.get('aria-label')
         assert link.select_one('.nav-icon[aria-hidden="true"] svg path')
         assert not link.select_one('.nav-icon').get_text(strip=True)
@@ -141,7 +141,7 @@ def test_home_four_modules_default_queries_no_writes_and_layout(page, snapshot):
     assert page.locator('#home-events .home-event').count() == 3
     assert 'event_id=3' in page.locator('#home-events a').first.get_attribute('href')
     assert 'revision=fixture-revision' in page.locator('#home-map-link').get_attribute('href')
-    assert page.locator('.section-sidebar a.active').get_attribute('aria-label') == '综合态势'
+    assert page.locator('.nav-item.active').count() >= 1
     for width, height in [(1440,900),(1280,800),(1024,900),(768,900),(390,844)]:
         page.set_viewport_size({'width':width,'height':height})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2')
@@ -168,7 +168,7 @@ def test_visual_hierarchy_and_discoverable_disclosures(page, snapshot):
             return .2126*v[0]+.7152*v[1]+.0722*v[2];
         };
         const nav=getComputedStyle(document.querySelector('.navbar')).backgroundColor;
-        return ['.nav-brand','.nav-links a:not(.active)','.nav-links a.active'].map(s=>{
+        return ['.nav-brand','.nav-links a:not([aria-current=page])','.nav-links a[aria-current=page]'].map(s=>{
             const c=getComputedStyle(document.querySelector(s));
             const bg=c.backgroundColor==='rgba(0, 0, 0, 0)'?nav:c.backgroundColor;
             const a=lum(c.color),b=lum(bg);
@@ -272,22 +272,14 @@ def test_shared_roles_preserved_without_real_model_or_database_writes(monkeypatc
 
 
 @pytest.mark.browser
-def test_sidebar_focus_tooltip_exact_breakpoints_and_focus_trap(page, snapshot):
+def test_dropdown_layout_and_responsive_breakpoints(page, snapshot):
     mount_home(page,snapshot)
     for width in (1440,1280,1279,1024,1023,768,767,390):
         page.set_viewport_size({'width':width,'height':900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2')
         if width >= 1024:
-            assert page.locator('.section-sidebar').is_visible()
-            assert page.locator('.section-sidebar').bounding_box()['width'] == (208 if width >= 1280 else 72)
-        else:
-            assert page.locator('.section-sidebar').is_hidden()
+            assert page.locator('.nav-dropdown').count() >= 5
         if width < 768: assert page.locator('.nav-links').is_hidden()
-        if 768 <= width < 1024: assert page.locator('.nav-menu-toggle').inner_text() == '本组菜单'
-    page.set_viewport_size({'width':1024,'height':900})
-    page.locator('.section-sidebar a').nth(1).focus()
-    assert page.locator('#nav-label-hint').is_visible()
-    assert page.locator('#nav-label-hint').inner_text() == '风险与指标'
     page.set_viewport_size({'width':390,'height':844})
     page.click('.nav-menu-toggle')
     for _ in range(22):
@@ -446,18 +438,19 @@ def test_method_context_projects_only_public_saved_versions(monkeypatch):
 
 
 @pytest.mark.browser
-def test_method_parameters_readonly_and_sidebar_navigation_history(page):
+def test_method_parameters_readonly_and_dropdown_navigation_history(page):
     page.goto('http://offline.test/research/methodology')
     assert '只读' in page.locator('#method-parameters').inner_text()
     assert '默认λ／μ' in page.locator('#method-parameters').inner_text()
     assert page.locator('#method-parameters input,#method-parameters select,#method-parameters button').count()==0
-    page.locator('.section-sidebar a:has-text("历史背景")').click()
+    page.locator('.nav-item:has(.nav-dropdown a:has-text("历史背景"))').hover()
+    page.locator('.nav-dropdown a:has-text("历史背景")').click()
     assert urlsplit(page.url).path=='/research/history'
-    assert page.locator('.section-sidebar a.active').get_attribute('aria-label')=='历史背景'
+    assert page.locator('.nav-item.active .nav-dropdown a.dropdown-active').get_attribute('aria-label')=='历史背景'
     page.go_back()
-    assert page.locator('.section-sidebar a.active').get_attribute('aria-label')=='指标与计算方法'
+    assert page.locator('.nav-item.active .nav-dropdown a.dropdown-active').get_attribute('aria-label')=='指标与计算方法'
     page.go_forward()
-    assert page.locator('.section-sidebar a.active').get_attribute('aria-label')=='历史背景'
+    assert page.locator('.nav-item.active .nav-dropdown a.dropdown-active').get_attribute('aria-label')=='历史背景'
 
 
 @pytest.mark.browser

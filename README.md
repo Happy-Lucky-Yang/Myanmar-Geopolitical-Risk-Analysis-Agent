@@ -69,73 +69,125 @@
 Myanmar-Geopolitical-Risk-Analysis-Agent/
 ├── config.yaml                   # 配置（权重/数据源/夜光/经济/调度）
 ├── requirements.txt              # Python 依赖
-├── app.py                        # Flask 页面、业务 API 与健康检查
-├── storage/                      # PostgreSQL repository、Schema、任务队列
-├── migrations/                   # Alembic 业务表与事务修订号迁移
-├── worker.py                     # 独立数据库任务消费者（显式调度）
-├── compose.yaml                  # PostGIS / Gunicorn Web / worker（未部署验收）
+├── app.py                        # Flask 主应用：页面路由、核心 API 与健康检查
+├── pipeline.py                   # 分析流水线（采集→清洗→评分→持久化）
+├── product_api.py                # 产品 Blueprint（文献中心 / 使用说明 / 视图选项）
+├── workspace_api.py              # 工作区 Blueprint（会话 / 追问 / 简报 / 偏好）
+├── risk_api.py                   # 多源面板 Blueprint（risk-v4 月/年度独立面板）
+├── run_crawler_only.py           # 独立爬虫脚本（argparse + 多模式）
+├── run_full_pipeline.py          # 全流程集成脚本
+├── storage/                      # 数据持久化层
+│   ├── repository.py             # 统一仓储接口（file/postgres 双后端）
+│   ├── schema.py                 # 运行时 Schema（Alembic 同步）
+│   ├── schema_v1.py              # 冻结的首版业务表结构（19 张表）
+│   ├── risk_schema.py            # risk-v4 多源面板 Schema
+│   ├── risk_store.py             # 多源面板读写（文件/Postgres）
+│   ├── jobs.py                   # 任务队列（行锁领取 + 心跳 + 租约）
+│   ├── workspace.py              # 工作区会话与历史存储
+│   └── workspace_schema.py       # 工作区表结构定义
+├── migrations/                   # Alembic 业务表迁移
+│   └── versions/                 # 0001~0005（postgis/revision/versions/workspace/risk_panels）
 ├── analyzer/                     # 核心分析模块
 │   ├── data_loader.py            # 数据读取与清洗
-│   ├── ner.py                    # 命名实体识别（LAC）
+│   ├── ner.py                    # 命名实体识别（LAC / gazetteer 词典 / jieba 兆底）
 │   ├── sentiment.py              # 双语情感分析（SnowNLP + VADER + GDELT tone）
-│   ├── llm_client.py             # 大模型 API 封装
+│   ├── llm_client.py             # 大模型 API 封装（多提供商 / 重试 / 降级）
 │   ├── prompts.py                # 提示词模板库
-│   ├── risk_scorer.py            # 加权打分模型（risk-v3 九指标，0-100，动态权重归一化）
-│   ├── geo_indicators.py         # 🆕 GDELT 派生九指标层（Goldstein 净值/CAMEO 分类/国家码归一）
+│   ├── risk_scorer.py            # 加权打分模型（risk-v2 五维正式 + risk-v3 九指标实验）
+│   ├── geo_indicators.py         # GDELT 派生九指标层（Goldstein/CAMEO/国家码归一）
+│   ├── risk_panels.py            # risk-v4 多源月/年度面板计算
+│   ├── risk_explainer.py         # AI 风险成因解读（引用校验 + 因果词拦截）
+│   ├── risk_assistant.py         # 自动研判任务逻辑
+│   ├── assistant_tasks.py        # 助手任务队列管理
+│   ├── event_links.py            # 事件候选匹配与审核
+│   ├── literature_catalog.py     # 文献分页/检索/公开字段白名单
 │   ├── trend.py                  # 趋势（移动平均/回归/异常/预测）
 │   ├── knowledge_graph.py        # Neo4j 知识图谱操作
-│   ├── knowledge_base.py         # 🆕 文献知识库（xlsx 题录解析/索引/主题→模块映射/检索）
-│   ├── network_analyzer.py       # NetworkX 关系网络（文章实体共现 + 🆕 8节点行为体网络）
-│   ├── geo_potential.py          # 地缘位势评估（potential-v3：权重3:2:1 + 1/d² + 距离敏感性）
-│   ├── spatial_analysis.py       # 🆕 空间自相关（Moran's I / LISA / Getis-Ord Gi*，三套权重矩阵）
-│   ├── diagnostic.py             # 诊断性归因（🆕 Shapley 精确分解 + 三恒等式断言）
+│   ├── knowledge_base.py         # 文献知识库（xlsx 题录解析/索引/主题→模块映射/检索）
+│   ├── network_analyzer.py       # NetworkX 关系网络（文章实体共现 + 8节点行为体网络）
+│   ├── geo_potential.py          # 地缘位势评估（potential-v3：权重3:2:1 + 1/d²）
+│   ├── spatial_analysis.py       # 空间自相关（Moran's I / LISA / Gi*，三套权重矩阵）
+│   ├── diagnostic.py             # 诊断性归因（Shapley 精确分解 + 三恒等式断言）
 │   ├── evaluation.py             # NLP 验收评测（实体 micro-F1 / 情感一致率）
 │   ├── chain_reasoner.py         # 链式推理（4 步：识别→影响→趋势→建议）
 │   ├── multimodal_aligner.py     # 多模态时空对齐（夜光×冲突×情感）
 │   ├── alert_monitor.py          # 动态预警（红/橙/黄/绿四级）
-│   ├── event_density.py          # 🆕 事件核密度估计 KDE（加权密度面 + 国界掩膜）
+│   ├── event_density.py          # 事件核密度估计 KDE（加权密度面 + 国界掩膜）
 │   └── report_generator.py       # 自动化报告（Jinja2 HTML + python-docx）
 ├── data/                         # 数据采集与存储
-│   ├── crawler.py                # 缅华网爬虫（中文）
-│   ├── myanmar_now_crawler.py    # 英文新闻爬虫
-│   ├── rss_crawler.py            # RSS 新闻源爬虫
+│   ├── crawler.py                # 缅华网爬虫（中文主源）
+│   ├── myanmar_now_crawler.py    # Irrawaddy 英文新闻爬虫
+│   ├── rss_crawler.py            # RSS/Atom 新闻源爬虫（Google News/Kachin News 等）
+│   ├── un_news_crawler.py        # UN News 中文适配器
 │   ├── gdelt_client.py           # GDELT DOC 2.0 客户端（限速器/重试/备用通道）
-│   ├── gdelt_files.py            # 🆕 GDELT 原始 CSV 通道（退避重试、连续成功水位线）
-│   ├── event_store.py            # 🆕 GDELT 事件累积库（去重追加/真实日历查询/事务水位，历史不自动删除）
+│   ├── gdelt_files.py            # GDELT CSV 直连通道（退避重试、连续成功水位线）
 │   ├── gdelt_crawler.py          # GDELT 适配器
+│   ├── event_store.py            # GDELT 事件累积库（去重追加/事务水位）
 │   ├── nightlight_crawler.py     # 夜间灯光遥感（WB 代理指标）
 │   ├── economic_crawler.py       # 宏观经济统计（WB API）
 │   ├── historical_events.py      # 历史事件数据集（2020-2025，482 条）
 │   ├── kg_seeder.py              # 知识图谱种子填充（34 节点 + 35 关系）
 │   ├── source_health.py          # 数据源健康追踪（成功率/降级监控，持久化）
-│   ├── admin_boundaries.py       # 🆕 行政边界加载（GADM 4.1，中英映射/质心/多边形）
+│   ├── risk_sources.py           # 多源数据批次管理（ACLED/VIIRS/IDMC/OFAC）
+│   ├── admin_boundaries.py       # 行政边界加载（GADM 4.1，中英映射/质心/多边形）
 │   ├── scheduler.py              # 单机兼容调度器（默认禁用；共享模式用 worker）
-│   ├── static/gadm/              # 🆕 GADM 4.1 缅甸四级行政边界（学术许可，论文需注源）
 │   └── raw/                      # 原始数据 + 缓存
 ├── visualization/
 │   ├── map_gen.py                # Folium 地图生成（省界分级填色/事件密度，暗色主题）
 │   └── chart_gen.py              # ECharts 图表数据（预测/阈值线/事件标注）
-├── templates/                    # Flask 模板（4 个页面）
-│   ├── chat.html                 # 对话分析（含诊断归因 + 链式推理）
-│   ├── dashboard.html            # 🆕 综合态势仪表盘（含数据源健康卡片）
+├── templates/                    # Flask 模板（12 个模板文件）
+│   ├── _nav.html                 # 公共导航栏（16 个页面入口）
+│   ├── _view_filters.html        # 公共筛选组件
+│   ├── chat.html                 # 对话分析
+│   ├── dashboard.html            # 综合态势仪表盘
+│   ├── graph.html                # 关系网络图谱
+│   ├── guide.html                # 使用说明
+│   ├── literature.html           # 文献中心
+│   ├── login.html                # 登录页
 │   ├── map.html                  # 风险地图
-│   └── trend.html                # 趋势预测（含预警指示灯）
+│   ├── research.html             # 研究子页（8 个路由共用此模板）
+│   ├── trend.html                # 趋势预测
+│   └── workspace.html            # 个人工作区
 ├── static/
 │   ├── css/style.css             # 暗色监控主题
-│   └── js/                       # common.js / chat.js / trend.js / dashboard.js
-├── utils/config.py               # 配置加载
-├── tests/                        # 单元测试
+│   └── js/                       # 12 个前端脚本
+│       ├── common.js             # 公共工具与筛选逻辑
+│       ├── home.js               # 首页仪表盘逻辑
+│       ├── dashboard.js          # 综合态势仪表盘交互
+│       ├── chat.js               # 对话分析页逻辑
+│       ├── trend.js              # 趋势预测页逻辑
+│       ├── graph.js              # 关系网络图谱逻辑
+│       ├── map.js                # 风险地图逻辑
+│       ├── literature.js         # 文献中心逻辑
+│       ├── workspace.js          # 个人工作区逻辑
+│       ├── navigation.js         # 导航栏交互
+│       ├── risk_explain.js       # AI 风险解读交互
+│       ├── risk_panels.js        # 多源面板交互
+│       └── briefing.js           # 自动简报逻辑
+├── utils/                        # 工具模块
+│   ├── config.py                 # 配置加载（含环境变量覆盖）
+│   ├── security.py               # 会话/CSRF/登录/任务权限
+│   ├── data_contract.py          # 数据契约（来源证据/指纹/质量标记）
+│   ├── date_repair.py            # 日期修复与标准化
+│   ├── net.py                    # HTTP 网络工具
+│   ├── product_features.py       # 功能开关管理
+│   ├── research_context.py       # 研究页面上下文
+│   ├── risk_contract.py          # 风险面板契约
+│   └── source_meta.py            # 来源元数据
+├── tests/                        # 单元测试（42 个测试文件）
+├── scripts/                      # 运维与工具脚本（20 个）
 ├── docs/                         # 文档
 │   ├── api_examples.md           # API 请求/响应示例
-│   ├── upgrade_plan.md           # 系统升级计划（遥感/KDE 等；双边/五维已被 v3 取代）
-│   ├── upgrade_v3.md             # 🆕 risk-v3 九指标 + 四模块 + 知识库升级方案说明
+│   ├── upgrade_plan.md           # 系统升级计划（遥感/KDE 等）
+│   ├── upgrade_v3.md             # risk-v3 九指标 + 四模块 + 知识库升级方案说明
 │   ├── database_design.md        # 数据库设计说明书
 │   ├── algorithm_details.md      # 算法实现细节（含数学公式）
-│   ├── acceptance.md             # 验收与交付状态（回归范围 + 未验收项）
-│   ├── project_strengths.md      # 🆕 项目独特优势与中期答辩说明（差异化叙述 + 演示脚本 + Q&A）
+│   ├── acceptance.md             # 验收与交付状态
+│   ├── project_strengths.md      # 项目独特优势与中期答辩说明
+│   ├── annotation_guide.md       # 数据标注指南
+│   ├── source_landscape.md       # 信源格局与立场对照
 │   └── research_report_outline.md# 综合研究报告框架
-├── run_crawler_only.py           # 独立爬虫脚本
-└── run_full_pipeline.py          # 全流程集成脚本
+└── .env / .env.example           # 环境变量模板（密钥不入库）
 ```
 
 ## 环境配置
@@ -243,14 +295,36 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 
 ## 页面说明
 
-| 页面 | 路由 | 说明 |
+### 主页面
+
+| 页面 | 路由 | 模板 | 说明 |
+|------|------|------|------|
+| 对话分析 | `/` | chat.html | 手工文本独立分析、证据与不确定性；不更新正式日风险或共享图谱，可选链式推理 |
+| 综合态势 | `/dashboard` | dashboard.html | 推荐正式观测入口：当前风险/变化、覆盖、贡献与最近事件；研究详情按需展开 |
+| 风险地图 | `/map` | map.html | 单地图多图层叠加：自定义图层面板控制分级填色/圆点光晕（互斥）+ 事件密度 KDE + 省界/国界自由组合 |
+| 趋势预测 | `/trend` | trend.html | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
+| 关系图谱 | `/graph` | graph.html | ECharts 力导向图：文章实体共现、种子图谱与国家行为体网络 |
+| 文献中心 | `/literature` | literature.html | 分页搜索题名/作者/摘要，按主题、模块、指标、年份和核心标记筛选（需 `ENABLE_LITERATURE`） |
+| 使用说明 | `/guide` | guide.html | 解释 MMR、来源、数据域、各模块作用、算法边界和架构 |
+| 个人工作区 | `/workspace` | workspace.html | 个人会话历史、连续追问、满意度与偏好（需 `ENABLE_WORKSPACE`） |
+| 登录 | `/login` | login.html | 共享模式登录入口 |
+
+### 研究子页面（二级导航，由 dashboard 或导航栏进入）
+
+| 路由 | 模板 | 说明 |
 |------|------|------|
-| 对话分析 | `/` | 手工文本独立分析、证据与不确定性；不更新正式日风险或共享图谱，可选链式推理 |
-| 综合态势 | `/dashboard` | 推荐正式观测入口：当前风险/变化、覆盖、贡献与最近事件；研究详情按需展开 |
-| 风险地图 | `/map` | 🆕 单地图多图层叠加：自定义图层面板控制分级填色/圆点光晕（互斥）+ 事件密度 KDE + 省界/国界自由组合，支持透明度调节与风险×事件叠加对比 |
-| 趋势预测 | `/trend` | ECharts 时序图（实线历史 + 虚线预测 + 预警阈值线 + 事件标注）+ 报告导出 |
+| `/dashboard/indicators` | research.html | 风险与指标：日风险、贡献和多源面板分轨展示 |
+| `/dashboard/events` | research.html | 事件与证据：窗口内报道事件与原始出处 |
+| `/dashboard/data` | research.html | 数据状态：采集运行、来源立场与覆盖 |
+| `/spatial` | research.html | 空间统计：地缘位势、空间自相关与局部检验 |
+| `/multimodal` | research.html | 多源对照：完整月份对齐与年度原值 |
+| `/analysis/risk` | research.html | 风险解读：基于已保存观测解释分数构成（AI 研判入口） |
+| `/research/methodology` | research.html | 指标与计算方法：从原始资料到指标结果的全链路说明 |
+| `/research/history` | research.html | 历史背景：独立参考资料，不代表当前风险 |
 
 ## API 接口一览
+
+### 核心业务接口（app.py）
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -258,31 +332,89 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 | POST | `/api/chain` | 链式推理（`chain_depth` 1-4） |
 | GET | `/api/gdelt` | GDELT 事件数据（`?days=7`），附 `metrics.geo_risk`（risk-v3 九指标评分） |
 | GET/POST | `/api/scheduler` | 调度器状态 / 手动触发（crawl/gdelt/analysis/nightlight/economic） |
-| GET | `/api/sources/health` | 🆕 数据源健康状态（成功率/降级监控） |
+| GET | `/api/sources/health` | 数据源健康状态（成功率/降级监控） |
 | GET | `/api/map` | 省级风险地图 HTML（`?mode=choropleth\|hybrid`） |
-| GET | `/api/map/unified` | 🆕 统一地图 HTML（五图层叠加，供前端图层面板控制） |
-| GET | `/api/map/events` | 🆕 事件密度 KDE 地图 HTML（`?days=7`，累积库支持 7~90 天窗口） |
+| GET | `/api/map/unified` | 统一地图 HTML（五图层叠加，供前端图层面板控制） |
+| GET | `/api/map/events` | 事件密度 KDE 地图 HTML（`?days=7`，累积库支持 7~90 天窗口） |
 | GET | `/api/trend` | 趋势数据（历史/预测/阈值线/事件标注） |
 | GET | `/api/geo_potential` | 地缘位势评估（potential-v3：权重3:2:1 + 1/d² + 距离敏感性） |
-| GET | `/api/diagnostic` | 指标贡献 + Shapley 精确分解 + 等长前后期比较（非因果归因） |
-| GET | `/api/network` | 关系网络分析（文章实体共现中心性/社区 + 8节点行为体网络） |
+| GET | `/api/diagnostic` | 指标贡献 + Shapley 精确分解 + 等长前后期比较 |
+| GET | `/api/network` | 关系网络分析（文章实体共现中心性/社区） |
+| GET | `/api/network/actors` | 8 节点国家行为体关系网络（合作/冲突分层） |
 | GET | `/api/multimodal` | 多模态时空对齐（夜光×冲突×情感 + 相关性） |
 | GET | `/api/history` | 历史事件（`?event_type&severity_min&year`） |
 | GET | `/api/alert` | 预警状态 + 历史 + 阈值线 |
 | POST | `/api/alert/acknowledge` | 确认预警 |
-| GET | `/api/kg/query` | 知识图谱查询（`?entity`） |
-| POST | `/api/kg/seed` | 知识图谱种子填充 |
+| GET | `/api/regions` | 省级真实事件聚合与空间统计 |
+| POST | `/api/risk/explain` | AI 风险成因解读（引用校验 + 因果词拦截 + 规则降级） |
 | GET | `/api/report` | 自动化报告（`?format=html\|docx&days=30`） |
-| GET | `/health` | 健康检查 |
+
+### 会话与安全接口（utils/security.py）
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
 | GET | `/api/session` | 会话角色与 CSRF token |
+| POST | `/api/login` | 登录（共享模式） |
+| POST | `/api/logout` | 登出 |
 | GET | `/api/jobs/<job_id>` | 本人任务状态与结果 |
 | GET | `/api/analyses/<run_id>` | 本人或主动共享的分析 |
 | POST | `/api/analyses/<run_id>/share` | 本人分析的显式共享/撤回 |
-| GET | `/api/regions` | 省级真实事件聚合与空间统计 |
-| GET | `/api/knowledge_base/status` | 🆕 文献知识库状态（源表/索引/篇数/facet 概览） |
-| GET | `/api/knowledge_base/search` | 🆕 文献检索（q + 主题/类别/模块/指标/相关性/年份 facet 过滤） |
-| GET | `/api/knowledge_base/relevant` | 🆕 按模块/指标/主题召回支撑文献 |
-| GET | `/api/knowledge_base/record/<id>` | 🆕 单篇文献题录详情（含摘要与判断理由） |
+
+### 知识图谱接口（app.py）
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/kg/query` | 知识图谱查询（`?entity`） |
+| POST | `/api/kg/seed` | 知识图谱种子填充 |
+
+### 文献知识库接口（app.py）
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge_base/status` | 文献知识库状态（源表/索引/篇数/facet 概览） |
+| GET | `/api/knowledge_base/search` | 文献检索（q + 主题/类别/模块/指标/相关性/年份 facet 过滤） |
+| GET | `/api/knowledge_base/relevant` | 按模块/指标/主题召回支撑文献 |
+| GET | `/api/knowledge_base/record/<id>` | 单篇文献题录详情（含摘要与判断理由） |
+
+### 产品功能接口（product_api.py）
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/product/status` | 功能开关状态（各 ENABLE_* 标志） |
+| GET | `/api/view-options` | 视图选项（区域/来源/筛选列表） |
+| GET | `/api/literature` | 文献中心分页检索（需 `ENABLE_LITERATURE`） |
+| GET | `/api/literature/<record_id>` | 单篇文献公开字段详情 |
+
+### 工作区接口（workspace_api.py）
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/workspace/conversations` | 本人会话列表 |
+| POST | `/api/workspace/conversations` | 新建会话 |
+| GET | `/api/workspace/conversations/<id>` | 会话详情（含历史消息） |
+| GET | `/api/workspace/conversations/<id>/export` | 会话导出（no-store） |
+| POST | `/api/workspace/conversations/<id>/messages` | 发送追问消息 |
+| POST | `/api/workspace/briefings` | 请求自动简报 |
+| GET | `/api/workspace/briefings/latest` | 获取最近一条简报 |
+| GET | `/api/workspace/requests/<id>` | 查询任务状态 |
+| GET | `/api/workspace/preferences` | 用户偏好 |
+| POST | `/api/workspace/usage` | 记录使用反馈 |
+| POST | `/api/workspace/suggestion` | 提交功能建议 |
+
+### 多源风险面板接口（risk_api.py）
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/risk_panels` | 查询已保存面板（需 `ENABLE_RISK_PANELS`） |
+| GET | `/api/risk_sources/status` | 各来源数据加载状态 |
+| POST | `/api/risk_panels/build` | 发起面板构建任务（admin，共享模式） |
+
+### 系统接口
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/health` | 健康检查 |
+| GET | `/api/models` | 可用 LLM 模型列表 |
 
 详细请求/响应示例见 [docs/api_examples.md](docs/api_examples.md)。
 
@@ -306,7 +438,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 ## 当前进度
 
 ### 已有实现（不等于验收通过）
-- **7 类数据源**：缅华网 + GDELT（CSV 直连主通道 + DOC API 备用） + Google News 双语聚合（代理） + Irrawaddy/Frontier（受限时自动降级） + 夜光(WB) + 经济(WB)，均接入数据源健康监控；**信源立场标注**（境内/独立/民族/聚合/国际）随新闻入库与健康卡片展示，仅展示不参与评分
+- **8 类数据源**：缅华网 + GDELT（CSV 直连主通道 + DOC API 备用） + Google News 双语聚合（代理） + Irrawaddy/Kachin News（受限时自动降级） + UN News 中文适配器 + 夜光(WB) + 经济(WB)，均接入数据源健康监控；**信源立场标注**（境内/独立/民族/聚合/国际）随新闻入库与健康卡片展示，仅展示不参与评分
 - **AI 风险成因解读**（`/api/risk/explain`，仪表盘入口）：只读正式日指标，解释分数构成并给条件化建议；默认 GLM-4-Flash（免费），可切 DeepSeek；断言数字校验 + 因果词拦截，模型不可用时降级为规则解读
 - 双语 NER（LAC + spaCy）+ 双语情感（SnowNLP/VADER/GDELT tone）
 - 风险评分 **risk-v3 九指标**接口与有效权重（GDELT 派生五项双边/结构指标）；真实夜光/难民仍缺测，不以代理补齐
@@ -318,7 +450,7 @@ python run_full_pipeline.py --skip-crawl --skip-llm  # 本地数据离线分析
 - 链式推理、关系网络分析、多模态时空对齐
 - 动态预警（四级阈值）、自动化报告（HTML/DOCX）
 - 知识图谱种子数据（34 节点 + 35 关系）+ 历史事件集（482 条）
-- 4个兼容页面、业务API与健康检查；统一筛选、加载/空数据/失败状态及报告版本绑定
+- 15+页面路由（含仪表盘二级与研究子页）、50+业务API与健康检查；统一筛选、加载/空数据/失败状态及报告版本绑定
 - 自动定时调度器、全流程集成脚本、爬虫单元测试
 - 既有数据库、算法、API与验收文档持续同步；未完成项保持显式标记
 

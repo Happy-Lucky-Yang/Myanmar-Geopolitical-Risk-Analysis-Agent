@@ -11,6 +11,18 @@
     function add(parent, tag, text) {
         const node = document.createElement(tag); node.textContent = text || ''; parent.append(node); return node;
     }
+    // 折叠筛选的 summary 摘要：不展开也能看见当前生效条件（P2）
+    function filterSummary() {
+        const parts = [];
+        for (const [id, prefix] of [['catalog-topic','主题'],['catalog-module','模块'],['catalog-indicator','指标']]) {
+            const n = el(id);
+            if (n && n.value) parts.push(prefix + '：' + (n.selectedOptions[0] ? n.selectedOptions[0].text : n.value));
+        }
+        const from = el('catalog-from').value, to = el('catalog-to').value;
+        if (from || to) parts.push(`年份 ${from || '…'}–${to || '…'}`);
+        if (el('catalog-core').checked) parts.push('仅核心');
+        el('catalog-filter-summary').textContent = parts.length ? '：' + parts.join(' · ') : '';
+    }
     function links(parent, record) {
         for (const item of record.links || []) {
             let url; try { url = new URL(item.url); } catch (_) { continue; }
@@ -59,11 +71,13 @@
             }
             if (!data.results.length) add(el('catalog-results'), 'p', '没有匹配题录。索引缺失时请由管理员配置私密源表并显式构建。');
             el('catalog-page').textContent = data.total ? `${offset + 1}—${Math.min(offset + pageSize,data.total)} / ${data.total}` : '0 / 0';
+            el('catalog-pager').hidden = !data.total;
             el('catalog-prev').disabled = offset === 0;
             el('catalog-next').disabled = offset + pageSize >= data.total;
         } catch (error) {
             if (seq !== sequence) return;
             el('catalog-summary').textContent = error.message; el('catalog-page').textContent = '';
+            el('catalog-pager').hidden = true;
             // 结果区给占位：空白会让人误以为“没有匹配结果”，而不是“检索没成功”
             el('catalog-results').replaceChildren();
             add(el('catalog-results'), 'p', '检索未完成：' + error.message);
@@ -84,9 +98,11 @@
         } catch (_) { /* 开关接口失败不阻塞正常检索 */ }
     })();
     el('catalog-form').addEventListener('submit', event => {event.preventDefault(); recordId=null; offset = 0; load();});
+    el('catalog-form').addEventListener('change', filterSummary);
     el('catalog-prev').onclick = () => {offset = Math.max(0,offset-pageSize); load();};
     el('catalog-next').onclick = () => {offset += pageSize; load();};
     el('catalog-q').value=initial.get('q')||'';
     if(initial.get('module'))el('catalog-module').value=initial.get('module');
+    filterSummary();
     load();
 })();

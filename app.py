@@ -215,6 +215,14 @@ def page_research():
                            description=description, **context)
 
 
+@app.route('/remote-sensing')
+def page_remote_sensing():
+    """遥感影像展示页面（VIIRS 夜光）。"""
+    from visualization.viirs_renderer import list_available_months
+    months = list_available_months()
+    return render_template('remote_sensing.html', months=months)
+
+
 @app.route("/graph")
 def page_graph():
     """关系网络图谱页面（ECharts 力导向图）"""
@@ -561,6 +569,57 @@ def multimodal_alignment():
                              "note": "只比较窗口内完整月；边缘残缺月及未结束月份不参与，年度观测不展开"}
             }
         })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/viirs/months", methods=["GET"])
+def viirs_months():
+    """返回所有可用 VIIRS 夜光月度数据列表。"""
+    try:
+        from visualization.viirs_renderer import list_available_months
+        months = list_available_months()
+        return jsonify({"success": True, "data": {"months": months, "count": len(months)}})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/viirs/image", methods=["GET"])
+def viirs_image():
+    """
+    渲染 VIIRS 夜光图像。
+
+    参数:
+        month: 月份（YYYY-MM 或 YYYYMM），默认最新
+        format: 'web'（base64 JSON）或 'hd'（PNG 文件下载），默认 web
+        dpi: 分辨率（web 默认 120，hd 默认 300）
+    """
+    try:
+        from visualization.viirs_renderer import render_to_base64, render_viirs, list_available_months
+        month = request.args.get('month', '')
+        fmt = request.args.get('format', 'web')
+        dpi = request.args.get('dpi', type=int)
+
+        # 默认使用最新月份
+        if not month:
+            months = list_available_months()
+            if not months:
+                return jsonify({"success": False, "error": "无可用 VIIRS 数据"}), 404
+            month = months[-1]
+
+        if fmt == 'hd':
+            # 高清 PNG 文件下载
+            hd_dpi = dpi or 300
+            png_bytes = render_viirs(month, dpi=hd_dpi, figsize=(14, 11))
+            return Response(png_bytes, mimetype='image/png',
+                          headers={'Content-Disposition': f'inline; filename=VIIRS_{month.replace("-", "")}.png'})
+        else:
+            # Web 内联 base64
+            web_dpi = dpi or 120
+            data_uri = render_to_base64(month, dpi=web_dpi)
+            return jsonify({"success": True, "data": {"month": month, "image": data_uri}})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

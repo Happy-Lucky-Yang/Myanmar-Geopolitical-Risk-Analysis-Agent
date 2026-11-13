@@ -77,14 +77,14 @@ def main():
             page.wait_for_function("selector => { const node=document.querySelector(selector); return node && node.textContent.trim() && !node.querySelector('.loading-spinner') && !/正在检查|正在读取|正在加载|检查账户/.test(node.textContent); }", arg=selector, timeout=40000)
             if path=='/map':
                 page.wait_for_function('window._mmMap && window._mmLayers',timeout=40000)
-            title=page.locator('.section-sidebar a.active').get_attribute('aria-label')
+            title=page.locator('.nav-item.active .nav-dropdown a.dropdown-active').get_attribute('aria-label')
             assert title, path
             assert page.locator('main .btn-primary').count()<=1,path
             shot=OUTPUT/f'page-{index+1:02}.png'
             page.screenshot(path=str(shot),full_page=True)
             pages.append({'path':path,'current_menu':title,'ready_text':page.locator(selector).inner_text()[:250], 'screenshot':str(shot)})
             if path=='/map':
-                assert page.locator('.section-sidebar').count()==1 and page.locator('.map-sidebar').count()==0
+                assert page.locator('.nav-dropdown').count()>=1 and page.locator('.map-sidebar').count()==0
                 page.locator('.map-toolbar > summary').click()
                 assert page.locator('#lyr-kde').is_visible()
                 page.locator('.map-toolbar > summary').click()

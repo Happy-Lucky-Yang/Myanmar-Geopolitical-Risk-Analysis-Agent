@@ -1,0 +1,98 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>瀵硅瘽鍒嗘瀽 路 缂呯敻鍦扮紭椋庨櫓鏅鸿兘鍒嗘瀽绯荤粺</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
+<link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg"></head>
+<body>
+    {% include '_nav.html' %}
+
+    <main class="container console-page">
+        <header class="page-hero">
+            <div class="hero-text">
+                <p class="eyebrow">Text Analysis</p>
+                <h1>鏂伴椈鏂囨湰鐮斿垽</h1>
+                <p class="lede">绮樿创鎴栦笂浼犱竴绡囩紖鐢哥浉鍏虫姤閬擄紝寰楀埌鎯呮劅銆侀闄┿€佸疄浣撲笌璐＄尞鎷嗚В銆傛墜宸ヨ緭鍏ュ彧浣滅嫭绔嬪垎鏋愶紝涓嶅啓鍏ユ寮忔棩椋庨櫓鎴栧叡浜浘璋便€?/p>
+            </div>
+            <div class="hero-actions">
+                <a class="btn btn-secondary" href="/workspace">澶氳疆杩介棶 鈫?涓汉宸ヤ綔鍖?/a>
+            </div>
+        </header>
+
+        <details class="context-details">
+            <summary>娴忚鏁版嵁鐨勭瓫閫変笂涓嬫枃锛堣法椤甸潰淇濈暀锛屼笉瑁佸壀杈撳叆鏂囨湰锛?/summary>
+            <div class="filter-bar">{% include '_view_filters.html' %}</div>
+        </details>
+
+        <div class="chat-console">
+            <div class="input-area">
+                <div class="input-toolbar">
+                    <details class="model-settings"><summary>妯″瀷璁剧疆</summary>
+                        <label class="toolbar-label" for="model-select">鍒嗘瀽妯″瀷</label>
+                        <select id="model-select" class="model-select">
+                            <option value="">鍔犺浇涓€?/option>
+                        </select><p class="muted-note">鏇存崲妯″瀷鍙兘浜х敓渚涘簲鍟咥PI璐圭敤锛涜繖閲屽彧閫夋嫨妯″瀷锛岀偣鍑烩€滃紑濮嬪垎鏋愨€濇墠璋冪敤銆?/p>
+                    </details>
+                    <div class="toolbar-right">
+                        <label class="file-upload-btn" tabindex="0" role="button" title="涓婁紶鏂囨湰鏂囦欢锛?txt / .json / .csv / .md锛? aria-label="涓婁紶鏂囨湰鏂囦欢">
+                            <input type="file" id="file-input" accept=".txt,.json,.csv,.md" multiple style="display:none">
+                            <span class="upload-icon">锛?/span> 涓婁紶鏂囦欢
+                        </label>
+                    </div>
+                </div>
+                <div id="file-list" class="file-list" style="display:none"></div>
+                <textarea id="news-input" placeholder="璇疯緭鍏ユ垨绮樿创缂呯敻鐩稿叧鏂伴椈鍐呭锛屾垨涓婁紶鏂囦欢鈥? rows="9"></textarea>
+                <div class="input-footer">
+                    <span id="char-count" class="char-count">0 / 20000</span>
+                    <div class="btn-group">
+                        <label class="chain-toggle"><input type="checkbox" id="chain-enable"> 鍚敤閾惧紡鎺ㄧ悊</label>
+                        <button class="btn btn-secondary" onclick="fillSampleText()">濉厖绀轰緥</button>
+                        <button id="analyze-btn" class="btn btn-primary" disabled onclick="analyzeText()">寮€濮嬪垎鏋?/button>
+                    </div>
+                </div>
+                <p id="text-model-status" class="muted-note" role="status">姝ｅ湪妫€鏌ユā鍨嬭皟鐢ㄦ潈闄愶紱涓嶄細鑷姩鍒嗘瀽銆?/p>
+                <p class="muted-note">妯″瀷缁撹椤荤粨鍚堣瘉鎹笌涓嶇‘瀹氭€у鏍革紱瀛楁瀹屾暣涓嶇瓑浜庣粨璁烘纭€傛寮忚娴嬭鍒扳€滄€佸娍鎬昏鈥濇煡鐪嬨€?/p>
+            </div>
+
+            <div id="result-area" style="display:none">
+                <div class="result-grid">
+                    <div class="card">
+                        <div class="card-title">鎯呮劅鍒嗘瀽</div>
+                        <div id="sentiment-body"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">椋庨櫓璇勫垎</div>
+                        <div id="risk-body"></div>
+                    </div>
+                    <div class="card card-full">
+                        <div class="card-title">瀹炰綋璇嗗埆</div>
+                        <div id="entities-body"></div>
+                    </div>
+                    <div class="card card-full">
+                        <div class="card-title">澶фā鍨嬪垎鏋?/div>
+                        <div id="llm-body"></div>
+                    </div>
+                    <div class="card card-full">
+                        <div class="card-title">鎸囨爣璐＄尞鍒嗘瀽 <span class="tag-hint">闈炲洜鏋?/span></div>
+                        <div id="diagnostic-body"></div>
+                    </div>
+                    <div class="card card-full" id="chain-card" style="display:none">
+                        <div class="card-title">閾惧紡鎺ㄧ悊 <span class="tag-hint">鍒嗘閫昏緫</span></div>
+                        <div id="chain-body"></div>
+                    </div>
+                    <div class="card card-full">
+                        <div class="card-title">GDELT 鍏ㄧ悆浜嬩欢鎸囨爣</div>
+                        <div id="gdelt-body"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=clarity-1"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=shell-2"></script>
+    <script>initViewFilters();</script>
+</body>
+</html>

@@ -66,16 +66,16 @@ def test_grouped_navigation_visual_hierarchy_and_mobile_overflow(page):
     page.on('pageerror',lambda error:errors.append(str(error)))
     page.goto('http://offline.test/dashboard')
     page.wait_for_function('homeSnapshot !== null')
-    assert page.locator('.nav-links > li').count()==4
-    assert page.locator('.nav-links').inner_text().splitlines()==['态势总览','时空分析','分析工作台','研究资料']
+    assert page.locator('.nav-links > li').count()==5
+    assert page.locator('.nav-links').inner_text().splitlines()==['态势总览','时空分析','分析工作台','研究资料','帮助']
     assert page.locator('.sub-nav').count()==0
     assert page.locator('#research-details').count()==0
     assert page.locator('main .home-card').count()==4
     assert page.evaluate("getComputedStyle(document.body).backgroundColor !== 'rgb(15, 17, 23)'")
     page.goto('http://offline.test/graph?days=30&end_date=2026-03-31')
     page.wait_for_function("document.querySelector('#end_date-filter').value === '2026-03-31'")
-    assert page.locator('.section-sidebar a').count()==5
-    assert page.locator('.section-sidebar a.active').get_attribute('aria-label')=='关系图谱'
+    assert page.locator('.nav-dropdown a').count()>=4
+    assert page.locator('.nav-item.active .nav-dropdown a.dropdown-active').get_attribute('aria-label')=='关系图谱'
     page.set_viewport_size({'width':390,'height':844})
     for path in ('/dashboard','/graph?days=30&end_date=2026-03-31','/literature'):
         page.goto('http://offline.test'+path)

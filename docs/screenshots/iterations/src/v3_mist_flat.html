@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>缅甸地缘风险智能分析系统 · 综合态势（V3 晨雾主题 · 2026-09）</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #f3f6f4; --surface: rgba(255,255,255,0.8); --surface-solid: #ffffff;
+  --surface-tint: #edf5f2; --line: #e2e9e6; --line-strong: #cddad5;
+  --ink: #24333b; --ink-2: #576873;
+  --jade: #3a9a8a; --jade-deep: #2b7a70; --jade-soft: rgba(58,154,138,0.12);
+  --risk-high: #af443c; --risk-high-bg: rgba(219,102,94,0.12);
+  --risk-medium: #895814; --risk-medium-bg: rgba(221,151,59,0.14);
+  --risk-low: #286a4c; --risk-low-bg: rgba(76,163,124,0.13);
+}
+body {
+  background: var(--bg); color: var(--ink); line-height: 1.65;
+  font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+.navbar {
+  background: var(--surface); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; height: 62px; padding: 0 28px;
+}
+.nav-brand { font-size: 1.05rem; font-weight: 700; color: var(--jade-deep); margin-right: 30px; }
+.nav-brand span { color: var(--ink-2); font-weight: 400; font-size: 0.78rem; margin-left: 8px; letter-spacing: 0.08em; }
+.nav-links { list-style: none; display: flex; gap: 2px; }
+.nav-links a {
+  color: var(--ink-2); text-decoration: none; font-size: 0.88rem;
+  padding: 8px 14px; border-radius: 999px; transition: all .2s;
+}
+.nav-links a:hover { background: var(--surface-tint); color: var(--ink); }
+.nav-links a.active { background: var(--jade-soft); color: var(--jade-deep); font-weight: 600; }
+.hero { max-width: 1240px; margin: 26px auto 0; padding: 0 28px; }
+.hero h1 { font-size: 1.6rem; font-weight: 700; }
+.hero p { color: var(--ink-2); font-size: 0.88rem; margin-top: 4px; }
+.filterbar {
+  max-width: 1240px; margin: 16px auto 0; padding: 12px 18px;
+  background: var(--surface-solid); border: 1px solid var(--line); border-radius: 16px;
+  display: flex; gap: 14px; align-items: center; font-size: 0.84rem; color: var(--ink-2);
+  box-shadow: 0 4px 18px rgba(36,51,59,0.05);
+}
+.filterbar select {
+  border: 1px solid var(--line-strong); border-radius: 10px; padding: 6px 10px;
+  background: #fff; color: var(--ink); font-size: 0.84rem;
+}
+.filterbar .btn {
+  margin-left: auto; background: var(--jade); color: #fff; border: none;
+  border-radius: 12px; padding: 8px 20px; font-size: 0.86rem; cursor: pointer;
+}
+.grid { max-width: 1240px; margin: 18px auto; padding: 0 28px; display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.card {
+  background: var(--surface-solid); border: 1px solid var(--line); border-radius: 18px;
+  padding: 18px 20px; box-shadow: 0 6px 22px rgba(36,51,59,0.05);
+}
+.card h3 { font-size: 0.82rem; color: var(--ink-2); font-weight: 600; margin-bottom: 10px; }
+.score { font-size: 2.4rem; font-weight: 800; color: var(--risk-medium); line-height: 1.1; }
+.score-sub { font-size: 0.78rem; color: var(--ink-2); margin-top: 4px; }
+.chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.72rem; font-weight: 600; }
+.chip.med { background: var(--risk-medium-bg); color: var(--risk-medium); }
+.ind { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 0.82rem; }
+.ind:last-child { border-bottom: none; }
+.ind .name { color: var(--ink); }
+.ind .bar { width: 90px; height: 6px; border-radius: 3px; background: var(--surface-tint); overflow: hidden; }
+.ind .bar i { display: block; height: 100%; background: var(--jade); border-radius: 3px; }
+.ind .val { font-variant-numeric: tabular-nums; color: var(--ink-2); width: 44px; text-align: right; }
+.wide { grid-column: span 2; }
+.line-chart { height: 120px; display: flex; align-items: flex-end; gap: 5px; }
+.line-chart i { flex: 1; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, var(--jade), rgba(58,154,138,0.25)); }
+.line-chart i.hot { background: linear-gradient(180deg, #d97a4a, rgba(217,122,74,0.3)); }
+.evt { padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 0.82rem; }
+.evt:last-child { border-bottom: none; }
+.evt .d { color: var(--ink-2); font-size: 0.72rem; }
+footer { text-align: center; color: var(--ink-2); font-size: 0.76rem; padding: 18px 0 26px; }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-brand">缅甸地缘风险智能分析系统<span>GEO-RISK ATLAS</span></div>
+  <ul class="nav-links">
+    <li><a href="/" class="active">综合态势</a></li>
+    <li><a href="/map">风险地图</a></li>
+    <li><a href="/trend">趋势预测</a></li>
+    <li><a href="/graph">关系图谱</a></li>
+    <li><a href="/spatial">空间统计</a></li>
+    <li><a href="/multimodal">多源对照</a></li>
+    <li><a href="/literature">文献中心</a></li>
+    <li><a href="/chat">对话分析</a></li>
+  </ul>
+</nav>
+
+<div class="hero">
+  <h1>综合态势</h1>
+  <p>近 30 天 · 缅甸全国 · 观测域 observed · 版本 rev-20260923</p>
+</div>
+
+<div class="filterbar">
+  <label>窗口 <select><option>近30天</option></select></label>
+  <label>区域 <select><option>缅甸全国 MMR</option></select></label>
+  <label>来源 <select><option>全部来源</option></select></label>
+  <button class="btn">应用筛选</button>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>全国日风险（risk-v2 五维）</h3>
+    <div class="score">48.6 <span class="chip med">中风险</span></div>
+    <div class="score-sub">较前日 +1.8 · 有效指标 4/5 · 覆盖率 83%</div>
+  </div>
+  <div class="card wide">
+    <h3>九指标多源面板（实验路径 risk-v3）</h3>
+    <div class="ind"><span class="name">冲突频次</span><span class="bar"><i style="width:72%"></i></span><span class="val">0.72</span></div>
+    <div class="ind"><span class="name">情感风险</span><span class="bar"><i style="width:58%"></i></span><span class="val">0.58</span></div>
+    <div class="ind"><span class="name">夜光变化</span><span class="bar"><i style="width:31%"></i></span><span class="val">0.31</span></div>
+    <div class="ind"><span class="name">中缅关系</span><span class="bar"><i style="width:44%"></i></span><span class="val">0.44</span></div>
+    <div class="ind"><span class="name">国际制裁</span><span class="bar"><i style="width:66%"></i></span><span class="val">0.66</span></div>
+  </div>
+  <div class="card wide">
+    <h3>30 天风险趋势</h3>
+    <div class="line-chart">
+      <i style="height:34%"></i><i style="height:40%"></i><i style="height:37%"></i><i style="height:45%"></i><i style="height:42%"></i>
+      <i class="hot" style="height:63%"></i><i class="hot" style="height:70%"></i><i style="height:55%"></i><i style="height:50%"></i><i style="height:57%"></i>
+      <i class="hot" style="height:74%"></i><i class="hot" style="height:68%"></i><i style="height:52%"></i><i style="height:48%"></i><i style="height:44%"></i>
+    </div>
+  </div>
+  <div class="card">
+    <h3>关键事件</h3>
+    <div class="evt">若开邦冲突致平民转移<br><span class="d">2026-09-21 · 缅华网 · CAMEO 19</span></div>
+    <div class="evt">掸邦北部交通线中断<br><span class="d">2026-09-19 · GDELT · CAMEO 18</span></div>
+    <div class="evt">仰光宵禁范围扩大<br><span class="d">2026-09-17 · Irrawaddy · CAMEO 17</span></div>
+  </div>
+</div>
+<footer>缅甸地缘风险智能分析系统 · 晨雾视觉体系 · 2026-09</footer>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>遥感影像 · 缅甸地缘风险智能分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=shell-2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/shell.css') }}?v=dropdown-1">
+    <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+    <style>
+        .rs-page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .rs-hero { margin-bottom: 24px; }
+        .rs-hero h1 { font-size: 28px; font-weight: 650; color: #233c4a; margin: 0 0 8px; }
+        .rs-hero p { color: #576873; font-size: 14px; line-height: 1.7; max-width: 72ch; margin: 0; }
+        .rs-controls { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+        .rs-controls label { font-size: 14px; color: #345763; font-weight: 600; }
+        .rs-controls select { padding: 8px 12px; border: 1px solid #d6e1e6; border-radius: 8px; font-size: 14px; min-height: 44px; background: white; }
+        .rs-controls button { padding: 8px 20px; border: 1px solid #347d73; border-radius: 8px; background: #347d73; color: white; font-size: 14px; cursor: pointer; min-height: 44px; }
+        .rs-controls button:hover { background: #2a6660; }
+        .rs-controls a.hd-link { font-size: 13px; color: #347d73; text-decoration: none; margin-left: auto; }
+        .rs-controls a.hd-link:hover { text-decoration: underline; }
+        .rs-image-container { background: #1a1a2e; border-radius: 12px; padding: 16px; min-height: 400px; display: flex; align-items: center; justify-content: center; }
+        .rs-image-container img { max-width: 100%; height: auto; border-radius: 8px; }
+        .rs-image-container .loading { color: #cfdee5; font-size: 14px; }
+        .rs-meta { margin-top: 16px; padding: 16px; background: #f5f8f7; border-radius: 10px; border: 1px solid #e2e9e6; }
+        .rs-meta h3 { font-size: 16px; color: #233c4a; margin: 0 0 8px; }
+        .rs-meta p { font-size: 13px; color: #576873; line-height: 1.7; margin: 0; }
+        .rs-meta dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 13px; margin-top: 12px; }
+        .rs-meta dt { color: #576873; font-weight: 600; }
+        .rs-meta dd { color: #345763; margin: 0; }
+        .rs-gallery { margin-top: 32px; }
+        .rs-gallery h2 { font-size: 20px; color: #233c4a; margin: 0 0 16px; }
+        .rs-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+        .rs-thumb { background: #1a1a2e; border-radius: 10px; overflow: hidden; cursor: pointer; transition: transform .2s; }
+        .rs-thumb:hover { transform: translateY(-2px); }
+        .rs-thumb img { width: 100%; height: 180px; object-fit: cover; }
+        .rs-thumb-label { padding: 10px 12px; color: #cfdee5; font-size: 13px; }
+    </style>
+</head>
+<body>
+    {% include '_nav.html' %}
+    <main class="rs-page">
+        <div class="rs-hero">
+            <h1>VIIRS 夜光遥感影像</h1>
+            <p>
+                数据来源：EOG（Earth Observation Group）月度 VIIRS 夜光产品 VNL V2，
+                覆盖缅甸 2020年1月至 2026年8月共 {{ months|length }} 期。
+                夜光辐射亮度反映人类活动强度，可作为冲突影响、经济衰退与人口流迁的代理指标。
+            </p>
+        </div>
+
+        <div class="rs-controls">
+            <label for="rs-month">选择月份</label>
+            <select id="rs-month">
+                {% for m in months|reverse %}
+                <option value="{{ m }}" {% if loop.first %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" onclick="loadViirsImage()">渲染图像</button>
+            <a class="hd-link" id="hd-download" href="#" target="_blank" download>下载高清图 (300 DPI) →</a>
+        </div>
+
+        <div class="rs-image-container" id="rs-image-box">
+            <span class="loading">选择月份后点击"渲染图像"</span>
+        </div>
+
+        <div class="rs-meta">
+            <h3>数据说明</h3>
+            <p>
+                VIIRS（Visible Infrared Imaging Radiometer Suite）搭载于 Suomi NPP 和 NOAA-20 卫星，
+                夜光波段（DNB）可探测微弱灯光，广泛用于评估冲突区域人类活动变化、电力基础设施损毁与经济衰退。
+            </p>
+            <dl>
+                <dt>产品</dt><td>VNL V2 — 月度无云合成（vcmslcfg 校正）</td>
+                <dt>空间分辨率</dt><td>15 角秒（约 500m）</td>
+                <dt>辐射单位</dt><td>nW/cm²/sr（纳瓦特/平方厘米/球面度）</td>
+                <dt>覆盖范围</dt><td>缅甸全境（GADM L0 边界裁剪）</td>
+                <dt>数据来源</dt><td>EOG, Payne Institute, Colorado School of Mines</td>
+            </dl>
+        </div>
+
+        <div class="rs-gallery">
+            <h2>近期月度影像</h2>
+            <div class="rs-gallery-grid" id="rs-gallery">
+                <!-- JS 动态加载缩略图 -->
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/common.js') }}?v=clarity-1"></script>
+    <script>
+    async function loadViirsImage() {
+        const month = document.getElementById('rs-month').value;
+        const box = document.getElementById('rs-image-box');
+        const hdLink = document.getElementById('hd-download');
+        box.innerHTML = '<span class="loading">正在渲染 ' + month + ' 夜光图像…</span>';
+        hdLink.href = '/api/viirs/image?month=' + month + '&format=hd';
+        try {
+            const resp = await fetch('/api/viirs/image?month=' + month + '&format=web&dpi=150');
+            const json = await resp.json();
+            if (json.success) {
+                box.innerHTML = '<img src="' + json.data.image + '" alt="VIIRS 夜光 ' + month + '">';
+            } else {
+                box.innerHTML = '<span class="loading">渲染失败：' + (json.error || '未知错误') + '</span>';
+            }
+        } catch (e) {
+            box.innerHTML = '<span class="loading">请求失败：' + e.message + '</span>';
+        }
+    }
+
+    async function loadGallery() {
+        const grid = document.getElementById('rs-gallery');
+        const resp = await fetch('/api/viirs/months');
+        const json = await resp.json();
+        if (!json.success) return;
+        const months = json.data.months.slice(-6).reverse();
+        grid.innerHTML = months.map(m => `
+            <div class="rs-thumb" onclick="document.getElementById('rs-month').value='${m}';loadViirsImage();window.scrollTo({top:0,behavior:'smooth'})">
+                <img src="/api/viirs/image?month=${m}&format=web&dpi=80" alt="${m}" loading="lazy">
+                <div class="rs-thumb-label">${m}</div>
+            </div>
+        `).join('');
+    }
+
+    // 页面加载时自动渲染最新月份并加载画廊
+    document.addEventListener('DOMContentLoaded', () => {
+        loadViirsImage();
+        loadGallery();
+    });
+    </script>
+</body>
+</html>

@@ -238,7 +238,9 @@ def test_map_latest_response_wins_and_failure_disables_export(page):
 
 
 @pytest.mark.parametrize('primary_ok,fallback_ok', [(True, True), (False, True), (True, False), (False, False)])
-def test_basemap_failover_pixels_and_repeated_zoom(page, tmp_path, primary_ok, fallback_ok):
+def test_basemap_failover_pixels_and_repeated_zoom(page, tmp_path, monkeypatch, primary_ok, fallback_ok):
+    # 本契约覆盖无天地图 tk 的 Esri/OSM 双通道；有 tk 分支见 test_tianditu_basemap_layers
+    monkeypatch.delenv('TDT_TK', raising=False)
     import io
     import re
     import folium
