@@ -83,6 +83,91 @@ def test_grouped_navigation_visual_hierarchy_and_mobile_overflow(page):
     assert not errors
 
 
+@pytest.mark.parametrize('mode,expected,label', [
+    ('ok', 'ok', '服务在线'),
+    ('http-error', 'down', '服务异常'),
+    ('invalid-status', 'down', '服务异常'),
+    ('network-error', 'down', '连接中断'),
+])
+def test_tech_telemetry_reflects_read_only_service_status(page, mode, expected, label):
+    calls = []
+    def health(route):
+        calls.append(route.request.method)
+        if mode == 'network-error':
+            route.abort()
+        else:
+            route.fulfill(status=503 if mode == 'http-error' else 200,
+                          content_type='application/json',
+                          body=json.dumps({'status': 'unknown' if mode == 'invalid-status' else 'ok'}))
+    page.route('**/health', health)
+    page.goto('http://offline.test/guide')
+    page.wait_for_function("state => document.querySelector('.nav-telemetry').dataset.state === state", arg=expected)
+    telemetry = page.locator('.nav-telemetry')
+    assert telemetry.locator('.tm-label').inner_text() == label
+    assert '不代表数据完整或结论已验证' in telemetry.get_attribute('title')
+    assert telemetry.get_attribute('aria-label').startswith('Web 服务连接状态')
+    assert telemetry.locator('time').get_attribute('datetime').endswith('Z')
+    assert calls == ['GET']
+
+
+def test_tech_telemetry_timeout_cannot_stay_green(page):
+    page.add_init_script("""(() => {
+        const original = window.fetch;
+        window.fetch = (url, options) => url === '/health' ? new Promise((resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(new DOMException('超时', 'AbortError')));
+        }) : original(url, options);
+    })();""")
+    page.goto('http://offline.test/guide')
+    page.wait_for_function("document.querySelector('.nav-telemetry').dataset.state === 'down'", timeout=10000)
+    assert page.locator('.tm-label').inner_text() == '检查超时'
+
+
+def test_tech_theme_reduced_motion_contrast_and_mobile_layout(page):
+    page.emulate_media(reduced_motion='reduce')
+    page.goto('http://offline.test/guide')
+    assert page.locator('.brand-mark').evaluate("n => getComputedStyle(n, '::before').animationName") == 'none'
+    assert page.locator('.navbar').evaluate("n => getComputedStyle(n, '::after').animationName") == 'none'
+    # 对渐变按钮的各端点逐一计算对比度，覆盖默认与悬停两态。
+    page.evaluate("""() => {
+        const button = document.createElement('button');
+        button.className = 'btn btn-primary';
+        button.id = 'contrast-fixture';
+        button.textContent = '测试按钮';
+        document.querySelector('main').prepend(button);
+    }""")
+    for hover in (False, True):
+        if hover:
+            page.locator('#contrast-fixture').hover()
+        ratios = page.locator('#contrast-fixture').evaluate("""n => {
+            const lum = color => {
+                const v = color.match(/[\\d.]+/g).slice(0, 3).map(x => {
+                    x = Number(x) / 255;
+                    return x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4;
+                });
+                return .2126*v[0] + .7152*v[1] + .0722*v[2];
+            };
+            const s = getComputedStyle(n), fg = lum(s.color);
+            return s.backgroundImage.match(/rgb\\([^)]+\\)/g).map(color => {
+                const bg = lum(color);
+                return (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05);
+            });
+        }""")
+        assert min(ratios) >= 4.5
+    for width in (1440, 1280, 1024, 768, 390):
+        page.set_viewport_size({'width': width, 'height': 900})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2')
+        assert page.locator('.nav-telemetry').is_visible() == (width >= 1280)
+
+
+def test_tech_map_loading_radar_remains_64_pixels(page):
+    page.route('**/api/map/unified?*', lambda route: None)
+    page.goto('http://offline.test/map')
+    radar = page.locator('#map-container > .loading-spinner > .loader-radar')
+    radar.wait_for()
+    size = radar.bounding_box()
+    assert size['width'] == 64 and size['height'] == 64
+
+
 def test_workspace_fixture_context_feedback_logout(page):
     state={'user':{'id':'alice','username':'Alice','role':'analyst'},'feedback':None,'deleted':False}
     def fulfill(route,data):route.fulfill(status=200,content_type='application/json',body=json.dumps({'success':True,'data':data}))

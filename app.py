@@ -218,9 +218,14 @@ def page_research():
 @app.route('/remote-sensing')
 def page_remote_sensing():
     """遥感影像展示页面（VIIRS 夜光）。"""
-    from visualization.viirs_renderer import list_available_months
+    from visualization.viirs_renderer import list_available_months, status as viirs_status
+    try:
+        rs_status = viirs_status()
+    except Exception as exc:
+        logger.warning(f"[VIIRS] 状态检查失败: {exc}")
+        rs_status = {'healthy': False, 'months_count': 0, 'missing': [], 'renderer_error': str(exc)}
     months = list_available_months()
-    return render_template('remote_sensing.html', months=months)
+    return render_template('remote_sensing.html', months=months, rs_status=rs_status)
 
 
 @app.route("/graph")
@@ -584,6 +589,17 @@ def viirs_months():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/viirs/status", methods=["GET"])
+def viirs_status_api():
+    """遥感模块健康状态：数据目录、期数、缺月、渲染依赖。"""
+    try:
+        from visualization.viirs_renderer import status
+        data = status()
+        return jsonify({"success": True, "data": data}), (200 if data['healthy'] else 503)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/viirs/image", methods=["GET"])
 def viirs_image():
     """
@@ -591,14 +607,18 @@ def viirs_image():
 
     参数:
         month: 月份（YYYY-MM 或 YYYYMM），默认最新
-        format: 'web'（base64 JSON）或 'hd'（PNG 文件下载），默认 web
-        dpi: 分辨率（web 默认 120，hd 默认 300）
+        format: 'web'（base64 JSON + 像元统计）、'png'（直接返回图片，可加 size=thumb）
+                或 'hd'（PNG 文件下载），默认 web
+        dpi: 分辨率（web 默认 120，限 60–200；hd 默认 300，限 150–300）
     """
     try:
-        from visualization.viirs_renderer import render_to_base64, render_viirs, list_available_months
-        month = request.args.get('month', '')
+        from visualization.viirs_renderer import (list_available_months, normalize_month, render_meta,
+                                                  render_thumbnail, render_to_base64, render_viirs)
+        month = request.args.get('month', '').strip()
         fmt = request.args.get('format', 'web')
         dpi = request.args.get('dpi', type=int)
+        if fmt not in ('web', 'png', 'hd'):
+            return jsonify({"success": False, "error": f"不支持的 format: {fmt}"}), 400
 
         # 默认使用最新月份
         if not month:
@@ -606,21 +626,34 @@ def viirs_image():
             if not months:
                 return jsonify({"success": False, "error": "无可用 VIIRS 数据"}), 404
             month = months[-1]
+        ym = normalize_month(month)
+        if not ym:
+            return jsonify({"success": False, "error": f"月份格式无效: {month}（应为 YYYY-MM）"}), 400
+        month = f"{ym[:4]}-{ym[4:]}"
 
         if fmt == 'hd':
             # 高清 PNG 文件下载
-            hd_dpi = dpi or 300
+            hd_dpi = min(max(dpi or 300, 150), 300)
             png_bytes = render_viirs(month, dpi=hd_dpi, figsize=(14, 11))
             return Response(png_bytes, mimetype='image/png',
-                          headers={'Content-Disposition': f'inline; filename=VIIRS_{month.replace("-", "")}.png'})
-        else:
-            # Web 内联 base64
-            web_dpi = dpi or 120
-            data_uri = render_to_base64(month, dpi=web_dpi)
-            return jsonify({"success": True, "data": {"month": month, "image": data_uri}})
+                            headers={'Content-Disposition': f'attachment; filename=VIIRS_Myanmar_{ym}_HD.png',
+                                     'Cache-Control': 'public, max-age=86400'})
+        web_dpi = min(max(dpi or 120, 60), 200)
+        if fmt == 'png':
+            if request.args.get('size') == 'thumb':
+                png_bytes = render_thumbnail(month, dpi=min(web_dpi, 100))
+            else:
+                png_bytes = render_viirs(month, dpi=web_dpi)
+            return Response(png_bytes, mimetype='image/png',
+                            headers={'Cache-Control': 'public, max-age=86400'})
+        # Web 内联 base64
+        data_uri = render_to_base64(month, dpi=web_dpi)
+        return jsonify({"success": True, "data": {"month": month, "image": data_uri,
+                                                  "meta": render_meta(month)}})
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 404
     except Exception as e:
+        logger.exception("[VIIRS] 渲染失败")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -1432,6 +1465,11 @@ if __name__ == "__main__":
     if boot_crawl and not embedded_scheduler:
         if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             _start_boot_crawl()
+
+    # 遥感页首屏预热（后台线程，失败只记日志）
+    if not flask_cfg.get("debug", False) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        from visualization.viirs_renderer import warm_up as _viirs_warm_up
+        _viirs_warm_up()
 
     app.run(
         host=flask_cfg.get("host", "127.0.0.1"),

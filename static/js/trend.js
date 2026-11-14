@@ -150,7 +150,7 @@ function renderSummary(data) {
     html += summaryCard('平均分', escapeHtml(formatNumber(t.avg_score, 1)));
     html += summaryCard('有效日 / 覆盖率', escapeHtml(String(t.data_points || 0) + ' / ' + formatNumber((meta.coverage || 0) * 100, 1) + '%'));
     html += summaryCard('最新观测', escapeHtml(meta.latest_observation || '无观测'));
-    html += summaryCard('实际来源', escapeHtml((meta.sources || []).join('、') || '无来源'));
+    html += summaryCard('实际来源', escapeHtml((meta.sources || []).join('、') || '无来源'), true);
     if (meta.stale) html += '<p class="empty-state">截止日缺测，最新观测不代表当前风险。</p>';
     (data.warnings || []).forEach(function (warning) {
         html += '<p class="empty-state">' + escapeHtml(warning) + '</p>';
@@ -158,8 +158,8 @@ function renderSummary(data) {
     el.innerHTML = html;
 }
 
-function summaryCard(label, valueHTML) {
-    return '<div class="summary-card">'
+function summaryCard(label, valueHTML, textValue = false) {
+    return '<div class="summary-card' + (textValue ? ' summary-card-text' : '') + '">'
         + '<div class="card-label">' + escapeHtml(label) + '</div>'
         + '<div class="card-value">' + valueHTML + '</div></div>';
 }

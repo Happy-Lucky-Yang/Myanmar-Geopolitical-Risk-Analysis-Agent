@@ -10,31 +10,38 @@
     <style>
         .rs-page { max-width: 1200px; margin: 0 auto; padding: 24px; }
         .rs-hero { margin-bottom: 24px; }
-        .rs-hero h1 { font-size: 28px; font-weight: 650; color: #233c4a; margin: 0 0 8px; }
-        .rs-hero p { color: #576873; font-size: 14px; line-height: 1.7; max-width: 72ch; margin: 0; }
+        .rs-hero h1 { font-size: 28px; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+        .rs-hero p { color: var(--ink-2); font-size: 14px; line-height: 1.7; max-width: 72ch; margin: 0; }
         .rs-controls { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
-        .rs-controls label { font-size: 14px; color: #345763; font-weight: 600; }
-        .rs-controls select { padding: 8px 12px; border: 1px solid #d6e1e6; border-radius: 8px; font-size: 14px; min-height: 44px; background: white; }
-        .rs-controls button { padding: 8px 20px; border: 1px solid #347d73; border-radius: 8px; background: #347d73; color: white; font-size: 14px; cursor: pointer; min-height: 44px; }
-        .rs-controls button:hover { background: #2a6660; }
-        .rs-controls a.hd-link { font-size: 13px; color: #347d73; text-decoration: none; margin-left: auto; }
+        .rs-controls label { font-size: 14px; color: var(--ink); font-weight: 600; }
+        .rs-controls select { padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: 14px; min-height: 44px; background: white; }
+        .rs-controls button { padding: 8px 20px; border: 1px solid #08577b; border-radius: 4px; background: linear-gradient(180deg, #0d739c, #0a6088); color: white; font-size: 14px; cursor: pointer; min-height: 44px; }
+        .rs-controls button:hover { background: linear-gradient(180deg, #0f7eaa, #0a6690); }
+        .rs-controls button:disabled { opacity: .55; cursor: progress; }
+        .rs-controls a.hd-link { font-size: 13px; color: var(--jade-deep); text-decoration: none; margin-left: auto; }
         .rs-controls a.hd-link:hover { text-decoration: underline; }
-        .rs-image-container { background: #1a1a2e; border-radius: 12px; padding: 16px; min-height: 400px; display: flex; align-items: center; justify-content: center; }
-        .rs-image-container img { max-width: 100%; height: auto; border-radius: 8px; }
-        .rs-image-container .loading { color: #cfdee5; font-size: 14px; }
-        .rs-meta { margin-top: 16px; padding: 16px; background: #f5f8f7; border-radius: 10px; border: 1px solid #e2e9e6; }
-        .rs-meta h3 { font-size: 16px; color: #233c4a; margin: 0 0 8px; }
-        .rs-meta p { font-size: 13px; color: #576873; line-height: 1.7; margin: 0; }
+        .rs-image-container { background: #1a1a2e; border: 1px solid #0f2131; border-radius: 6px; padding: 16px; min-height: 400px; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1px rgba(56,189,248,.12), var(--shadow); }
+        .rs-image-container img { max-width: 100%; height: auto; border-radius: 2px; }
+        .rs-image-container .loading { color: #cfdee5; font-size: 13px; font-family: var(--font-mono); letter-spacing: .08em; }
+        .rs-alert { margin-bottom: 16px; padding: 12px 16px; border-radius: 4px; border: 1px solid #e3c9a0; border-left: 3px solid var(--risk-medium); background: #fbf5ea; color: #7a5a24; font-size: 13px; line-height: 1.7; }
+        .rs-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+        .rs-stat { padding: 10px 12px; background: var(--brackets), white; border: 1px solid var(--line); border-radius: 4px; }
+        .rs-stat b { display: block; font-size: 22px; color: var(--ink); font-weight: 600; font-family: var(--font-display); }
+        .rs-stat span { font-size: 12px; color: var(--ink-2); }
+        .rs-note { font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+        .rs-meta { margin-top: 16px; padding: 16px; background: var(--surface-solid); border-radius: 6px; border: 1px solid var(--line); }
+        .rs-meta h3 { font-size: 16px; color: var(--ink); margin: 0 0 8px; }
+        .rs-meta p { font-size: 13px; color: var(--ink-2); line-height: 1.7; margin: 0; }
         .rs-meta dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 13px; margin-top: 12px; }
-        .rs-meta dt { color: #576873; font-weight: 600; }
-        .rs-meta dd { color: #345763; margin: 0; }
+        .rs-meta dt { color: var(--ink-2); font-weight: 600; }
+        .rs-meta dd { color: var(--ink); margin: 0; }
         .rs-gallery { margin-top: 32px; }
-        .rs-gallery h2 { font-size: 20px; color: #233c4a; margin: 0 0 16px; }
+        .rs-gallery h2 { font-size: 20px; color: var(--ink); margin: 0 0 16px; }
         .rs-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-        .rs-thumb { background: #1a1a2e; border-radius: 10px; overflow: hidden; cursor: pointer; transition: transform .2s; }
-        .rs-thumb:hover { transform: translateY(-2px); }
-        .rs-thumb img { width: 100%; height: 180px; object-fit: cover; }
-        .rs-thumb-label { padding: 10px 12px; color: #cfdee5; font-size: 13px; }
+        .rs-thumb { background: #1a1a2e; border: 1px solid #0f2131; border-radius: 6px; overflow: hidden; cursor: pointer; transition: transform .2s, box-shadow .2s; }
+        .rs-thumb:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--signal-dim), 0 12px 24px -14px rgba(10,22,34,.7); }
+        .rs-thumb img { display: block; width: 100%; height: 220px; object-fit: contain; }
+        .rs-thumb-label { padding: 10px 12px; color: #cfdee5; font-size: 12px; font-family: var(--font-mono); letter-spacing: .08em; border-top: 1px solid #0f2131; }
     </style>
 </head>
 <body>
@@ -43,11 +50,18 @@
         <div class="rs-hero">
             <h1>VIIRS 夜光遥感影像</h1>
             <p>
-                数据来源：EOG（Earth Observation Group）月度 VIIRS 夜光产品 VNL V2，
-                覆盖缅甸 2020年1月至 2026年8月共 {{ months|length }} 期。
+                数据来源：EOG（Earth Observation Group）VIIRS DNB 月度无云合成产品，
+                {% if months %}覆盖缅甸 {{ months[0] }} 至 {{ months[-1] }} 共 {{ months|length }} 期{% if rs_status.missing %}（缺 {{ rs_status.missing|join('、') }}）{% endif %}。{% else %}当前没有可用的月度影像。{% endif %}
                 夜光辐射亮度反映人类活动强度，可作为冲突影响、经济衰退与人口流迁的代理指标。
             </p>
         </div>
+
+        {% if not rs_status.healthy %}
+        <div class="rs-alert" role="status">
+            遥感模块暂不可用：
+            {% if rs_status.renderer_error %}{{ rs_status.renderer_error }}{% elif not months %}未在数据目录找到月度 GeoTIFF（可用环境变量 VIIRS_ROOT 指定目录）。{% endif %}
+        </div>
+        {% endif %}
 
         <div class="rs-controls">
             <label for="rs-month">选择月份</label>
@@ -56,26 +70,39 @@
                 <option value="{{ m }}" {% if loop.first %}selected{% endif %}>{{ m }}</option>
                 {% endfor %}
             </select>
-            <button type="button" onclick="loadViirsImage()">渲染图像</button>
-            <a class="hd-link" id="hd-download" href="#" target="_blank" download>下载高清图 (300 DPI) →</a>
+            <button type="button" id="rs-render" onclick="loadViirsImage()" {% if not rs_status.healthy %}disabled{% endif %}>渲染图像</button>
+            <a class="hd-link" id="hd-download" href="#" download {% if not rs_status.healthy %}hidden{% endif %}>下载高清图 (300 DPI) →</a>
         </div>
 
         <div class="rs-image-container" id="rs-image-box">
-            <span class="loading">选择月份后点击"渲染图像"</span>
+            <span class="loading">{% if rs_status.healthy %}选择月份后点击"渲染图像"{% else %}暂无可渲染的影像{% endif %}</span>
+        </div>
+
+        <div class="rs-meta" id="rs-month-meta" hidden>
+            <h3 id="rs-meta-title">本期像元统计</h3>
+            <div class="rs-stats">
+                <div class="rs-stat"><b id="rs-coverage">—</b><span>有效观测像元占比（cf_cvg&gt;0）</span></div>
+                <div class="rs-stat"><b id="rs-lit">—</b><span>亮像元占比（≥ 0.5 nW）</span></div>
+                <div class="rs-stat"><b id="rs-mean">—</b><span>有效像元平均辐亮度（nW/cm²/sr）</span></div>
+                <div class="rs-stat"><b id="rs-max">—</b><span>最大辐亮度（nW/cm²/sr）</span></div>
+            </div>
+            <p class="rs-note" id="rs-source"></p>
+            <p class="rs-note">灰色区域为当月无有效观测（雨季云层等原因），不代表无灯光；占比按像元计数（EPSG:4326 非等积），不是面积比例。影像仅作展示，暂不进入风险评分。</p>
         </div>
 
         <div class="rs-meta">
             <h3>数据说明</h3>
             <p>
-                VIIRS（Visible Infrared Imaging Radiometer Suite）搭载于 Suomi NPP 和 NOAA-20 卫星，
+                VIIRS（Visible Infrared Imaging Radiometer Suite）搭载于 Suomi NPP 与 NOAA 系列极轨卫星，
                 夜光波段（DNB）可探测微弱灯光，广泛用于评估冲突区域人类活动变化、电力基础设施损毁与经济衰退。
             </p>
             <dl>
-                <dt>产品</dt><td>VNL V2 — 月度无云合成（vcmslcfg 校正）</td>
-                <dt>空间分辨率</dt><td>15 角秒（约 500m）</td>
-                <dt>辐射单位</dt><td>nW/cm²/sr（纳瓦特/平方厘米/球面度）</td>
-                <dt>覆盖范围</dt><td>缅甸全境（GADM L0 边界裁剪）</td>
-                <dt>数据来源</dt><td>EOG, Payne Institute, Colorado School of Mines</td>
+                <dt>产品</dt><dd>VIIRS DNB 月度无云合成（vcmslcfg），波段 1 avg_rad、波段 2 cf_cvg</dd>
+                <dt>空间分辨率</dt><dd>15 角秒（约 500m）</dd>
+                <dt>辐射单位</dt><dd>nW/cm²/sr（纳瓦特/平方厘米/球面度）</dd>
+                <dt>色标</dt><dd>固定对数色标 0.5–60 nW/cm²/sr，各月颜色可直接比较</dd>
+                <dt>覆盖范围</dt><dd>缅甸全境（GADM 4.1 国界裁剪，国外像元不显示）</dd>
+                <dt>数据来源</dt><dd>EOG, Payne Institute, Colorado School of Mines</dd>
             </dl>
         </div>
 
@@ -89,42 +116,84 @@
 
     <script src="{{ url_for('static', filename='js/common.js') }}?v=clarity-1"></script>
     <script>
+    let rsRequestSeq = 0;
+    const rsHealthy = {{ 'true' if rs_status.healthy else 'false' }};
+
+    function setText(id, value) { document.getElementById(id).textContent = value; }
+
     async function loadViirsImage() {
         const month = document.getElementById('rs-month').value;
+        if (!month) return;
+        const seq = ++rsRequestSeq;
         const box = document.getElementById('rs-image-box');
+        const btn = document.getElementById('rs-render');
         const hdLink = document.getElementById('hd-download');
+        const meta = document.getElementById('rs-month-meta');
         box.innerHTML = '<span class="loading">正在渲染 ' + month + ' 夜光图像…</span>';
-        hdLink.href = '/api/viirs/image?month=' + month + '&format=hd';
+        hdLink.href = '/api/viirs/image?month=' + encodeURIComponent(month) + '&format=hd';
+        btn.disabled = true;
         try {
-            const resp = await fetch('/api/viirs/image?month=' + month + '&format=web&dpi=150');
+            const resp = await fetch('/api/viirs/image?month=' + encodeURIComponent(month) + '&format=web&dpi=150');
             const json = await resp.json();
+            if (seq !== rsRequestSeq) return;  // 已切换到其它月份，丢弃过期响应
             if (json.success) {
-                box.innerHTML = '<img src="' + json.data.image + '" alt="VIIRS 夜光 ' + month + '">';
+                const img = new Image();
+                img.alt = 'VIIRS 夜光 ' + month;
+                img.src = json.data.image;
+                box.replaceChildren(img);
+                const m = json.data.meta || {};
+                setText('rs-meta-title', month + ' 像元统计');
+                setText('rs-coverage', m.coverage_pct != null ? m.coverage_pct + '%' : '—');
+                setText('rs-lit', m.lit_pct != null ? m.lit_pct + '%' : '—');
+                setText('rs-mean', m.mean_rad != null ? m.mean_rad : '—');
+                setText('rs-max', m.max_rad != null ? m.max_rad : '—');
+                setText('rs-source', '数据版本：' + (m.source_label || '—'));
+                meta.hidden = false;
             } else {
-                box.innerHTML = '<span class="loading">渲染失败：' + (json.error || '未知错误') + '</span>';
+                box.innerHTML = '<span class="loading"></span>';
+                box.firstChild.textContent = '渲染失败：' + (json.error || '未知错误');
+                meta.hidden = true;
             }
         } catch (e) {
-            box.innerHTML = '<span class="loading">请求失败：' + e.message + '</span>';
+            if (seq !== rsRequestSeq) return;
+            box.innerHTML = '<span class="loading"></span>';
+            box.firstChild.textContent = '请求失败：' + e.message;
+            meta.hidden = true;
+        } finally {
+            if (seq === rsRequestSeq) btn.disabled = false;
         }
     }
 
     async function loadGallery() {
         const grid = document.getElementById('rs-gallery');
-        const resp = await fetch('/api/viirs/months');
-        const json = await resp.json();
-        if (!json.success) return;
-        const months = json.data.months.slice(-6).reverse();
-        grid.innerHTML = months.map(m => `
-            <div class="rs-thumb" onclick="document.getElementById('rs-month').value='${m}';loadViirsImage();window.scrollTo({top:0,behavior:'smooth'})">
-                <img src="/api/viirs/image?month=${m}&format=web&dpi=80" alt="${m}" loading="lazy">
-                <div class="rs-thumb-label">${m}</div>
-            </div>
-        `).join('');
+        try {
+            const resp = await fetch('/api/viirs/months');
+            const json = await resp.json();
+            if (!json.success) return;
+            const months = json.data.months.slice(-6).reverse();
+            grid.replaceChildren(...months.map(m => {
+                const card = document.createElement('div');
+                card.className = 'rs-thumb';
+                card.innerHTML = '<img loading="lazy"><div class="rs-thumb-label"></div>';
+                card.querySelector('img').src = '/api/viirs/image?month=' + encodeURIComponent(m) + '&format=png&size=thumb&dpi=80';
+                card.querySelector('img').alt = 'VIIRS 夜光缩略图 ' + m;
+                card.querySelector('.rs-thumb-label').textContent = m;
+                card.addEventListener('click', () => {
+                    document.getElementById('rs-month').value = m;
+                    loadViirsImage();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+                return card;
+            }));
+        } catch (e) {
+            grid.textContent = '缩略图加载失败：' + e.message;
+        }
     }
 
-    // 页面加载时自动渲染最新月份并加载画廊
-    document.addEventListener('DOMContentLoaded', () => {
-        loadViirsImage();
+    // 页面加载时自动渲染最新月份，主图先出、再加载画廊（服务端串行出图）
+    document.addEventListener('DOMContentLoaded', async () => {
+        if (!rsHealthy) return;
+        await loadViirsImage();
         loadGallery();
     });
     </script>

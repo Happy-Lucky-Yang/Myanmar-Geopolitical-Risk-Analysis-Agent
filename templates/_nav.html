@@ -1,6 +1,8 @@
 {# 顶部导航：品牌 + 一级菜单（左对齐），hover 展开子页面下拉面板。 #}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/shell.css') }}?v=dropdown-1">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tech.css') }}?v=tech-2">
 <script src="{{ url_for('static', filename='js/navigation.js') }}?v=dropdown-1" defer></script>
+<script src="{{ url_for('static', filename='js/telemetry.js') }}?v=tech-2" defer></script>
 {% set groups = [
     ('态势总览', '/dashboard', [('/dashboard', '综合态势'), ('/dashboard/indicators', '风险与指标'), ('/dashboard/events', '事件与证据'), ('/dashboard/data', '数据状态')]),
     ('时空分析', '/map', [(None, '地图与趋势'), ('/map', '风险地图'), ('/trend', '趋势分析'), ('/graph', '关系图谱'), (None, '统计与对照'), ('/spatial', '空间统计'), ('/multimodal', '多源对照'), ('/remote-sensing', '遥感影像')]),
@@ -54,6 +56,7 @@
         </li>
         {% endfor %}
     </ul>
+    <div class="nav-telemetry" data-state="checking" role="group" aria-label="Web 服务连接状态"><span class="tm-led" aria-hidden="true"></span><span class="tm-label" aria-live="polite">服务检测中</span><span class="tm-sep" aria-hidden="true"></span><time class="tm-clock">UTC --:--:--</time></div>
     <button type="button" class="nav-menu-toggle" aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false">菜单</button>
 </nav>
 <dialog id="site-menu" class="site-menu" aria-labelledby="site-menu-title">

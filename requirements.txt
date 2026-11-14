@@ -59,5 +59,6 @@ tzdata==2025.2
 # ---------- 空间统计与部署 ----------
 scipy==1.14.1
 matplotlib==3.9.2
+rasterio==1.4.3
 gunicorn==23.0.0; sys_platform != 'win32'
 playwright==1.55.0

@@ -61,13 +61,13 @@ _RISK_STOPS = [
     (1.00, (158, 48, 86)),     # 极高 深莓
 ]
 
-# 地图内浮层统一采用浅色毛玻璃风格，与系统页面一致
-_UI_FONT = "font-family:'PingFang SC','Microsoft YaHei',sans-serif;"
-_TOOLTIP_CSS = ("background:rgba(255,255,255,0.96);color:#24333b;border:1px solid #e2e9e6;"
-                "border-radius:10px;box-shadow:0 10px 24px -12px rgba(36,51,59,0.35);" + _UI_FONT)
-_POPUP_CSS = "background:#ffffff;color:#24333b;border-radius:10px;" + _UI_FONT
-_PANEL_CSS = ("background:rgba(255,255,255,0.9);color:#576873;border:1px solid rgba(226,233,230,0.95);"
-              "box-shadow:0 12px 28px -16px rgba(36,51,59,0.45);border-radius:12px;" + _UI_FONT)
+# 地图内浮层统一采用「精密仪表」风格（白底、发丝线、小圆角），与系统页面 tech.css 一致
+_UI_FONT = "font-family:'Bahnschrift','HarmonyOS Sans SC','Microsoft YaHei UI','PingFang SC','Microsoft YaHei',sans-serif;"
+_TOOLTIP_CSS = ("background:rgba(255,255,255,0.97);color:#0f1f2e;border:1px solid #b6c4d0;border-left:2px solid #0e86b3;"
+                "border-radius:4px;box-shadow:0 10px 24px -12px rgba(15,31,46,0.4);" + _UI_FONT)
+_POPUP_CSS = "background:#ffffff;color:#0f1f2e;border-radius:4px;" + _UI_FONT
+_PANEL_CSS = ("background:rgba(255,255,255,0.94);color:#44576a;border:1px solid #d8e0e7;"
+              "box-shadow:0 12px 28px -16px rgba(15,31,46,0.45);border-radius:4px;" + _UI_FONT)
 _KDE_COLORS = ["#9ccbe8", "#f3cf7a", "#ee9466", "#d4526a"]
 _GLOW_GRADIENT = {0.2: "#8fd0b0", 0.5: "#f2d36b", 0.8: "#ee9a6a", 1.0: "#d9586a"}
 _NO_DATA_FILL = "#cfd9d6"
@@ -249,7 +249,7 @@ def _add_basemap(m: folium.Map) -> None:
             var box;
             control.onAdd = function () {
                 box = L.DomUtil.create('div', 'basemap-status');
-                box.style.cssText = 'background:rgba(255,255,255,0.9);color:#576873;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid #e2e9e6;margin-bottom:28px;';
+                box.style.cssText = 'background:rgba(255,255,255,0.94);color:#44576a;padding:5px 10px;font-size:12px;border-radius:4px;border:1px solid #d8e0e7;border-left:2px solid #0e86b3;margin-bottom:28px;font-family:Bahnschrift,"Microsoft YaHei UI",sans-serif;letter-spacing:.02em;';
                 box.textContent = '底图加载中；分析图层不依赖底图成功';
                 return box;
             };
