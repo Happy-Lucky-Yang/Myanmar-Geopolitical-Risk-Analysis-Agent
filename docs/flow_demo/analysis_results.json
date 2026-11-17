@@ -309,7 +309,7 @@
     "llm_summary": "美国试图获取缅甸稀土资源，但中国在该领域的主导地位难以撼动。",
     "raw": {
       "alert": null,
-      "analysis_id": "C:\\Users\\10748\\Desktop\\缅甸地缘智能分析\\私密文件\\运行数据\\processed\\manual\\analysis_63f558ba9188448f934bd5bbb8ca1627.json",
+      "analysis_id": "analysis_63f558ba9188448f934bd5bbb8ca1627.json",
       "diagnostic": {
         "algorithm_version": "contribution-v2",
         "attribution_text": "按实际有效权重分解风险分，贡献不代表因果作用。",

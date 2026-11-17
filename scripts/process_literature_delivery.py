@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding='utf-8')
 
-PRIV = Path(r'C:\Users\10748\Desktop\缅甸地缘智能分析\私密文件')
-DEST = PRIV / '文献交付_20261116'
+PRIV = Path(os.environ.get('LIT_DELIVERY_DIR', ''))
+DEST = PRIV
 ZIPS = ['01_02_03文献数据库等864个文件.zip',
         '待整理缅甸区域国别地缘政治_全部PDF_part480等1248个文件.zip',
         '相关文献等60个文件.zip',
@@ -73,6 +73,8 @@ def fixed_name(info):
 
 
 def phase_extract():
+    if not str(DEST):
+        sys.exit('请先设置环境变量 LIT_DELIVERY_DIR 指向私密交付目录')
     DEST.mkdir(parents=True, exist_ok=True)
     manifest = []
     for name in ZIPS:
@@ -510,6 +512,7 @@ def stage_refugee_rows(db_path, candidates, apply=False):
 def phase_refugees(apply):
     import csv
     import io
+    from utils.config import get_data_paths
     rows = [json.loads(l) for l in open(DEST / 'inventory.jsonl', encoding='utf-8') if l.strip()]
     cands = []
     for row in rows:
@@ -529,7 +532,7 @@ def phase_refugees(apply):
             payload.update(rows=n, columns=header[:16])
         cands.append({'asset_id': 'refugee-' + row['sha256'][:16], 'path': row['path'],
                       'sha256': row['sha256'], 'location': row['path'], 'payload': payload})
-    db = Path(r'C:\Users\10748\Desktop\缅甸地缘智能分析\私密文件\运行数据\external\team_delivery_review\review.sqlite3')
+    db = Path(get_data_paths()['external']) / 'team_delivery_review' / 'review.sqlite3'
     added = stage_refugee_rows(db, cands, apply)
     print(json.dumps({'candidates': len(cands), 'new': added, 'apply': apply}, ensure_ascii=False), flush=True)
 

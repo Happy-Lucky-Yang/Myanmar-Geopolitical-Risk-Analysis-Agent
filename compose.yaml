@@ -25,6 +25,17 @@ services:
       APP_SECRET_KEY: ${APP_SECRET_KEY:?请设置至少32字符随机会话密钥}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       ENABLE_EMBEDDED_SCHEDULER: "false"
+      # 可选能力与私密数据路径：宿主机 .env 提供后透传；未设置时保持默认关闭/降级
+      ENABLE_LITERATURE: ${ENABLE_LITERATURE:-false}
+      ENABLE_WORKSPACE: ${ENABLE_WORKSPACE:-false}
+      ENABLE_UN_NEWS: ${ENABLE_UN_NEWS:-false}
+      ENABLE_RISK_PANELS: ${ENABLE_RISK_PANELS:-false}
+      KB_SOURCE_XLSX: ${KB_SOURCE_XLSX:-}
+      KB_EXTRA_RECORDS: ${KB_EXTRA_RECORDS:-}
+      KB_HOLDINGS_MAP: ${KB_HOLDINGS_MAP:-}
+      VIIRS_ROOT: ${VIIRS_ROOT:-}
+      PROXY: ${PROXY:-}
+      BOOT_CRAWL: ${BOOT_CRAWL:-false}
     volumes:
       - runtime_data:/runtime
     ports:

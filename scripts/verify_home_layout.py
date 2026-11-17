@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 URL = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:5001'
 OUTPUT = ROOT / 'logs' / 'home-redesign'
-SPEC = Path(r'C:\Users\10748\AppData\Roaming\Qoder\SharedClientCache\cache\plans\首页重构_设计方案_5b2f6d3b.md')
+SPEC = Path(os.environ.get('HOME_LAYOUT_SPEC', ''))
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
     results = []
     pages = []
     errors = []
-    spec_hash = hashlib.sha256(SPEC.read_bytes()).hexdigest()
+    spec_hash = hashlib.sha256(SPEC.read_bytes()).hexdigest() if str(SPEC) and SPEC.is_file() else 'spec-not-provided'
     with sync_playwright() as api:
         options = {'headless': True, 'args': ['--disable-background-networking']}
         if os.environ.get('PLAYWRIGHT_BROWSER_EXECUTABLE'):

@@ -9,11 +9,10 @@ visualization.viirs_renderer - VIIRS 夜光遥感图像渲染
   - 叠加缅甸国界与省级行政边界（GADM 4.1）
   - 支持 Web 内联（base64）、缩略图和高清导出（300 DPI PNG）
 
-数据源（可用环境变量 VIIRS_ROOT 覆盖根目录）:
-  C:\\Users\\10748\\Desktop\\缅甸地缘智能分析\\私密文件\\夜间灯光
-  ├── MMR_VNL_矢量裁剪版\\MMR_VNL_202001-202608\\data_mmr\\MMR_VNL_YYYYMM.tif
-  ├── MMR_VNL_规则裁剪版_2020-2023\\MMR_VNL_202001-202608\\data\\MMR_VNL_YYYYMM.tif
-  └── MMR_VNL_规则裁剪版_2024-2026\\MMR_VNL_202001-202608\\data\\MMR_VNL_YYYYMM.tif
+数据源：环境变量 VIIRS_ROOT 指向的私密目录（不入仓库），内含：
+  MMR_VNL_矢量裁剪版/*/data_mmr/MMR_VNL_YYYYMM.tif（优先）
+  MMR_VNL_规则裁剪版_*/*/data/MMR_VNL_YYYYMM.tif（兜底＋国界掩膜）
+未配置 VIIRS_ROOT 时遥感页降级为“暂不可用”，不影响其他模块。
 """
 import os
 import glob
@@ -30,8 +29,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# VIIRS 数据根目录（私密文件夹，不在仓库内）
-_DEFAULT_ROOT = r"C:\Users\10748\Desktop\缅甸地缘智能分析\私密文件\夜间灯光"
+# VIIRS 数据根目录：仅由环境变量 VIIRS_ROOT 提供（私密路径不写入开源代码）
+_DEFAULT_ROOT = ""
 
 # 固定色标范围：低于 0.5 视为背景噪声（气辉/杂散光），60 以上为仰光等城市核心
 RAD_MIN = 0.5
