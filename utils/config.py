@@ -251,6 +251,12 @@ def get_knowledge_base_config() -> dict:
     env_idx = os.environ.get("KB_INDEX_PATH", "").strip()
     if env_idx:
         kb["index_path"] = env_idx
+    env_extra = os.environ.get("KB_EXTRA_RECORDS", "").strip()
+    if env_extra:
+        kb["extra_records_jsonl"] = env_extra
+    env_hold = os.environ.get("KB_HOLDINGS_MAP", "").strip()
+    if env_hold:
+        kb["holdings_map_json"] = env_hold
     if not kb.get("index_path"):
         kb["index_path"] = os.path.join(get_data_paths()["root"], "knowledge_base", "literature_index.json")
     kb.setdefault("enabled", True)

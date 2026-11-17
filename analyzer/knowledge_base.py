@@ -333,6 +333,49 @@ def build_index_from_xlsx(path):
     return index
 
 
+def merge_delivery(index, extra_records_jsonl=None, holdings_map_json=None):
+    """把团队交付的自动抽取题录（待人工核查）合并进索引。
+
+    - extra_records_jsonl：新增题录（id 与规范化题名双重去重，不覆盖总表已有记录）。
+    - holdings_map_json：{base_id: {holdings: [...], fill: {...}}}；holdings 为本地馆藏
+      溯源（私密字段，不进入 public_record），fill 仅补总表空缺字段。
+    合并后重建 facet；源表记录优先级始终高于自动抽取。
+    """
+    records = list(index.get("records", []))
+    by_id = {r["id"]: r for r in records}
+    titles = {re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", (r.get("title") or "").lower()) for r in records}
+    if holdings_map_json and os.path.exists(holdings_map_json):
+        with open(holdings_map_json, encoding="utf-8") as f:
+            holdings = json.load(f)
+        for bid, entry in holdings.items():
+            rec = by_id.get(bid)
+            if not rec:
+                continue
+            rec["local_holdings"] = entry.get("holdings", [])
+            for key, val in (entry.get("fill") or {}).items():
+                if not rec.get(key):
+                    rec[key] = val
+    added = 0
+    if extra_records_jsonl and os.path.exists(extra_records_jsonl):
+        with open(extra_records_jsonl, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                nt = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", (rec.get("title") or "").lower())
+                if rec["id"] in by_id or nt in titles:
+                    continue
+                records.append(rec)
+                by_id[rec["id"]] = rec
+                titles.add(nt)
+                added += 1
+    merged = build_index(records, source_name=(index.get("source_name") or "") + " + 交付20261116",
+                         stats=index.get("stats", {}))
+    merged["sheet_name"] = index.get("sheet_name")
+    merged["delivery_added"] = added
+    return merged
+
+
 # ------------------------------------------------------------------
 # 检索
 # ------------------------------------------------------------------
@@ -520,12 +563,17 @@ def load_or_build_index(cfg=None):
     source = cfg.get("source_xlsx")
     if source and os.path.exists(source):
         idx = build_index_from_xlsx(source)
+        idx = merge_delivery(idx, cfg.get("extra_records_jsonl"), cfg.get("holdings_map_json"))
         idx["status"] = "built"
         if index_path:
             try:
                 save_index(idx, index_path)
             except Exception as exc:
                 logger.warning("知识库索引写缓存失败（不影响本次使用）: %s", exc)
+        return idx
+    if cfg.get("extra_records_jsonl") and os.path.exists(cfg["extra_records_jsonl"]):
+        idx = merge_delivery(empty_index("ok"), cfg.get("extra_records_jsonl"), cfg.get("holdings_map_json"))
+        idx["status"] = "built"
         return idx
     return empty_index("unavailable" if not source else "source_missing")
 

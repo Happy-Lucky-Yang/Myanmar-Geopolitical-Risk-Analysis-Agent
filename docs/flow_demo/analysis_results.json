@@ -1,0 +1,495 @@
+{
+  "source_article": {
+    "title": "美国要挖缅甸稀土？晚了！“中国主导地位无法撼动”",
+    "outlet": "观察者网（范维）",
+    "url": "https://mp.weixin.qq.com/s/b02CTyBhkb7UmHFdCg2ERQ",
+    "note": "组长提供的流程演示案例。以下事件由全文拆出，日期以报道表述为准；2026 年为系统当前业务年。"
+  },
+  "events": [
+    {
+      "id": "E1",
+      "date": "2026-10-16",
+      "location": "华盛顿",
+      "type": "外交/战略文件",
+      "text": "美国国务院发布新版缅甸战略文件（8月31日获批），提出到2030年推动缅甸持久和平，将联邦制与领土边界讨论机制同稀土获取挂钩，并争取达成三项金额均超500万美元的美国商业或投资协议，明确将“遏制中国影响力”列为目标。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "中国"
+        ],
+        "organizations": [],
+        "persons": [],
+        "events": [
+          "投资"
+        ]
+      },
+      "sentiment_score": 1.0,
+      "sentiment_source": "snownlp",
+      "risk_score": 0,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "政治变动",
+      "llm_summary": "美国发布缅甸战略文件，旨在推动缅甸持久和平并遏制中国影响力。"
+    },
+    {
+      "id": "E2",
+      "date": "2026-11-09",
+      "location": "华盛顿",
+      "type": "游说/声明",
+      "text": "华盛顿游说公司DCI集团以代表缅甸信息部的名义发布声明，称美国必须加大对缅甸战略投入，将近期美缅会谈形容为对孤立政策的积极调整，同时承认中国在缅甸稀土产业的优势地位难以轻易撼动，并提及日本、印度、澳大利亚可能各自寻求交易将美国挤到边缘。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "中国",
+          "印度"
+        ],
+        "organizations": [],
+        "persons": [],
+        "events": []
+      },
+      "sentiment_score": 0.9993,
+      "sentiment_source": "snownlp",
+      "risk_score": 0.03,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "外交事件",
+      "llm_summary": "美缅会谈调整孤立政策，中国稀土产业优势明显。"
+    },
+    {
+      "id": "E3",
+      "date": "2026-11-10",
+      "location": "内比都",
+      "type": "外交/经济诉求",
+      "text": "路透社报道，缅甸政府正敦促美国加大对缅甸重新接触的力度，并迅速增加对其稀土矿山的投资。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸"
+        ],
+        "organizations": [],
+        "persons": [],
+        "events": [
+          "投资"
+        ]
+      },
+      "sentiment_score": 0.8695,
+      "sentiment_source": "snownlp",
+      "risk_score": 5.93,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "经济制裁",
+      "llm_summary": "缅甸政府敦促美国加大投资稀土矿山。"
+    },
+    {
+      "id": "E4",
+      "date": "2026-11-11",
+      "location": "香港",
+      "type": "媒体分析/警告",
+      "text": "香港《亚洲时报》报道称，缅甸试图以稀土资源拉拢美国，但中国对该领域的牢固掌控使这项尝试充满风险；缅甸的做法可能激怒中国，实际上是在邀请美国进入一个由中国主导的商业领域，构成对中国底线的试探。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "中国"
+        ],
+        "organizations": [],
+        "persons": [],
+        "events": []
+      },
+      "sentiment_score": 1.0,
+      "sentiment_source": "snownlp",
+      "risk_score": 0,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "外交事件",
+      "llm_summary": "缅甸试图利用稀土资源拉拢美国，挑战中国在该领域的地位。"
+    },
+    {
+      "id": "E5",
+      "date": "2026-06-01",
+      "location": "印度",
+      "type": "首脑外交",
+      "text": "5月底至6月初，缅甸总统敏昂莱访问印度并受红毯礼遇，双方同意在包括稀土在内的关键矿产领域加强投资与合作；美国稀土交易所分析称若印度获取其中一部分将意味着一次重大的地缘政治转变。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "印度"
+        ],
+        "organizations": [],
+        "persons": [
+          "敏昂莱"
+        ],
+        "events": [
+          "投资"
+        ]
+      },
+      "sentiment_score": 0.9975,
+      "sentiment_source": "snownlp",
+      "risk_score": 0.11,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "外交事件",
+      "llm_summary": "缅甸总统访问印度，双方加强稀土领域合作。"
+    },
+    {
+      "id": "E6",
+      "date": "2026-06-15",
+      "location": "北京",
+      "type": "首脑外交/联合声明",
+      "text": "敏昂莱就任缅甸总统后首次对中国进行国事访问，表示希望推动中国企业赴缅投资、提升缅中贸易水平；中缅联合声明提到双方同意继续深化矿产等领域务实合作，最大程度实现经济互补。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "中国"
+        ],
+        "organizations": [],
+        "persons": [
+          "敏昂莱"
+        ],
+        "events": [
+          "贸易",
+          "投资"
+        ]
+      },
+      "sentiment_score": 0.9999,
+      "sentiment_source": "snownlp",
+      "risk_score": 0.0,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "外交事件",
+      "llm_summary": "缅甸总统敏昂莱访华，推动中缅经济合作。"
+    },
+    {
+      "id": "E7",
+      "date": "2026-07-10",
+      "location": "内比都",
+      "type": "部门外交",
+      "text": "中国驻缅甸大使马珈会见缅甸自然资源与环境保护部长山乌，双方就加强两国矿业、林业和环境保护合作以及人力资源开发等议题深入交换意见。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "中国"
+        ],
+        "organizations": [],
+        "persons": [],
+        "events": []
+      },
+      "sentiment_score": 0.9586,
+      "sentiment_source": "snownlp",
+      "risk_score": 1.88,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "外交事件",
+      "llm_summary": "中缅大使与部长会面，探讨矿业、林业和环境保护合作。"
+    },
+    {
+      "id": "E8",
+      "date": "2026-11-07",
+      "location": "内比都",
+      "type": "官方媒体表态",
+      "text": "缅甸官媒《缅甸环球新光报》发表文章称包括稀土矿产在内的缅甸自然资源受到国际社会关注，强调缅甸的目标不应是以一个经济伙伴取代另一个经济伙伴，并将美国最新战略理解为政策方向与潜在合作领域的信号。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸"
+        ],
+        "organizations": [],
+        "persons": [],
+        "events": []
+      },
+      "sentiment_score": 0.9988,
+      "sentiment_source": "snownlp",
+      "risk_score": 0.05,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "经济制裁",
+      "llm_summary": "缅甸强调不应以一个经济伙伴取代另一个，并解读美国战略。"
+    },
+    {
+      "id": "E9",
+      "date": "2026-01-01",
+      "location": "掸邦",
+      "type": "资源/冲突关联",
+      "text": "2026年公布的一项基于卫星图像的研究发现，邻近克钦邦的掸邦出现新的稀土开采地点，其中包括德昂民族解放军控制的区域；此前华盛顿智库史汀生中心称2022年以来缅甸新开采稀土矿约80%位于克钦邦，由克钦独立军控制。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "掸邦",
+          "克钦邦",
+          "钦邦"
+        ],
+        "organizations": [
+          "克钦独立军",
+          "德昂民族解放军"
+        ],
+        "persons": [],
+        "events": []
+      },
+      "sentiment_score": 0.993,
+      "sentiment_source": "snownlp",
+      "risk_score": 0.32,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "基础设施建设",
+      "llm_summary": "缅甸掸邦发现新稀土开采地点，其中部分区域由德昂民族解放军控制。"
+    },
+    {
+      "id": "E10",
+      "date": "2026-09-15",
+      "location": "内比都",
+      "type": "秘密会谈",
+      "text": "路透社独家报道，9月由美国国务院助理国务卿迈克尔·万斯率领的代表团在内比都与缅甸总统敏昂莱会面；10月美缅团队又在东京举行第二轮会谈，讨论获取缅甸重稀土矿藏的可能性；美方承认矿藏多位于民地武控制区且中国可能反对美国介入两大障碍。",
+      "success": true,
+      "entities": {
+        "locations": [
+          "缅甸",
+          "内比都",
+          "中国"
+        ],
+        "organizations": [],
+        "persons": [
+          "敏昂莱"
+        ],
+        "events": []
+      },
+      "sentiment_score": 0.3477,
+      "sentiment_source": "snownlp",
+      "risk_score": 29.65,
+      "risk_level": "低风险",
+      "llm_status": "ok",
+      "llm_event_type": "外交事件",
+      "llm_summary": "美缅讨论获取缅甸稀土矿藏，面临民地武控制区和中国的反对。"
+    }
+  ],
+  "full_article": {
+    "success": true,
+    "chars": 4778,
+    "entities": {
+      "locations": [
+        "缅甸",
+        "内比都",
+        "掸邦",
+        "克钦邦",
+        "钦邦",
+        "中国",
+        "印度",
+        "皎漂"
+      ],
+      "organizations": [
+        "克钦独立军",
+        "德昂民族解放军",
+        "东盟"
+      ],
+      "persons": [
+        "敏昂莱"
+      ],
+      "events": [
+        "冲突",
+        "武装",
+        "制裁",
+        "政变",
+        "停火",
+        "贸易",
+        "投资",
+        "管道"
+      ]
+    },
+    "sentiment_score": 1.0,
+    "sentiment_source": "snownlp",
+    "risk_score": 54.55,
+    "risk_level": "中风险",
+    "llm_status": "ok",
+    "llm_event_type": "经济制裁",
+    "llm_summary": "美国试图获取缅甸稀土资源，但中国在该领域的主导地位难以撼动。",
+    "raw": {
+      "alert": null,
+      "analysis_id": "C:\\Users\\10748\\Desktop\\缅甸地缘智能分析\\私密文件\\运行数据\\processed\\manual\\analysis_63f558ba9188448f934bd5bbb8ca1627.json",
+      "diagnostic": {
+        "algorithm_version": "contribution-v2",
+        "attribution_text": "按实际有效权重分解风险分，贡献不代表因果作用。",
+        "concentration": 1.0,
+        "contribution_text": "按实际有效权重分解风险分，贡献不代表因果作用。",
+        "drivers": [
+          {
+            "contribution": 0.5454545454545454,
+            "contribution_pct": 100.0,
+            "contribution_points": 54.5455,
+            "indicator": "conflict_frequency",
+            "name": "冲突频次",
+            "value": 1.0,
+            "weight": 0.5454545454545454
+          },
+          {
+            "contribution": 0.0,
+            "contribution_pct": 0.0,
+            "contribution_points": 0.0,
+            "indicator": "sentiment_avg",
+            "name": "舆情负面度",
+            "value": 0.0,
+            "weight": 0.45454545454545453
+          }
+        ],
+        "primary_driver": "冲突频次",
+        "shapley": {
+          "algorithm_version": "shapley-v1",
+          "assertions": {
+            "A1_sum_shares_eq_1": true,
+            "A3_sum_phi_eq_R": true,
+            "tolerance": 1e-06
+          },
+          "drivers": [
+            "conflict_frequency",
+            "sentiment_avg"
+          ],
+          "note": "Shapley 值分摊含权重再归一的非线性效应；贡献份额不代表因果作用",
+          "primary_driver": "conflict_frequency",
+          "risk_index": 0.5454545454545454,
+          "risk_index_pct": 54.5455,
+          "shapley": {
+            "conflict_frequency": 0.77272727,
+            "sentiment_avg": -0.22727273
+          },
+          "shapley_pct": {
+            "conflict_frequency": 77.2727,
+            "sentiment_avg": -22.7273
+          },
+          "shares": {
+            "conflict_frequency": 1.416667,
+            "sentiment_avg": -0.416667
+          },
+          "status": "ok"
+        },
+        "total_score": 54.55
+      },
+      "entities": {
+        "events": [
+          "冲突",
+          "武装",
+          "制裁",
+          "政变",
+          "停火",
+          "贸易",
+          "投资",
+          "管道"
+        ],
+        "locations": [
+          "缅甸",
+          "内比都",
+          "掸邦",
+          "克钦邦",
+          "钦邦",
+          "中国",
+          "印度",
+          "皎漂"
+        ],
+        "organizations": [
+          "克钦独立军",
+          "德昂民族解放军",
+          "东盟"
+        ],
+        "persons": [
+          "敏昂莱"
+        ]
+      },
+      "gdelt_metrics": null,
+      "llm_analysis": {
+        "analysis_status": "ok",
+        "cached": false,
+        "china_myanmar_impact": "美国试图获取缅甸稀土资源，可能加剧中缅关系紧张。",
+        "error": "",
+        "event_type": "经济制裁",
+        "key_entities": [
+          "美国国务院",
+          "缅甸政府",
+          "DCI集团",
+          "中国",
+          "日本",
+          "印度",
+          "澳大利亚"
+        ],
+        "key_locations": [
+          "缅甸",
+          "美国",
+          "中国"
+        ],
+        "risk_warning": "美国介入缅甸稀土产业可能引发地区不稳定。",
+        "schema_completeness": 1.0,
+        "schema_version": "news-v2",
+        "sentiment": "negative",
+        "severity": 3,
+        "summary": "美国试图获取缅甸稀土资源，但中国在该领域的主导地位难以撼动。"
+      },
+      "risk_score": {
+        "algorithm_version": "risk-v2",
+        "data_status": "partial",
+        "gdelt_used": false,
+        "indicator_coverage": 0.55,
+        "indicator_scores": {
+          "conflict_frequency": {
+            "contribution": 0.5454545454545454,
+            "contribution_points": 54.5455,
+            "note": "",
+            "quality": "observed",
+            "value": 1.0,
+            "weight": 0.5454545454545454
+          },
+          "event_severity": {
+            "contribution": null,
+            "contribution_points": null,
+            "note": "缺测或非正式观测，不参与评分",
+            "quality": "missing",
+            "value": null,
+            "weight": 0
+          },
+          "nightlight_change": {
+            "contribution": null,
+            "contribution_points": null,
+            "note": "缺测或非正式观测，不参与评分",
+            "quality": "missing",
+            "value": null,
+            "weight": 0
+          },
+          "refugee_change": {
+            "contribution": null,
+            "contribution_points": null,
+            "note": "缺测或非正式观测，不参与评分",
+            "quality": "missing",
+            "value": null,
+            "weight": 0
+          },
+          "sentiment_avg": {
+            "contribution": 0.0,
+            "contribution_points": 0.0,
+            "note": "",
+            "quality": "observed",
+            "value": 0.0,
+            "weight": 0.45454545454545453
+          }
+        },
+        "risk_level": "中风险",
+        "risk_score": 54.55,
+        "run_kind": "manual",
+        "scope": "仅用户输入的文本，不代表全国当日风险",
+        "unit": "风险分（非发生概率）",
+        "weight_rebalanced": true,
+        "weights_used": {
+          "conflict_frequency": 0.5454545454545454,
+          "sentiment_avg": 0.45454545454545453
+        }
+      },
+      "sentiment": {
+        "risk_level": "low",
+        "risk_score": 0.0,
+        "sentiment_score": 1.0,
+        "source": "snownlp"
+      },
+      "warnings": []
+    }
+  }
+}
